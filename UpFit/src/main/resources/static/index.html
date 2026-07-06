@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a56db">
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="핵방노트">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+    <title>핵방노트</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --blue: #1a56db;
+            --blue-light: #e8f0fe;
+            --blue-dark: #1e429f;
+            --white: #ffffff;
+            --font: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+        }
+
+        html, body { height: 100%; font-family: var(--font); }
+
+        .intro {
+            min-height: 100vh; min-height: 100dvh;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 24px;
+            background: linear-gradient(160deg, var(--blue) 0%, var(--blue-dark) 100%);
+            position: relative; overflow: hidden;
+            /* 전체 페이드아웃 (마지막에 사라짐) */
+            opacity: 1;
+            transition: opacity 0.6s ease;
+        }
+        .intro.leaving { opacity: 0; }
+
+        /* 은은한 배경 장식 */
+        .intro::before, .intro::after {
+            content: ''; position: absolute; border-radius: 50%;
+            background: rgba(255,255,255,0.08); pointer-events: none;
+        }
+        .intro::before { width: 340px; height: 340px; top: -130px; right: -110px; }
+        .intro::after  { width: 280px; height: 280px; bottom: -120px; left: -100px; }
+
+        .intro-inner {
+            position: relative; z-index: 1; text-align: center;
+            /* 슥 떠오르며 나타남 */
+            opacity: 0; transform: translateY(14px);
+            animation: rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        @keyframes rise {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .logo {
+            width: 92px; height: 92px; margin: 0 auto 20px;
+            border-radius: 26px;
+            background: rgba(255,255,255,0.14);
+            backdrop-filter: blur(4px);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 48px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+            animation: pulse 2.4s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .name {
+            font-size: 30px; font-weight: 800; color: var(--white);
+            letter-spacing: -0.6px;
+        }
+        .tagline {
+            margin-top: 12px;
+            font-size: 15px; line-height: 1.6;
+            color: rgba(255,255,255,0.88);
+            font-weight: 500;
+        }
+
+        /* 진행 인디케이터 */
+        .dots {
+            margin-top: 28px;
+            display: flex; gap: 7px; justify-content: center;
+        }
+        .dots span {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: rgba(255,255,255,0.55);
+            animation: blink 1.2s ease-in-out infinite;
+        }
+        .dots span:nth-child(2) { animation-delay: 0.2s; }
+        .dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink {
+            0%, 100% { opacity: 0.35; transform: scale(0.9); }
+            50% { opacity: 1; transform: scale(1.15); }
+        }
+
+        .skip {
+            position: absolute; bottom: max(22px, env(safe-area-inset-bottom)); left: 50%;
+            transform: translateX(-50%);
+            z-index: 2;
+            color: rgba(255,255,255,0.8);
+            font-size: 13px; font-weight: 600;
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 18px;
+            padding: 8px 18px;
+            cursor: pointer; font-family: var(--font);
+        }
+        .skip:active { background: rgba(255,255,255,0.22); }
+
+        @media (prefers-reduced-motion: reduce) {
+            .intro-inner { animation: none; opacity: 1; transform: none; }
+            .logo { animation: none; }
+            .dots span { animation: none; opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <div class="intro" id="intro">
+        <div class="intro-inner">
+            <div class="logo"><svg class="brand-mark" width="72" height="72" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style=""><rect width="100" height="100" rx="24" fill="#1a56db"/><rect x="28" y="20" width="44" height="62" rx="6" fill="#fff"/><rect x="34" y="27" width="9" height="9" rx="2" fill="#16a34a"/><rect x="46" y="27" width="9" height="9" rx="2" fill="#cdd9ef"/><rect x="58" y="27" width="9" height="9" rx="2" fill="#f59e0b"/><rect x="34" y="40" width="9" height="9" rx="2" fill="#cdd9ef"/><rect x="46" y="40" width="9" height="9" rx="2" fill="#16a34a"/><rect x="58" y="40" width="9" height="9" rx="2" fill="#cdd9ef"/><rect x="34" y="53" width="9" height="9" rx="2" fill="#ef4444"/><rect x="46" y="53" width="9" height="9" rx="2" fill="#cdd9ef"/><rect x="58" y="53" width="9" height="9" rx="2" fill="#16a34a"/><path d="M46 82 v-8 a4 4 0 0 1 8 0 v8 z" fill="#1a56db"/><circle cx="72" cy="72" r="16" fill="#fff"/><path d="M65 72 l5 5 l9 -10" fill="none" stroke="#1a56db" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="name">핵방노트</div>
+            <div class="tagline">내 건물의 공실·임차·만기 현황을<br>지도에서 한눈에 관리하세요</div>
+            <div class="dots"><span></span><span></span><span></span></div>
+        </div>
+        <button class="skip" id="skip">바로 시작하기</button>
+    </div>
+
+    <script>
+        (function () {
+            var NEXT = 'login.html';   // 이동할 로그인 페이지
+            var STAY = 2200;           // 화면에 머무는 시간(ms)
+            var FADE = 600;            // 페이드아웃 시간(ms, CSS transition 과 동일)
+
+            var intro = document.getElementById('intro');
+            var moved = false;
+
+            function go() {
+                if (moved) return;
+                moved = true;
+                intro.classList.add('leaving');      // 슥 사라짐
+                setTimeout(function () {
+                    window.location.replace(NEXT);   // history 에 안 남도록 replace
+                }, FADE);
+            }
+
+            // 일정 시간 뒤 자동 이동
+            var timer = setTimeout(go, STAY);
+
+            // "바로 시작하기" 누르면 즉시 이동
+            document.getElementById('skip').addEventListener('click', function () {
+                clearTimeout(timer);
+                go();
+            });
+
+            // 화면 아무 곳이나 탭해도 즉시 이동
+            intro.addEventListener('click', function (e) {
+                if (e.target.id === 'skip') return; // 버튼은 위에서 처리
+                clearTimeout(timer);
+                go();
+            });
+        })();
+    </script>
+</body>
+</html>
