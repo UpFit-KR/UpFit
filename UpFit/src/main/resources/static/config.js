@@ -1,19 +1,17 @@
 // =====================================================
-// 설정 파일 (민감한 값)
-// 이 파일은 .gitignore에 등록되어 깃허브에 올라가지 않습니다.
-// 배포 시에는 이 파일을 직접 포함시켜야 합니다.
-// login.js / app.js 보다 먼저 로드되어야 합니다.
+// UpFit — 런타임 설정
+// Vercel/배포 환경변수로 이 파일을 생성하거나, 로컬에서 직접 값 채워서 사용.
+// login.js / oauth-redirect.html 보다 먼저 로드되어야 함.
 // =====================================================
 window.APP_CONFIG = {
-  BACKEND_BASE: "http://localhost:8085",
-  FRONT_LOGIN_BASE: "http://localhost:8085/oauth-redirect.html",
+    // 소셜 로그인 클라이언트 ID (미설정 시 'YOUR_...' 그대로 두면 버튼이 안내 토스트 표시)
+    KAKAO_CLIENT_ID:  'YOUR_KAKAO_CLIENT_ID',
+    NAVER_CLIENT_ID:  'YOUR_NAVER_CLIENT_ID',
+    GOOGLE_CLIENT_ID: 'YOUR_GOOGLE_CLIENT_ID',
 
-  // 카카오맵 JavaScript 키 (developers.kakao.com에서 발급)
-  KAKAO_MAP_KEY: "046ef56e58ee82b96797fa0018d905d8",
-  KAKAO_CLIENT_ID: "3a6ef922dcd15e13142329eec951ec27",
+    // 소셜 인가 후 돌아올 프론트 콜백 (oauth-redirect.html 의 절대 URL)
+    FRONT_LOGIN_BASE: 'http://localhost:8080/oauth-redirect.html',
 
-  // 네이버 / 구글 OAuth client_id (백엔드 application.yml 및 콘솔 등록값과 동일해야 함)
-  NAVER_MAP_CLIENT_ID: "xqvojw9yik",
-  NAVER_CLIENT_ID: "J2waa_Pv28kxS2VDPvLH",
-  GOOGLE_CLIENT_ID: "60115705118-vj649sq4vuadcl7aipasj8mtammbq557.apps.googleusercontent.com",
+    // 스프링부트 백엔드 베이스 URL
+    BACKEND_BASE: 'http://localhost:8080'
 };

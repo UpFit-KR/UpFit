@@ -1,5 +1,5 @@
 // =====================================================
-// 핵방노트 — 소셜 로그인
+// UpFit — 소셜 로그인
 // 프론트가 각 소셜의 인가 URL을 직접 생성 (PKCE 미사용)
 // 설정값은 config.js 의 window.APP_CONFIG 에서 읽음.
 // ⚠ login.html 에서 config.js 를 login.js 보다 먼저 로드해야 함.
@@ -8,7 +8,6 @@
 const CFG = window.APP_CONFIG || {};
 const SUCCESS_REDIRECT = 'main.html';
 
-// provider 별 인가 엔드포인트 + config.js 의 client_id 매핑
 const OAUTH = {
     kakao: {
         authorizeUrl: 'https://kauth.kakao.com/oauth/authorize',
@@ -21,7 +20,7 @@ const OAUTH = {
     google: {
         authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
         clientId: CFG.GOOGLE_CLIENT_ID,
-        scope: 'openid email profile' // sub/email/name 수집을 위해 openid 포함
+        scope: 'openid email profile'
     }
 };
 
@@ -40,7 +39,6 @@ function startSocialLogin(provider) {
 
     const redirectUri = CFG.FRONT_LOGIN_BASE;
 
-    // provider 식별을 위해 state 에 담아 보냄 (콜백이 다른 출처여도 읽힘)
     const state = provider + '__' + randomState();
     sessionStorage.setItem('provider', provider);
 
@@ -52,7 +50,7 @@ function startSocialLogin(provider) {
     });
     if (cfg.scope) params.set('scope', cfg.scope);
 
-    // ⚠ code_challenge 를 넣지 않음 → PKCE 미적용 (백엔드 수동 교환과 호환)
+    // ⚠ code_challenge 미포함 → PKCE 미적용 (백엔드 수동 교환과 호환)
     window.location.href = `${cfg.authorizeUrl}?${params.toString()}`;
 }
 
