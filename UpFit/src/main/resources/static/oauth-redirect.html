@@ -30,7 +30,13 @@
         }
 
         html, body { height: 100%; font-family: var(--font); }
-        html { background: var(--ink-950); }   /* 하단 흰 여백 방지 */
+        /* 루트(html) 배경 = 화면 전체 캔버스에 그라데이션 → 하단 검은 띠 제거 */
+        html {
+            background:
+                radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
+                radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
+                var(--ink-950);
+        }
 
         body {
             height: 100%;
@@ -38,10 +44,7 @@
             padding: 24px;
             overflow: hidden;
             overscroll-behavior: none;
-            background:
-                radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
-                radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
-                var(--ink-950);
+            background: transparent;
             position: fixed; inset: 0; width: 100%;
         }
 
