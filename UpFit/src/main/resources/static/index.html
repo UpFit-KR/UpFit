@@ -24,19 +24,18 @@
             --font: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
         }
 
-        html, body { height: 100%; font-family: var(--font); }
-        /* 루트(html) 배경 = 화면 전체 캔버스(하단 세이프에어리어 포함)에 그라데이션 → 검은 띠 제거 */
-        html {
+        /* Daylog 방식: 배경을 고정된 풀스크린(html+body)에 직접 → 세이프에어리어까지 빈틈없이 채워 하단 띠 제거 */
+        html, body {
+            height: 100%;
+            font-family: var(--font);
+            position: fixed; inset: 0; width: 100%;
+            overflow: hidden;
+            overscroll-behavior: none;
+            touch-action: none;
             background:
                 radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
                 radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
                 var(--ink-950);
-        }
-        body {
-            background: transparent;
-            overflow: hidden;
-            overscroll-behavior: none;
-            position: fixed; inset: 0; width: 100%;
         }
 
         .intro {
@@ -44,10 +43,7 @@
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             padding: 24px;
-            background:
-                radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
-                radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
-                var(--ink-950);
+            background: transparent;
             position: relative; overflow: hidden;
             opacity: 1; transition: opacity 0.55s ease;
         }
