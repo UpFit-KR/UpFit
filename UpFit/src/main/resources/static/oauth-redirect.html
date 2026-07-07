@@ -30,16 +30,19 @@
         }
 
         html, body { height: 100%; font-family: var(--font); }
+        html { background: var(--ink-950); }   /* 하단 흰 여백 방지 */
 
         body {
-            min-height: 100vh; min-height: 100dvh;
+            height: 100%;
             display: flex; align-items: center; justify-content: center;
             padding: 24px;
+            overflow: hidden;
+            overscroll-behavior: none;
             background:
                 radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
                 radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
                 var(--ink-950);
-            position: relative; overflow: hidden;
+            position: fixed; inset: 0; width: 100%;
         }
 
         body::before, body::after {

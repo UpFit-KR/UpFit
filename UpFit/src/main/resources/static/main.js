@@ -996,14 +996,18 @@ document.getElementById('appMain').addEventListener('click', async e => {
 });
 
 // ============================================================
-//  탭 전환
+//  탭 전환 (현재 탭을 sessionStorage에 저장 → 새로고침해도 유지)
 // ============================================================
-document.querySelectorAll('.nav-item').forEach(btn => btn.onclick = () => {
-    const tab = btn.dataset.tab;
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b === btn));
+const TAB_KEY = 'UF_TAB';
+function activateTab(tab, remember) {
+    const valid = ['home', 'workout', 'diet', 'change', 'profile'];
+    if (!valid.includes(tab)) tab = 'home';
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + tab));
-    document.getElementById('appMain').scrollTop = 0;
-});
+    const m = document.getElementById('appMain'); if (m) m.scrollTop = 0;
+    if (remember) { try { sessionStorage.setItem(TAB_KEY, tab); } catch (_) {} }
+}
+document.querySelectorAll('.nav-item').forEach(btn => btn.onclick = () => activateTab(btn.dataset.tab, true));
 
 // ============================================================
 //  아이콘 + 유틸
@@ -1083,6 +1087,8 @@ applyTheme(currentTheme());   // 초기 테마 적용(로고 포함)
         state = blankState(); applyCurrentUser(); loadLocalExtras(); seedIfEmpty();
     }
     render();
+    // 새로고침(당겨서 새로고침 포함) 후에도 마지막 탭 유지
+    try { activateTab(sessionStorage.getItem(TAB_KEY) || 'home', false); } catch (_) {}
 })();
 
 })();

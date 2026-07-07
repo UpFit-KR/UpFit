@@ -25,9 +25,17 @@
         }
 
         html, body { height: 100%; font-family: var(--font); }
+        /* 하단 흰 여백 방지 + 스크롤/바운스 차단 */
+        html { background: var(--ink-950); }
+        body {
+            background: var(--ink-950);
+            overflow: hidden;
+            overscroll-behavior: none;
+            position: fixed; inset: 0; width: 100%;
+        }
 
         .intro {
-            min-height: 100vh; min-height: 100dvh;
+            height: 100%;
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
             padding: 24px;
