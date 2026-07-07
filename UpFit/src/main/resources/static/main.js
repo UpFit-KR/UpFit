@@ -5,16 +5,20 @@
    · 운동: 종목 콤보박스(사용자 추가) + 무게/횟수/세트, 달력·목록 보기
    · 비교: 같은 종목의 직전 세션 대비 볼륨 등락을 증권형으로 표시
              (증가=빨강 ▲ / 감소=파랑 ▼)
-   · 현재 데이터 저장은 localStorage. 백엔드(스프링부트) 연동 시
-     load()/save() 및 각 add/del 계열 함수만 API 호출로 교체하면 됨.
+   · 데이터: 로그인(토큰+uid) 시 스프링부트 API(/workout, /meal, /exercise)로
+     조회·생성·삭제. 토큰이 없으면 로컬 데모(샘플 시드)로 자동 폴백.
+     체중·신체정보는 아직 로컬 보관(UF_LOCAL_V1).
+   · 테마: 다크(기본)/라이트 — 설정에서 전환, 로고도 라이트 버전으로 교체.
    ============================================================ */
 
 (function () {
 'use strict';
 
 // ---------- 상수 ----------
-const STORE_KEY = 'UF_STATE_V1';
+const STORE_KEY = 'UF_STATE_V1';   // (게스트/데모) 로컬 전체 상태
+const LOCAL_KEY = 'UF_LOCAL_V1';   // 체중·신체정보 등 백엔드 미연동 항목 (로그인 모드에서도 로컬 보관)
 const SEED_FLAG = 'UF_SEEDED_V1';
+const THEME_KEY = 'UF_THEME';
 const LOGIN_PAGE = 'login.html';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const MEAL_TYPES = [
@@ -23,6 +27,47 @@ const MEAL_TYPES = [
     { key: 'dinner',    label: '저녁' },
     { key: 'snack',     label: '간식' }
 ];
+
+// ============================================================
+//  백엔드 연동 (운동/식단/종목 — users.id 를 외래키로 사용)
+//   · 토큰(accessToken) + uid 가 있으면 실서버 모드,
+//     없으면 로컬 데모 모드(샘플 시드)로 자동 폴백.
+// ============================================================
+const CFG = window.APP_CONFIG || {};
+const BACKEND_BASE = CFG.BACKEND_BASE || '';
+function getToken() { return localStorage.getItem('accessToken'); }
+function getUid() { try { return (JSON.parse(localStorage.getItem('currentUser') || '{}').uid) || ''; } catch (_) { return ''; } }
+let API_MODE = !!getToken() && !!getUid();
+
+async function apiReq(method, path, body) {
+    const res = await fetch(BACKEND_BASE + path, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+        body: body != null ? JSON.stringify(body) : undefined
+    });
+    if (res.status === 401 || res.status === 403) { const e = new Error('AUTH'); e.auth = true; throw e; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const txt = await res.text();
+    return txt ? JSON.parse(txt) : null;
+}
+const api = {
+    listWorkouts:  ()   => apiReq('GET',    `/workout/${getUid()}`),
+    addWorkout:    (d)  => apiReq('POST',   `/workout/${getUid()}`, d),
+    delWorkout:    (id) => apiReq('DELETE', `/workout/${getUid()}/${id}`),
+    listMeals:     ()   => apiReq('GET',    `/meal/${getUid()}`),
+    addMeal:       (d)  => apiReq('POST',   `/meal/${getUid()}`, d),
+    delMeal:       (id) => apiReq('DELETE', `/meal/${getUid()}/${id}`),
+    listExercises: ()   => apiReq('GET',    `/exercise/${getUid()}`),
+    addExercise:   (nm) => apiReq('POST',   `/exercise/${getUid()}`, { name: nm }),
+    delExercise:   (id) => apiReq('DELETE', `/exercise/${getUid()}/${id}`)
+};
+
+// DTO ↔ 화면 레코드 매핑 (서버의 workoutDate/mealDate ↔ 화면의 date)
+function fromWorkoutDTO(d) { return { id: d.id, date: d.workoutDate, exercise: d.exercise, weight: d.weight, reps: d.reps, sets: d.sets, memo: d.memo || '' }; }
+function toWorkoutDTO(r)   { return { workoutDate: r.date, exercise: r.exercise, weight: r.weight, reps: r.reps, sets: r.sets, memo: r.memo || '' }; }
+function fromMealDTO(d)    { return { id: d.id, date: d.mealDate, mealType: d.mealType, name: d.name, kcal: d.kcal, carb: d.carb, protein: d.protein, fat: d.fat }; }
+function toMealDTO(r)      { return { mealDate: r.date, mealType: r.mealType, name: r.name, kcal: r.kcal, carb: r.carb, protein: r.protein, fat: r.fat }; }
+let exIdByName = {};   // 종목명 → 서버 id (삭제용)
 
 // ---------- 날짜 유틸 ----------
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -47,16 +92,10 @@ const ui = {
 };
 function firstOfThisMonth() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; }
 
-function load() {
-    try { state = JSON.parse(localStorage.getItem(STORE_KEY)); } catch (_) { state = null; }
-    if (!state) state = { exercises: [], workouts: [], meals: [], bodyLogs: [], profile: {} };
-    state.exercises = state.exercises || [];
-    state.workouts = state.workouts || [];
-    state.meals = state.meals || [];
-    state.bodyLogs = state.bodyLogs || [];
-    state.profile = state.profile || {};
+function blankState() { return { exercises: [], workouts: [], meals: [], bodyLogs: [], profile: {} }; }
 
-    // 로그인 사용자 정보 반영
+// 로그인 사용자 정보(이름/이메일) 반영
+function applyCurrentUser() {
     try {
         const cu = JSON.parse(localStorage.getItem('currentUser') || 'null');
         if (cu) {
@@ -66,10 +105,111 @@ function load() {
     } catch (_) {}
     if (!state.profile.name) state.profile.name = '회원';
 }
-function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+// 체중·신체정보(백엔드 미연동) 로컬 로드/저장
+function loadLocalExtras() {
+    try {
+        const o = JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}');
+        state.bodyLogs = o.bodyLogs || [];
+        if (o.height != null) state.profile.height = o.height;
+        if (o.targetWeight != null) state.profile.targetWeight = o.targetWeight;
+    } catch (_) { state.bodyLogs = []; }
+}
+function saveLocalExtras() {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({
+        bodyLogs: state.bodyLogs,
+        height: state.profile.height,
+        targetWeight: state.profile.targetWeight
+    }));
+}
+
+// 데모(로컬 전체 상태) 저장
+function saveDemo() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+// 메인 로드: 실서버 모드면 백엔드 조회, 아니면 데모
+async function load() {
+    state = blankState();
+    applyCurrentUser();
+
+    if (API_MODE) {
+        try {
+            const [ws, ms, exs] = await Promise.all([api.listWorkouts(), api.listMeals(), api.listExercises()]);
+            state.workouts = (ws || []).map(fromWorkoutDTO);
+            state.meals = (ms || []).map(fromMealDTO);
+            state.exercises = (exs || []).map(e => e.name);
+            exIdByName = {};
+            (exs || []).forEach(e => { exIdByName[e.name] = e.id; });
+            loadLocalExtras();   // 체중/신체정보는 로컬
+            return;
+        } catch (err) {
+            if (err && err.auth) {   // 토큰 만료 → 로그인으로
+                localStorage.removeItem('accessToken');
+                window.location.replace(LOGIN_PAGE);
+                return;
+            }
+            console.warn('백엔드 조회 실패 → 로컬 데모로 전환:', err.message);
+            API_MODE = false;   // 이후 조작도 로컬로
+        }
+    }
+    // 데모 모드
+    try { const s = JSON.parse(localStorage.getItem(STORE_KEY)); if (s) state = s; } catch (_) {}
+    state.exercises = state.exercises || [];
+    state.workouts = state.workouts || [];
+    state.meals = state.meals || [];
+    state.bodyLogs = state.bodyLogs || [];
+    state.profile = state.profile || {};
+    applyCurrentUser();
+    seedIfEmpty();
+}
+
+// ============================================================
+//  데이터 조작 (실서버 ↔ 데모 공통 인터페이스)
+// ============================================================
+async function addWorkoutRec(rec) {
+    if (API_MODE) {
+        const dto = await api.addWorkout(toWorkoutDTO(rec));
+        state.workouts.push(fromWorkoutDTO(dto));
+    } else {
+        state.workouts.push(Object.assign({ id: uid() }, rec)); saveDemo();
+    }
+}
+async function delWorkoutRec(id) {
+    if (API_MODE) await api.delWorkout(id);
+    state.workouts = state.workouts.filter(w => String(w.id) !== String(id));
+    if (!API_MODE) saveDemo();
+}
+async function addMealRec(rec) {
+    if (API_MODE) {
+        const dto = await api.addMeal(toMealDTO(rec));
+        state.meals.push(fromMealDTO(dto));
+    } else {
+        state.meals.push(Object.assign({ id: uid() }, rec)); saveDemo();
+    }
+}
+async function delMealRec(id) {
+    if (API_MODE) await api.delMeal(id);
+    state.meals = state.meals.filter(m => String(m.id) !== String(id));
+    if (!API_MODE) saveDemo();
+}
+async function addExerciseType(name) {
+    if (API_MODE) {
+        const dto = await api.addExercise(name);
+        state.exercises.push(dto.name); exIdByName[dto.name] = dto.id;
+    } else {
+        state.exercises.push(name); saveDemo();
+    }
+}
+// 체중/신체정보(로컬 항목) 저장
+function persistExtras() { if (API_MODE) saveLocalExtras(); else saveDemo(); }
+// 에러 메시지 표준화
+function errMsg(err, fallback) {
+    if (err && err.auth) return '로그인이 만료되었어요. 다시 로그인해 주세요';
+    return fallback || '문제가 발생했어요';
+}
 
 // ---------- 최초 1회 샘플 데이터 ----------
 function seedIfEmpty() {
+    if (API_MODE) return;                          // 실서버 모드에선 시드하지 않음
     if (localStorage.getItem(SEED_FLAG)) return;
     localStorage.setItem(SEED_FLAG, '1');
     if (state.workouts.length || state.meals.length) return;
@@ -99,7 +239,7 @@ function seedIfEmpty() {
     state.bodyLogs = [B(shiftDays(-6), 78.5), B(shiftDays(-4), 78.2), B(shiftDays(-2), 77.9), B(shiftDays(0), 77.6)];
     state.profile.height = state.profile.height || 178;
     state.profile.targetWeight = state.profile.targetWeight || 74;
-    save();
+    saveDemo();
 }
 
 // ---------- 계산 ----------
@@ -448,7 +588,7 @@ function renderProfile() {
     document.getElementById('view-profile').innerHTML = `
     <div class="view-title">내 정보</div>
     <div class="profile-top">
-        <img src="icons/upfit.png" alt="">
+        <img id="pfAvatar" src="${logoSrc()}" alt="">
         <div>
             <div class="pt-name">${esc(p.name || '회원')}</div>
             <div class="pt-email">${esc(p.email || '소셜 계정으로 로그인됨')}</div>
@@ -474,25 +614,34 @@ function renderProfile() {
     </div>
 
     <div class="section">
+        <div class="card menu-card">
+            <button class="menu-item" id="profileSetBtn">
+                <span class="mi-ico">${icon('user')}</span>
+                <span class="mi-label">프로필 설정</span>
+                <span class="mi-chev">${icon('chevR')}</span>
+            </button>
+            <button class="menu-item" id="settingsBtn">
+                <span class="mi-ico">${icon('gear')}</span>
+                <span class="mi-label">설정</span>
+                <span class="mi-chev">${icon('chevR')}</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="section">
         <div class="card">
-            <button class="btn block ghost danger" id="resetBtn" style="margin-bottom:10px">데이터 초기화</button>
             <button class="btn block" id="logoutBtn">로그아웃</button>
         </div>
     </div>`;
 
     document.getElementById('editBodyBtn').onclick = openProfileSheet;
+    document.getElementById('profileSetBtn').onclick = openProfileSheet;
+    document.getElementById('settingsBtn').onclick = openSettingsSheet;
     document.getElementById('logoutBtn').onclick = () => {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('currentUser');
         localStorage.removeItem('auth');
         window.location.replace(LOGIN_PAGE);
-    };
-    document.getElementById('resetBtn').onclick = () => {
-        if (confirm('모든 운동·식단·체중 기록을 삭제할까요? 되돌릴 수 없어요.')) {
-            localStorage.removeItem(STORE_KEY);
-            localStorage.removeItem(SEED_FLAG);
-            load(); save(); render(); toast('데이터를 초기화했어요');
-        }
     };
 }
 
@@ -684,18 +833,22 @@ function openWorkoutSheet(date) {
         newWrap.style.display = newWrap.style.display === 'none' ? 'block' : 'none';
         if (newWrap.style.display === 'block') document.getElementById('wNewEx').focus();
     };
-    document.getElementById('wNewExSave').onclick = () => {
+    document.getElementById('wNewExSave').onclick = async () => {
         const name = document.getElementById('wNewEx').value.trim();
         if (!name) return toast('종목 이름을 입력하세요');
         if (state.exercises.includes(name)) { toast('이미 있는 종목이에요'); return; }
-        state.exercises.push(name); save();
-        const sel = document.getElementById('wExercise');
-        sel.innerHTML = state.exercises.map(e => `<option value="${esc(e)}" ${e === name ? 'selected' : ''}>${esc(e)}</option>`).join('');
-        document.getElementById('wNewEx').value = '';
-        newWrap.style.display = 'none';
-        toast(`'${name}' 종목을 추가했어요`);
+        const btn = document.getElementById('wNewExSave'); btn.disabled = true;
+        try {
+            await addExerciseType(name);
+            const sel = document.getElementById('wExercise');
+            sel.innerHTML = state.exercises.map(e => `<option value="${esc(e)}" ${e === name ? 'selected' : ''}>${esc(e)}</option>`).join('');
+            document.getElementById('wNewEx').value = '';
+            newWrap.style.display = 'none';
+            toast(`'${name}' 종목을 추가했어요`);
+        } catch (err) { toast(errMsg(err, '종목 추가에 실패했어요')); }
+        finally { btn.disabled = false; }
     };
-    document.getElementById('wSave').onclick = () => {
+    document.getElementById('wSave').onclick = async () => {
         const exercise = document.getElementById('wExercise').value;
         const weight = parseFloat(document.getElementById('wWeight').value);
         const reps = parseInt(document.getElementById('wReps').value, 10);
@@ -703,8 +856,11 @@ function openWorkoutSheet(date) {
         const dt = document.getElementById('wDate').value;
         if (!exercise) return toast('종목을 선택하세요');
         if (!weight || !reps || !sets) return toast('무게·횟수·세트를 입력하세요');
-        state.workouts.push({ id: uid(), date: dt, exercise, weight, reps, sets, memo: document.getElementById('wMemo').value.trim() });
-        save(); closeSheet(); render(); toast('운동 기록을 저장했어요');
+        const btn = document.getElementById('wSave'); btn.disabled = true;
+        try {
+            await addWorkoutRec({ date: dt, exercise, weight, reps, sets, memo: document.getElementById('wMemo').value.trim() });
+            closeSheet(); render(); toast('운동 기록을 저장했어요');
+        } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
     };
 }
 
@@ -735,17 +891,20 @@ function openMealSheet(date) {
         document.querySelectorAll('#mealChips .chip').forEach(x => x.classList.remove('active'));
         c.classList.add('active'); mealType = c.dataset.meal;
     });
-    document.getElementById('mSave').onclick = () => {
+    document.getElementById('mSave').onclick = async () => {
         const name = document.getElementById('mName').value.trim();
         const kcal = parseInt(document.getElementById('mKcal').value, 10) || 0;
         if (!name) return toast('음식명을 입력하세요');
-        state.meals.push({
-            id: uid(), date: document.getElementById('mDate').value, mealType, name, kcal,
-            carb: parseInt(document.getElementById('mCarb').value, 10) || 0,
-            protein: parseInt(document.getElementById('mProtein').value, 10) || 0,
-            fat: parseInt(document.getElementById('mFat').value, 10) || 0
-        });
-        save(); closeSheet(); render(); toast('식단 기록을 저장했어요');
+        const btn = document.getElementById('mSave'); btn.disabled = true;
+        try {
+            await addMealRec({
+                date: document.getElementById('mDate').value, mealType, name, kcal,
+                carb: parseInt(document.getElementById('mCarb').value, 10) || 0,
+                protein: parseInt(document.getElementById('mProtein').value, 10) || 0,
+                fat: parseInt(document.getElementById('mFat').value, 10) || 0
+            });
+            closeSheet(); render(); toast('식단 기록을 저장했어요');
+        } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
     };
 }
 
@@ -764,42 +923,74 @@ function openBodySheet() {
         if (!weight) return toast('체중을 입력하세요');
         const exist = state.bodyLogs.find(b => b.date === dt);
         if (exist) exist.weight = weight; else state.bodyLogs.push({ id: uid(), date: dt, weight });
-        save(); closeSheet(); render(); toast('체중을 기록했어요');
+        persistExtras(); closeSheet(); render(); toast('체중을 기록했어요');
     };
 }
 
-// 신체 정보 수정
+// 프로필 설정 (표시 이름 + 신체 정보)
 function openProfileSheet() {
     const p = state.profile;
     openSheet(`
-        <h3>신체 정보 수정</h3>
-        <div class="sheet-desc">키와 목표 체중을 설정하세요.</div>
-        <div class="field"><label>키 (cm)</label><input class="input" id="pHeight" type="number" inputmode="numeric" value="${p.height || ''}" placeholder="178"></div>
-        <div class="field"><label>목표 체중 (kg)</label><input class="input" id="pTarget" type="number" inputmode="decimal" value="${p.targetWeight || ''}" placeholder="74"></div>
+        <h3>프로필 설정</h3>
+        <div class="sheet-desc">표시 이름과 신체 정보를 설정하세요.</div>
+        <div class="field"><label>이름</label><input class="input" id="pName" value="${esc(p.name || '')}" placeholder="이름"></div>
+        <div class="field-row">
+            <div class="field"><label>키 (cm)</label><input class="input" id="pHeight" type="number" inputmode="numeric" value="${p.height || ''}" placeholder="178"></div>
+            <div class="field"><label>목표 체중 (kg)</label><input class="input" id="pTarget" type="number" inputmode="decimal" value="${p.targetWeight || ''}" placeholder="74"></div>
+        </div>
         <button class="btn grad block" id="pSave" style="margin-top:6px">저장</button>
     `);
     document.getElementById('pSave').onclick = () => {
+        const nm = document.getElementById('pName').value.trim();
+        state.profile.name = nm || state.profile.name;
         state.profile.height = parseInt(document.getElementById('pHeight').value, 10) || null;
         state.profile.targetWeight = parseFloat(document.getElementById('pTarget').value) || null;
-        save(); closeSheet(); render(); toast('신체 정보를 저장했어요');
+        // 표시 이름은 로그인 사용자 정보에도 반영(새로고침 후에도 유지)
+        try {
+            const cu = JSON.parse(localStorage.getItem('currentUser') || '{}');
+            cu.name = state.profile.name; localStorage.setItem('currentUser', JSON.stringify(cu));
+        } catch (_) {}
+        persistExtras(); closeSheet(); render(); toast('프로필을 저장했어요');
     };
+}
+
+// 설정 (다크/라이트 테마)
+function openSettingsSheet() {
+    const cur = currentTheme();
+    openSheet(`
+        <h3>설정</h3>
+        <div class="sheet-desc">화면 테마를 선택하세요.</div>
+        <div class="field">
+            <label>테마</label>
+            <div class="seg theme-seg" id="themeSeg">
+                <button data-theme="light" class="${cur === 'light' ? 'active' : ''}">라이트</button>
+                <button data-theme="dark" class="${cur === 'dark' ? 'active' : ''}">다크</button>
+            </div>
+        </div>
+        <button class="btn block" id="setDone" style="margin-top:6px">완료</button>
+    `);
+    document.querySelectorAll('#themeSeg button').forEach(b => b.onclick = () => {
+        applyTheme(b.dataset.theme, true);
+        document.querySelectorAll('#themeSeg button').forEach(x => x.classList.toggle('active', x === b));
+    });
+    document.getElementById('setDone').onclick = closeSheet;
 }
 
 // ============================================================
 //  삭제 위임 (운동/식단)
 // ============================================================
-document.getElementById('appMain').addEventListener('click', e => {
+document.getElementById('appMain').addEventListener('click', async e => {
     const dw = e.target.closest('[data-del-workout]');
     const dm = e.target.closest('[data-del-meal]');
     if (dw) {
         if (confirm('이 운동 기록을 삭제할까요?')) {
-            state.workouts = state.workouts.filter(w => w.id !== dw.dataset.delWorkout);
-            save(); render(); toast('삭제했어요');
+            try { await delWorkoutRec(dw.dataset.delWorkout); render(); toast('삭제했어요'); }
+            catch (err) { toast(errMsg(err, '삭제에 실패했어요')); }
         }
     } else if (dm) {
         if (confirm('이 식단 기록을 삭제할까요?')) {
-            state.meals = state.meals.filter(m => m.id !== dm.dataset.delMeal);
-            save(); render(); toast('삭제했어요');
+            try { await delMealRec(dm.dataset.delMeal); render(); toast('삭제했어요'); }
+            catch (err) { toast(errMsg(err, '삭제에 실패했어요')); }
         }
     }
 });
@@ -829,6 +1020,8 @@ function icon(name) {
         trash: `<svg viewBox="0 0 24 24" ${s}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg>`,
         chevL: `<svg viewBox="0 0 24 24" ${s}><path d="m15 18-6-6 6-6"/></svg>`,
         chevR: `<svg viewBox="0 0 24 24" ${s}><path d="m9 18 6-6-6-6"/></svg>`,
+        user: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>`,
+        gear: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg>`,
         dot: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="12" r="3.5"/></svg>`
     };
     return map[name] || '';
@@ -851,14 +1044,45 @@ function toast(msg) {
 }
 
 // ============================================================
+//  테마 (다크/라이트)
+// ============================================================
+function currentTheme() {
+    const saved = localStorage.getItem(THEME_KEY);
+    return (saved === 'light' || saved === 'dark') ? saved : 'dark';   // 기본: 다크(현재 디자인)
+}
+function logoSrc() { return currentTheme() === 'light' ? 'icons/upfit-light.png' : 'icons/upfit.png'; }
+function refreshLogos() {
+    const src = logoSrc();
+    document.querySelectorAll('.app-header .logo, #pfAvatar').forEach(img => { img.src = src; });
+}
+function applyTheme(theme, persist) {
+    if (theme !== 'light' && theme !== 'dark') theme = 'dark';
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#eef2f8' : '#071120');
+    if (persist) localStorage.setItem(THEME_KEY, theme);
+    refreshLogos();
+}
+
+// ============================================================
 //  시작
 // ============================================================
-// 인증 게이트: 토큰이 없으면 게스트로 둘러보기 허용(개발 편의).
-//   ▸ 실제 서비스에서 강제하려면 아래 주석을 해제하세요.
-// if (!localStorage.getItem('accessToken')) { window.location.replace(LOGIN_PAGE); }
+// 인증 게이트: 토큰이 없으면 게스트(데모)로 둘러보기 허용.
+//   ▸ 로그인 강제하려면 아래 주석을 해제하세요.
+// if (!getToken()) { window.location.replace(LOGIN_PAGE); }
 
-load();
-seedIfEmpty();
-render();
+applyTheme(currentTheme());   // 초기 테마 적용(로고 포함)
+
+(async function init() {
+    try {
+        await load();
+    } catch (err) {
+        console.error('초기 로드 실패:', err);
+        API_MODE = false;
+        state = blankState(); applyCurrentUser(); loadLocalExtras(); seedIfEmpty();
+    }
+    render();
+})();
 
 })();

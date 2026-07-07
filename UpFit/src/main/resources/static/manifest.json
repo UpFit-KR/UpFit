@@ -3,7 +3,7 @@
   "dir": "ltr",
   "name": "UpFit",
   "short_name": "UpFit",
-  "description": "웨이트 트레이닝과 식단을 기록하고 전후 변화를 한눈에 비교하세요",
+  "description": "운동과 식단을 기록하고 전후 변화를 한눈에 비교하세요",
   "start_url": "index.html",
   "scope": "./",
   "display": "standalone",
