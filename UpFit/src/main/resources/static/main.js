@@ -15,7 +15,8 @@
      - 운동을 하나씩 만들지 않고, 날짜 안에 "운동 기록(세션)"을 만든다.
        세션이 시작/종료 시각 · 총 운동 시간 · 컨디션(0~100)을 보유.
      - 하루에 세션 여러 개 가능(오전/오후/저녁) → 달력 날짜 클릭 시 세션 목록 표시.
-     - 세션 하나 안에서 운동을 여러 개 먼저 만들어 두고 한 번에 저장.
+     - 흐름: 날짜(세션)를 먼저 생성 → 생성된 세션 안에서 운동을 하나씩 추가/수정/삭제.
+       세션 폼(1차 시트)과 운동 폼(2차 시트)은 완전히 분리되어 있다.
      - 백엔드: /session/{uid} (WorkoutSessionController)
 
    · [바텀시트 3단 스냅] 네이버 지도앱 방식
@@ -95,6 +96,11 @@ const api = {
     updSession:      (id, d)     => apiReq('PUT',    `/session/${UID}/${id}`, d),
     delSession:      (id)        => apiReq('DELETE', `/session/${UID}/${id}`),
     reorderSessions: (date, ids) => apiReq('PUT',    `/session/${UID}/reorder?date=${encodeURIComponent(date)}`, ids),
+    // 세션 내부 운동 — 세션이 이미 생성된 뒤에만 사용 (sid = 세션 id)
+    addWorkout:      (sid, d)      => apiReq('POST',   `/session/${UID}/${sid}/workout`, d),
+    updWorkout:      (sid, wid, d) => apiReq('PUT',    `/session/${UID}/${sid}/workout/${wid}`, d),
+    delWorkout:      (sid, wid)    => apiReq('DELETE', `/session/${UID}/${sid}/workout/${wid}`),
+    reorderWorkouts: (sid, ids)    => apiReq('PUT',    `/session/${UID}/${sid}/workout/reorder`, ids),
     listMeals:     ()   => apiReq('GET',    `/meal/${UID}`),
     addMeal:       (d)  => apiReq('POST',   `/meal/${UID}`, d),
     delMeal:       (id) => apiReq('DELETE', `/meal/${UID}/${id}`),
@@ -148,8 +154,11 @@ function toSessionDTO(s) {
         conditionScore: s.condition == null ? null : s.condition,
         bodyParts: (s.bodyParts || []).join(','),   // [B][E] edit by smsong : 부위는 세션 단위
         title: s.title || null,
-        memo: s.memo || '',
-        workouts: (s.workouts || []).map(toWorkoutDTO)
+        memo: s.memo || ''
+        // NOTE: workouts 는 보내지 않는다(null).
+        //   세션을 먼저 만들고 → 그 안에서 운동을 개별 API 로 추가/수정/삭제하는 흐름이라
+        //   세션 저장은 "메타(날짜/시간/컨디션/부위/메모)"만 다룬다.
+        //   서버는 workouts == null 이면 기존 운동 목록을 건드리지 않는다.
     };
 }
 // [E] edit by smsong
@@ -291,6 +300,32 @@ async function saveSessionRec(draft) {
 async function delSessionRec(id) {
     await api.delSession(id);
     state.sessions = state.sessions.filter(s => String(s.id) !== String(id));
+}
+// 세션 내부 운동 — 세션이 이미 존재할 때만 호출된다. 서버 저장 후 로컬 state 동기화.
+function sessionById(id) { return state.sessions.find(s => String(s.id) === String(id)); }
+async function addWorkoutToSession(sid, item) {
+    const dto = await api.addWorkout(sid, toWorkoutDTO(item));
+    const s = sessionById(sid);
+    if (s) (s.workouts = s.workouts || []).push(fromWorkoutDTO(dto));
+}
+async function updWorkoutInSession(sid, wid, item) {
+    const dto = await api.updWorkout(sid, wid, toWorkoutDTO(item));
+    const s = sessionById(sid);
+    if (!s) return;
+    const i = s.workouts.findIndex(w => String(w.id) === String(wid));
+    if (i >= 0) s.workouts[i] = fromWorkoutDTO(dto);
+}
+async function delWorkoutInSession(sid, wid) {
+    await api.delWorkout(sid, wid);
+    const s = sessionById(sid);
+    if (s) s.workouts = s.workouts.filter(w => String(w.id) !== String(wid));
+}
+// 세션 내부 운동 순서 저장
+async function commitWorkoutOrder(sid, ids) {
+    const updated = await api.reorderWorkouts(sid, ids.map(Number));
+    const s = sessionById(sid);
+    if (!s) return;
+    s.workouts = (updated || []).map(fromWorkoutDTO);
 }
 // [E] edit by smsong
 async function addMealRec(rec) {
@@ -760,15 +795,16 @@ function sessionCardHtml(s, draggable) {
     </div>`;
 }
 
-// 세션 안의 운동 한 줄 (상세 시트 내부에서 사용)
-function workoutRowHtml(w, sessionId, k) {
+// 세션 안의 운동 한 줄 (상세 시트 내부에서 사용).
+// 운동은 항상 서버에 저장된 상태이므로 식별자로 w.id 를 그대로 쓴다.
+function workoutRowHtml(w, sessionId) {
     const vol = volumeOf(w);
     const prev = prevExerciseVolume(w.exercise, sessionId);
     const weightTxt = w.bodyweight ? '맨몸' : `${w.weight}kg`;
     // 부위 태그는 세션 카드/세션 폼에만 표시 → 운동 행에는 맨몸 표시만 남긴다
     const tags = w.bodyweight ? [`<span class="bw">맨몸</span>`] : [];
     return `
-    <div class="rec" data-reorder-id="${k}">
+    <div class="rec" data-reorder-id="${w.id}">
         <div class="drag-handle" title="드래그하여 순서 변경">${icon('grip')}</div>
         <div class="rec-main">
             <div class="rec-title">${esc(w.exercise)} ${deltaChip(vol, prev, 'kg')}</div>
@@ -778,8 +814,8 @@ function workoutRowHtml(w, sessionId, k) {
         <div class="rec-right">
             <div class="rec-vol tabnum">${vol}<span class="u"> kg</span></div>
             <div class="rec-acts">
-                <button class="rec-del" data-edit-w="${k}" title="수정">${icon('pencil')}</button>
-                <button class="rec-del" data-rm-w="${k}" title="삭제">${icon('trash')}</button>
+                <button class="rec-del" data-edit-w="${w.id}" title="수정">${icon('pencil')}</button>
+                <button class="rec-del" data-rm-w="${w.id}" title="삭제">${icon('trash')}</button>
             </div>
         </div>
     </div>`;
@@ -1236,6 +1272,7 @@ function createSheet(sheetId, backdropId) {
     function open(html, opts) {
         opts = opts || {};
         clearTimeout(closeTimer);
+        const reopening = snap !== 'closed';   // 이미 열려 있으면 내용만 교체
         sheet.innerHTML = `
             <div class="sheet-drag">
                 <div class="sheet-grip"></div>
@@ -1244,11 +1281,17 @@ function createSheet(sheetId, backdropId) {
             </div>
             <div class="sheet-body">${html}</div>`;
 
-        // 닫힘 위치에서 시작 → 다음 프레임에 목표 단계로 애니메이션
-        sheet.classList.remove('full');
-        applyY(points().closed);
-        backdrop.classList.add('open');
-        requestAnimationFrame(() => setSnap(opts.snap || 'half', true));
+        if (reopening) {
+            // 세션 생성 직후 상세 모드로 바뀌는 경우 등 — 단계는 유지하고 내용만 바꾼다
+            const bd = body(); if (bd) bd.scrollTop = 0;
+            setSnap(snap, false);
+        } else {
+            // 닫힘 위치에서 시작 → 다음 프레임에 목표 단계로 애니메이션
+            sheet.classList.remove('full');
+            applyY(points().closed);
+            backdrop.classList.add('open');
+            requestAnimationFrame(() => setSnap(opts.snap || 'half', true));
+        }
         wireDrag();
     }
     function close() {
@@ -1354,35 +1397,43 @@ function closeSheet() { Sheet1.close(); }
 // [E] edit by smsong
 
 // ============================================================
-//  [B] edit by smsong — 1차 시트 : 운동 기록(세션) 폼
-//    · 날짜 / 시작·종료 시각 / 총 운동 시간 / 컨디션(0~100 드래그) / 운동 부위 / 메모
-//    · 그 아래에 이 기록에 담긴 운동 목록 (드래그 정렬 · 수정 · 삭제)
-//    · 운동 입력은 여기 두지 않고 2차 시트(openWorkoutSheet)로 완전히 분리
-//    · 운동은 초안(로컬)으로 여러 개 담아 두고 '저장' 한 번에 서버 반영
-//      → 서버가 workouts 배열을 id 기준으로 동기화(추가/수정/삭제)
+//  [B] edit by smsong — 1차 시트 : 운동 기록(날짜/세션) 폼
+//    흐름: 세션을 먼저 만든다 → 만들어진 세션 안에서 운동을 추가한다.
+//      · 신규      : 날짜 / 시작·종료 / 총 시간 / 컨디션(0~100 드래그) / 부위 / 메모 만 입력
+//                    → '운동 기록 만들기' 로 서버에 세션 생성(운동 0개)
+//                    → 곧바로 같은 시트가 상세 모드로 바뀌어 운동을 추가할 수 있다.
+//      · 상세/수정 : 위 메타 + 이 기록에 담긴 운동 목록(추가/수정/삭제/드래그 정렬)
+//                    운동 조작은 즉시 서버에 반영된다(/session/{uid}/{sessionId}/workout).
+//    운동 입력 폼은 2차 시트(openWorkoutSheet)로 완전히 분리.
 // ============================================================
 function openSessionEditor(sessionId, date) {
-    const existing = sessionId ? state.sessions.find(s => String(s.id) === String(sessionId)) : null;
+    const isNew = !sessionId;
+    const cur = isNew ? null : sessionById(sessionId);
+    if (!isNew && !cur) return;   // 삭제된 기록을 다시 여는 경우 방어
 
-    // 초안(draft): 저장 전까지 화면에서만 존재. 기존 기록은 깊은 복사로 원본 보호.
-    const draft = existing ? JSON.parse(JSON.stringify(existing)) : {
+    // 메타 초안. 운동 목록은 초안으로 들고 있지 않고 항상 state(서버 반영본)를 읽는다.
+    const draft = isNew ? {
         id: null, date: date || todayStr(),
         startTime: '', endTime: '', durationMin: null,
-        condition: DEFAULT_CONDITION, bodyParts: [], title: '', memo: '', workouts: []
+        condition: DEFAULT_CONDITION, bodyParts: [], title: '', memo: ''
+    } : {
+        id: cur.id, date: cur.date,
+        startTime: cur.startTime, endTime: cur.endTime, durationMin: cur.durationMin,
+        condition: cur.condition == null ? DEFAULT_CONDITION : cur.condition,
+        bodyParts: (cur.bodyParts || []).slice(), title: cur.title, memo: cur.memo
     };
-    // 로컬 키(_k): 아직 서버 id 가 없는 운동도 목록에서 식별/정렬하기 위함
-    draft.workouts = (draft.workouts || []).map(w => Object.assign({}, w, { _k: w.id != null ? 'i' + w.id : 'n' + uid() }));
-
-    const selectedParts = new Set(draft.bodyParts || []);
+    const selectedParts = new Set(draft.bodyParts);
 
     openSheet(editorBodyHtml(), {
-        title: existing ? '운동 기록 상세' : '운동 기록 추가',
-        desc: existing ? '시간·컨디션·부위와 운동 목록을 관리해요.' : '먼저 시간·컨디션·부위를 정하고, 운동을 담아 저장하세요.',
+        title: isNew ? '운동 기록 만들기' : '운동 기록 상세',
+        desc: isNew
+            ? '먼저 날짜·시간·컨디션·부위를 정해 기록을 만드세요. 운동은 만든 다음에 추가해요.'
+            : '시간·컨디션·부위를 수정하고, 이 기록 안에 운동을 추가하세요.',
         snap: 'half'
     });
 
     bindEditor();
-    paintList();
+    if (!isNew) paintList();
 
     // ---------- HTML ----------
     function editorBodyHtml() {
@@ -1391,8 +1442,8 @@ function openSessionEditor(sessionId, date) {
         <div class="field"><label>날짜</label><input class="input" id="seDate" type="date" value="${draft.date}"></div>
 
         <div class="field-row">
-            <div class="field"><label>시작 시간</label><input class="input" id="seStart" type="time" value="${draft.startTime}"></div>
-            <div class="field"><label>종료 시간</label><input class="input" id="seEnd" type="time" value="${draft.endTime}"></div>
+            <div class="field"><label>시작 시간</label><input class="input" id="seStart" type="time" value="${draft.startTime || ''}"></div>
+            <div class="field"><label>종료 시간</label><input class="input" id="seEnd" type="time" value="${draft.endTime || ''}"></div>
             <div class="field"><label>총 시간(분)</label><input class="input" id="seDur" type="number" inputmode="numeric" placeholder="자동" value="${draft.durationMin == null ? '' : draft.durationMin}"></div>
         </div>
         <div class="hint" id="seDurHint"></div>
@@ -1414,63 +1465,60 @@ function openSessionEditor(sessionId, date) {
             <div class="chip-row" id="seParts">${BODY_PARTS.map(p => `<button class="chip sm ${selectedParts.has(p) ? 'active' : ''}" data-bp="${esc(p)}" type="button">${esc(p)}</button>`).join('')}</div>
         </div>
 
-        <div class="field"><label>기록 이름 (선택)</label><input class="input" id="seTitle" value="${esc(draft.title)}" placeholder="예: 오전 운동, 저녁 하체"></div>
-        <div class="field"><label>메모 (선택)</label><input class="input" id="seMemo" value="${esc(draft.memo)}" placeholder="그립, 통증, 특이사항 등"></div>
+        <div class="field"><label>기록 이름 (선택)</label><input class="input" id="seTitle" value="${esc(draft.title || '')}" placeholder="예: 오전 운동, 저녁 하체"></div>
+        <div class="field"><label>메모 (선택)</label><input class="input" id="seMemo" value="${esc(draft.memo || '')}" placeholder="그립, 통증, 특이사항 등"></div>
 
+        <div class="se-actions">
+            <button class="btn grad block" id="seSave">${isNew ? '운동 기록 만들기' : '변경사항 저장'}</button>
+        </div>
+
+        ${isNew ? `
+        <div class="se-locked">
+            <div class="se-locked-ico">${icon('dumbbell')}</div>
+            <div class="se-locked-txt">기록을 먼저 만들면<br>이 안에 운동을 추가할 수 있어요</div>
+        </div>` : `
         <div class="se-head">
             <h4>운동 <span class="cnt tabnum" id="seCount">0</span></h4>
             <button class="btn sm grad" id="seAddW" type="button">＋ 운동 추가</button>
         </div>
-
         <div class="reorder-list se-list" id="seList"></div>
-
         <div class="se-actions">
-            <button class="btn grad block" id="seSave">${existing ? '변경사항 저장' : '운동 기록 저장'}</button>
-            ${existing ? `<button class="btn danger block" id="seDel" style="margin-top:8px">이 운동 기록 삭제</button>` : ''}
-        </div>`;
+            <button class="btn danger block" id="seDel">이 운동 기록 삭제</button>
+        </div>`}`;
     }
 
-    // ---------- 운동 목록 그리기 ----------
+    // ---------- 운동 목록 (상세 모드에서만) ----------
     function paintList() {
         const el = document.getElementById('seList');
         if (!el) return;
-        el.innerHTML = draft.workouts.length
-            ? draft.workouts.map(w => workoutRowHtml(w, draft.id, w._k)).join('')
-            : `<div class="se-empty">아직 담은 운동이 없어요. ‘＋ 운동 추가’로 담아보세요.</div>`;
-        document.getElementById('seCount').textContent = draft.workouts.length;
+        const sess = sessionById(draft.id);
+        const list = (sess && sess.workouts) || [];
+        el.innerHTML = list.length
+            ? list.map(w => workoutRowHtml(w, draft.id)).join('')
+            : `<div class="se-empty">아직 운동이 없어요. ‘＋ 운동 추가’로 추가하세요.</div>`;
+        document.getElementById('seCount').textContent = list.length;
 
-        // 목록 내 드래그 정렬(로컬 배열만 재정렬 → 저장 시 서버 반영)
-        enableDragReorder(el, keys => {
-            const map = {};
-            draft.workouts.forEach(w => { map[w._k] = w; });
-            draft.workouts = keys.map(k => map[k]).filter(Boolean);
+        // 드래그 정렬 → 서버 저장
+        enableDragReorder(el, async ids => {
+            try { await commitWorkoutOrder(draft.id, ids); render(); }
+            catch (err) { toast(errMsg(err, '순서 저장에 실패했어요')); paintList(); }
         });
 
-        el.querySelectorAll('[data-rm-w]').forEach(b => b.onclick = ev => {
+        el.querySelectorAll('[data-rm-w]').forEach(b => b.onclick = async ev => {
             ev.stopPropagation();
-            const k = b.dataset.rmW;
-            draft.workouts = draft.workouts.filter(w => w._k !== k);
-            paintList();
+            if (!confirm('이 운동을 삭제할까요?')) return;
+            b.disabled = true;
+            try { await delWorkoutInSession(draft.id, b.dataset.rmW); paintList(); render(); toast('삭제했어요'); }
+            catch (err) { b.disabled = false; toast(errMsg(err, '삭제에 실패했어요')); }
         });
         el.querySelectorAll('[data-edit-w]').forEach(b => b.onclick = ev => {
             ev.stopPropagation();
-            openWorkoutForm(b.dataset.editW);
-        });
-    }
-
-    // 2차 시트(운동 폼) 열기. k 가 있으면 수정, 없으면 추가.
-    function openWorkoutForm(k) {
-        const target = k ? draft.workouts.find(w => w._k === k) : null;
-        openWorkoutSheet(target, item => {
-            if (target) {
-                const i = draft.workouts.findIndex(w => w._k === k);
-                if (i >= 0) draft.workouts[i] = Object.assign({}, draft.workouts[i], item);
-                toast('운동을 수정했어요');
-            } else {
-                draft.workouts.push(Object.assign({ id: null, _k: 'n' + uid() }, item));
-                toast('운동을 목록에 담았어요');
-            }
-            paintList();
+            const w = list.find(x => String(x.id) === String(b.dataset.editW));
+            if (!w) return;
+            openWorkoutSheet(w, async item => {
+                await updWorkoutInSession(draft.id, w.id, item);
+                paintList(); render(); toast('운동을 수정했어요');
+            });
         });
     }
 
@@ -1512,8 +1560,7 @@ function openSessionEditor(sessionId, date) {
         document.getElementById('seStart').addEventListener('change', () => refreshDuration(true));
         document.getElementById('seEnd').addEventListener('change', () => refreshDuration(true));
         document.getElementById('seDur').addEventListener('input', () => refreshDuration(false));
-        // 시작 시간이 비어 있으면 현재 시각을 제안(신규만)
-        if (!existing && !draft.startTime) document.getElementById('seStart').value = nowTimeStr();
+        if (isNew && !draft.startTime) document.getElementById('seStart').value = nowTimeStr();
         refreshDuration(false);
 
         // 운동 부위 다중 선택 (세션 단위)
@@ -1523,24 +1570,33 @@ function openSessionEditor(sessionId, date) {
             else { selectedParts.add(p); c.classList.add('active'); }
         });
 
-        // 운동 추가 → 2차 시트
-        document.getElementById('seAddW').onclick = () => openWorkoutForm(null);
-
-        // 저장
+        // 세션 메타 저장 (신규 = 생성 후 상세 모드로 전환)
         document.getElementById('seSave').onclick = async () => {
             syncMeta();
             if (!draft.date) return toast('날짜를 선택하세요');
-            if (!draft.workouts.length) return toast('운동을 1개 이상 담아주세요');
             const btn = document.getElementById('seSave'); btn.disabled = true;
             try {
                 const rec = await saveSessionRec(draft);
                 ui.workoutSel = rec.date;
-                closeSheet(); render();
-                toast(existing ? '운동 기록을 수정했어요' : '운동 기록을 저장했어요');
+                render();
+                if (isNew) {
+                    // 만들어진 세션을 곧바로 상세 모드로 다시 열어 운동을 추가하게 한다
+                    toast('기록을 만들었어요. 이제 운동을 추가하세요');
+                    openSessionEditor(rec.id, null);
+                } else {
+                    btn.disabled = false;
+                    toast('운동 기록을 저장했어요');
+                }
             } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
         };
 
-        // 삭제
+        // 상세 모드 전용: 운동 추가 / 기록 삭제
+        const addW = document.getElementById('seAddW');
+        if (addW) addW.onclick = () => openWorkoutSheet(null, async item => {
+            await addWorkoutToSession(draft.id, item);
+            paintList(); render(); toast('운동을 추가했어요');
+        });
+
         const delBtn = document.getElementById('seDel');
         if (delBtn) delBtn.onclick = async () => {
             if (!confirm('이 운동 기록을 삭제할까요?\n안에 담긴 운동도 함께 삭제됩니다.')) return;
@@ -1552,7 +1608,7 @@ function openSessionEditor(sessionId, date) {
         };
     }
 
-    // 화면의 입력값을 draft 로 회수
+    // 화면의 메타 입력값을 draft 로 회수
     function syncMeta() {
         draft.date = document.getElementById('seDate').value;
         draft.startTime = document.getElementById('seStart').value || '';
@@ -1568,9 +1624,9 @@ function openSessionEditor(sessionId, date) {
 
 // ============================================================
 //  2차 시트 : 운동 입력 폼 (종목 / 맨몸 / 무게 / 횟수 / 세트 / 메모)
-//    · 세션 폼과 완전히 분리된 별도 시트로, 1차 시트 위에 겹쳐 열린다.
+//    · 세션 폼과 분리된 별도 시트로, 1차 시트 위에 겹쳐 열린다.
 //    · 부위는 세션이 보유하므로 여기에는 없다.
-//    · 저장하지 않고 onApply(item) 으로 초안만 돌려준다(서버 반영은 세션 저장 시).
+//    · 이미 만들어진 세션에 대해서만 열리며, onApply 가 서버 저장을 담당한다.
 // ============================================================
 function openWorkoutSheet(initial, onApply) {
     const editing = !!initial;
@@ -1603,7 +1659,7 @@ function openWorkoutSheet(initial, onApply) {
         </div>
         <div class="field"><label>운동 메모 (선택)</label><input class="input" id="wMemo" placeholder="그립, 템포 등" value="${editing ? esc(initial.memo || '') : ''}"></div>
 
-        <button class="btn grad block" id="wApply" style="margin-top:6px">${editing ? '수정 반영' : '목록에 담기'}</button>
+        <button class="btn grad block" id="wApply" style="margin-top:6px">${editing ? '수정 저장' : '운동 추가'}</button>
         <button class="btn block" id="wCancel" style="margin-top:8px">취소</button>
     `, {
         title: editing ? '운동 수정' : '운동 추가',
@@ -1654,7 +1710,7 @@ function openWorkoutSheet(initial, onApply) {
 
     document.getElementById('wCancel').onclick = () => Sheet2.close();
 
-    document.getElementById('wApply').onclick = () => {
+    document.getElementById('wApply').onclick = async () => {
         const exercise = document.getElementById('wExercise').value;
         const bodyweight = bwChk.checked;
         const weight = bodyweight ? 0 : parseFloat(wWeight.value);
@@ -1664,12 +1720,15 @@ function openWorkoutSheet(initial, onApply) {
         if (!reps || !sets) return toast('횟수·세트를 입력하세요');
         if (!bodyweight && !weight) return toast('무게를 입력하세요 (맨몸이면 체크)');
 
-        onApply({
-            exercise, weight, reps, sets,
-            memo: document.getElementById('wMemo').value.trim(),
-            bodyweight
-        });
-        Sheet2.close();
+        const btn = document.getElementById('wApply'); btn.disabled = true;
+        try {
+            await onApply({
+                exercise, weight, reps, sets,
+                memo: document.getElementById('wMemo').value.trim(),
+                bodyweight
+            });
+            Sheet2.close();
+        } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
     };
 }
 // [E] edit by smsong

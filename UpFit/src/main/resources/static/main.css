@@ -824,6 +824,18 @@ button { font-family: var(--font); cursor: pointer; }
     border: 1.5px dashed var(--line); border-radius: var(--radius-md);
 }
 .se-actions { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+/* 신규 생성 모드: 기록을 먼저 만들어야 운동을 추가할 수 있다는 안내 */
+.se-locked {
+    margin-top: 18px; padding: 26px 20px; text-align: center;
+    border: 1.5px dashed var(--line); border-radius: var(--radius-md);
+}
+.se-locked-ico {
+    width: 44px; height: 44px; margin: 0 auto 12px; border-radius: 14px;
+    background: var(--ink-850); color: var(--text-mute);
+    display: flex; align-items: center; justify-content: center;
+}
+.se-locked-ico svg { width: 22px; height: 22px; }
+.se-locked-txt { font-size: 13px; line-height: 1.6; font-weight: 600; color: var(--text-mute); }
 /* 운동 행의 수정/삭제 버튼 묶음 */
 .rec .rec-acts { display: flex; gap: 2px; }
 /* [E] edit by smsong */
