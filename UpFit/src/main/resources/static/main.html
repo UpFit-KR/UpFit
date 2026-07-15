@@ -1,9 +1,11 @@
 <!DOCTYPE html>
-<html lang="ko">
+<!-- [B] edit by smsong : data-require-auth → auth.js 가 로드 즉시 토큰 검사 후 login.html 로 강제 이동 -->
+<html lang="ko" data-require-auth>
+<!-- [E] edit by smsong -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#071120">
+    <meta name="theme-color" content="#eef2f8">
     <link rel="manifest" href="manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,27 +14,37 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
     <title>UpFit</title>
-    <link rel="stylesheet" href="main.css">
+
+    <!-- [B] edit by smsong : 테마 → 인증 순서로 <head> 에서 먼저 실행 (깜빡임 방지 + 미인증 조기 차단) -->
+    <script src="theme.js?v=1.0.3"></script>
+    <script src="auth.js?v=1.0.3"></script>
+    <!-- [E] edit by smsong -->
+
+    <link rel="stylesheet" href="main.css?v=1.0.3">
 </head>
 <body>
 <!-- 아이콘 그라데이션 정의 (활성 네비 아이콘용) -->
+<!-- [B] edit by smsong : stop-color 를 CSS 변수로 제어 → 테마별 색상 자동 반영 -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
         <linearGradient id="navgrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#38bdf8"/>
-            <stop offset="100%" stop-color="#2dd4a0"/>
+            <stop class="navgrad-a" offset="0%"/>
+            <stop class="navgrad-b" offset="100%"/>
         </linearGradient>
     </defs>
 </svg>
+<!-- [E] edit by smsong -->
 
 <div class="app">
     <!-- 헤더 -->
     <header class="app-header">
-        <img class="logo" src="icons/upfit.png" alt="UpFit">
+        <!-- [B] edit by smsong : data-theme-logo → theme.js 가 테마별 로고로 교체 -->
+        <img class="logo" src="icons/upfit-light.png" data-theme-logo alt="UpFit">
         <div class="head-txt">
-            <div class="hello">안녕하세요, <b id="hdrName">회원</b>님</div>
-            <div class="today" id="hdrDate">—</div>
+            <div class="hello" id="hdrHello" style="display:none">안녕하세요, <b id="hdrName"></b>님</div>
+            <div class="today" id="hdrDate"></div>
         </div>
+        <!-- [E] edit by smsong -->
         <div class="head-brand">UPFIT</div>
     </header>
 
@@ -88,6 +100,6 @@
 <div id="toast"></div>
 
 <script src="config.js?v=1.0.1"></script>
-<script src="main.js?v=1.0.1"></script>
+<script src="main.js?v=1.0.3"></script>
 </body>
 </html>

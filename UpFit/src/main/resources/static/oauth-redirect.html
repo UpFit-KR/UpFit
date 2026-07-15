@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#071120">
+    <meta name="theme-color" content="#eef2f8">
     <link rel="manifest" href="manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,31 +13,59 @@
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
     <meta http-equiv="Cache-Control" content="no-store, max-age=0">
     <title>로그인 처리중 — UpFit</title>
+
+    <!-- [B] edit by smsong : 공통 테마 모듈 (인증 게이트는 이 페이지에 적용하지 않음) -->
+    <script src="theme.js?v=1.0.3"></script>
+    <!-- [E] edit by smsong -->
+
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+        /* [B] edit by smsong : :root = 라이트(기본) / [data-theme="dark"] = 다크 */
         :root {
-            --ink-950: #071120;
-            --ink-800: #11253d;
-            --blue: #38bdf8;
-            --green: #2dd4a0;
-            --text: #e8f0fb;
-            --text-dim: #93a4bd;
-            --white: #ffffff;
+            color-scheme: light;
+            --text: #0e2138;
+            --text-dim: #4a5f7a;
             --radius-xl: 22px;
-            --shadow-lg: 0 20px 50px rgba(0,0,0,0.5);
+            --shadow-lg: 0 20px 50px rgba(23,49,84,0.16);
+            --page-bg:
+                radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.22), transparent 55%),
+                radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.20), transparent 55%),
+                #eef2f8;
+            --glow-1: rgba(56,189,248,0.22);
+            --glow-2: rgba(45,212,160,0.20);
+            --card-bg: rgba(255,255,255,0.86);
+            --card-line: rgba(14,33,56,0.08);
+            --logo-shadow: 0 12px 28px rgba(23,49,84,0.18);
+            --spin-track: rgba(2,132,199,0.18);
+            --spin-head: #0d9488;
             --font: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
         }
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --text: #e8f0fb;
+            --text-dim: #93a4bd;
+            --shadow-lg: 0 20px 50px rgba(0,0,0,0.5);
+            --page-bg:
+                radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
+                radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
+                #071120;
+            --glow-1: rgba(56,189,248,0.14);
+            --glow-2: rgba(45,212,160,0.14);
+            --card-bg: rgba(17,37,61,0.72);
+            --card-line: rgba(255,255,255,0.07);
+            --logo-shadow: 0 12px 28px rgba(0,0,0,0.45);
+            --spin-track: rgba(56,189,248,0.18);
+            --spin-head: #2dd4a0;
+        }
+        /* [E] edit by smsong */
 
         /* Daylog 방식: 배경을 고정된 풀스크린(html+body)에 직접 → 세이프에어리어까지 채워 하단 띠 제거 */
         html, body {
             height: 100%; font-family: var(--font);
             position: fixed; inset: 0; width: 100%;
             overflow: hidden; overscroll-behavior: none; touch-action: none;
-            background:
-                radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
-                radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
-                var(--ink-950);
+            background: var(--page-bg);
         }
         body {
             display: flex; align-items: center; justify-content: center;
@@ -48,13 +76,13 @@
             content: ''; position: absolute; border-radius: 50%;
             filter: blur(30px); pointer-events: none;
         }
-        body::before { width: 300px; height: 300px; top: -90px; right: -70px; background: rgba(56,189,248,0.14); }
-        body::after  { width: 260px; height: 260px; bottom: -90px; left: -70px; background: rgba(45,212,160,0.14); }
+        body::before { width: 300px; height: 300px; top: -90px; right: -70px; background: var(--glow-1); }
+        body::after  { width: 260px; height: 260px; bottom: -90px; left: -70px; background: var(--glow-2); }
 
         .loading-container {
             position: relative; z-index: 1;
-            background: rgba(17,37,61,0.72);
-            border: 1px solid rgba(255,255,255,0.07);
+            background: var(--card-bg);
+            border: 1px solid var(--card-line);
             border-radius: var(--radius-xl);
             box-shadow: var(--shadow-lg);
             backdrop-filter: blur(16px);
@@ -70,7 +98,7 @@
         .brand-logo {
             width: 60px; height: 60px; margin: 0 auto 18px;
             border-radius: 16px; display: block; object-fit: cover;
-            box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+            box-shadow: var(--logo-shadow);
         }
 
         .loading-text {
@@ -80,8 +108,8 @@
 
         .spinner {
             width: 44px; height: 44px; margin: 0 auto;
-            border: 4px solid rgba(56,189,248,0.18);
-            border-top-color: var(--green);
+            border: 4px solid var(--spin-track);
+            border-top-color: var(--spin-head);
             border-radius: 50%;
             animation: spin 0.9s linear infinite;
         }
@@ -106,7 +134,9 @@
 </head>
 <body>
 <div class="loading-container">
-    <img class="brand-logo" src="icons/upfit.png" alt="UpFit">
+    <!-- [B] edit by smsong : 테마별 로고 자동 교체 -->
+    <img class="brand-logo" src="icons/upfit-light.png" data-theme-logo alt="UpFit">
+    <!-- [E] edit by smsong -->
     <div class="loading-text">로그인 중입니다<span class="dots"></span></div>
     <div class="spinner"></div>
     <div class="loading-subtext">잠시만 기다려 주세요</div>
@@ -134,13 +164,24 @@
     const SUCCESS_REDIRECT = 'main.html';
     const LOGIN_PAGE = 'login.html';
 
+    // [B] edit by smsong
+    // localStorage.clear() 는 테마 설정(UF_THEME)까지 지워버리므로 인증 키만 선별 제거
+    function clearAuthKeys() {
+        try {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('auth');
+        } catch (_) {}
+    }
+    // [E] edit by smsong
+
     document.addEventListener('DOMContentLoaded', async function () {
         const params = new URLSearchParams(window.location.search);
 
         // ── 방법 2: 백엔드가 ?token=... 으로 보낸 경우 ──
         const tokenParam = params.get('token') || params.get('accessToken');
         if (tokenParam) {
-            localStorage.clear();
+            clearAuthKeys();
             localStorage.setItem('accessToken', tokenParam);
             window.location.href = SUCCESS_REDIRECT;
             return;
@@ -204,9 +245,13 @@
 
             const data = await response.json(); // JWTDTO
 
-            localStorage.clear();
+            clearAuthKeys();
             const token = data.token || data.accessToken || data.jwt || '';
-            if (token) localStorage.setItem('accessToken', token);
+            if (!token) {
+                alert('토큰을 발급받지 못했습니다. 다시 로그인해 주세요.');
+                window.location.href = LOGIN_PAGE; return;
+            }
+            localStorage.setItem('accessToken', token);
             if (data.user) localStorage.setItem('currentUser', JSON.stringify(data.user));
             localStorage.setItem('auth', JSON.stringify(data));
 

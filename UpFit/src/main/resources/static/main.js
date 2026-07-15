@@ -5,21 +5,40 @@
    · 운동: 종목 콤보박스(사용자 추가) + 무게/횟수/세트, 달력·목록 보기
    · 비교: 같은 종목의 직전 세션 대비 볼륨 등락을 증권형으로 표시
              (증가=빨강 ▲ / 감소=파랑 ▼)
-   · 데이터: 로그인(토큰+uid) 시 스프링부트 API(/workout, /meal, /exercise)로
-     조회·생성·삭제. 토큰이 없으면 로컬 데모(샘플 시드)로 자동 폴백.
-     체중·신체정보는 아직 로컬 보관(UF_LOCAL_V1).
-   · 테마: 다크(기본)/라이트 — 설정에서 전환, 로고도 라이트 버전으로 교체.
+   ------------------------------------------------------------
+   [B] edit by smsong
+   · 인증 필수: 토큰(30분 만료)이 없거나 만료되면 알림 후 login.html 로 이동
+     → auth.js(<head>)에서 1차 게이트, 여기서 2차 확인 + API 401/403 처리
+   · 로컬 데모(샘플 시드) 모드 / 사용자 정보 기본값('회원' 등) 전부 제거
+   · 테마는 theme.js(window.UpFitTheme)가 전담 (기본 라이트, 기기에 영속)
+   [E] edit by smsong
    ============================================================ */
 
 (function () {
 'use strict';
 
+// ============================================================
+//  [B] edit by smsong — 인증 게이트 (가장 먼저)
+// ============================================================
+var Auth = window.UpFitAuth;
+if (!Auth) {                     // auth.js 미로드 방지
+    alert('인증 모듈을 불러오지 못했습니다. 다시 로그인해 주세요.');
+    window.location.replace('login.html');
+    return;
+}
+if (!Auth.requireLogin()) return;   // 토큰 없음/만료 → 알림 + login.html
+
+const LOGIN_PAGE = Auth.LOGIN_PAGE;
+const UID = Auth.getUid();
+if (!UID) {
+    // 토큰은 있으나 사용자 식별자를 찾을 수 없는 경우 → 기본값으로 대체하지 않고 세션 무효 처리
+    Auth.invalidSession('사용자 정보를 확인할 수 없습니다.\n다시 로그인해 주세요.');
+    return;
+}
+// [E] edit by smsong
+
 // ---------- 상수 ----------
-const STORE_KEY = 'UF_STATE_V1';   // (게스트/데모) 로컬 전체 상태
-const LOCAL_KEY = 'UF_LOCAL_V1';   // 체중·신체정보 등 백엔드 미연동 항목 (로그인 모드에서도 로컬 보관)
-const SEED_FLAG = 'UF_SEEDED_V1';
-const THEME_KEY = 'UF_THEME';
-const LOGIN_PAGE = 'login.html';
+const LOCAL_KEY = 'UF_LOCAL_V1_' + UID;   // 체중·신체정보 등 백엔드 미연동 항목 (사용자별 로컬 보관)
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const MEAL_TYPES = [
     { key: 'breakfast', label: '아침' },
@@ -30,36 +49,38 @@ const MEAL_TYPES = [
 
 // ============================================================
 //  백엔드 연동 (운동/식단/종목 — users.id 를 외래키로 사용)
-//   · 토큰(accessToken) + uid 가 있으면 실서버 모드,
-//     없으면 로컬 데모 모드(샘플 시드)로 자동 폴백.
 // ============================================================
 const CFG = window.APP_CONFIG || {};
 const BACKEND_BASE = CFG.BACKEND_BASE || '';
-function getToken() { return localStorage.getItem('accessToken'); }
-function getUid() { try { return (JSON.parse(localStorage.getItem('currentUser') || '{}').uid) || ''; } catch (_) { return ''; } }
-let API_MODE = !!getToken() && !!getUid();
 
 async function apiReq(method, path, body) {
+    const token = Auth.getToken();
+    // 요청 직전에도 만료 확인 (30분 토큰)
+    if (!token || Auth.isExpired(token)) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
+
     const res = await fetch(BACKEND_BASE + path, {
         method,
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: body != null ? JSON.stringify(body) : undefined
     });
-    if (res.status === 401 || res.status === 403) { const e = new Error('AUTH'); e.auth = true; throw e; }
+    if (res.status === 401 || res.status === 403) {
+        Auth.invalidSession();                     // 서버가 거부 → 알림 + login.html
+        const e = new Error('AUTH'); e.auth = true; throw e;
+    }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const txt = await res.text();
     return txt ? JSON.parse(txt) : null;
 }
 const api = {
-    listWorkouts:  ()   => apiReq('GET',    `/workout/${getUid()}`),
-    addWorkout:    (d)  => apiReq('POST',   `/workout/${getUid()}`, d),
-    delWorkout:    (id) => apiReq('DELETE', `/workout/${getUid()}/${id}`),
-    listMeals:     ()   => apiReq('GET',    `/meal/${getUid()}`),
-    addMeal:       (d)  => apiReq('POST',   `/meal/${getUid()}`, d),
-    delMeal:       (id) => apiReq('DELETE', `/meal/${getUid()}/${id}`),
-    listExercises: ()   => apiReq('GET',    `/exercise/${getUid()}`),
-    addExercise:   (nm) => apiReq('POST',   `/exercise/${getUid()}`, { name: nm }),
-    delExercise:   (id) => apiReq('DELETE', `/exercise/${getUid()}/${id}`)
+    listWorkouts:  ()   => apiReq('GET',    `/workout/${UID}`),
+    addWorkout:    (d)  => apiReq('POST',   `/workout/${UID}`, d),
+    delWorkout:    (id) => apiReq('DELETE', `/workout/${UID}/${id}`),
+    listMeals:     ()   => apiReq('GET',    `/meal/${UID}`),
+    addMeal:       (d)  => apiReq('POST',   `/meal/${UID}`, d),
+    delMeal:       (id) => apiReq('DELETE', `/meal/${UID}/${id}`),
+    listExercises: ()   => apiReq('GET',    `/exercise/${UID}`),
+    addExercise:   (nm) => apiReq('POST',   `/exercise/${UID}`, { name: nm }),
+    delExercise:   (id) => apiReq('DELETE', `/exercise/${UID}/${id}`)
 };
 
 // DTO ↔ 화면 레코드 매핑 (서버의 workoutDate/mealDate ↔ 화면의 date)
@@ -94,152 +115,80 @@ function firstOfThisMonth() { const d = new Date(); return { y: d.getFullYear(),
 
 function blankState() { return { exercises: [], workouts: [], meals: [], bodyLogs: [], profile: {} }; }
 
-// 로그인 사용자 정보(이름/이메일) 반영
+// [B] edit by smsong : 로그인 사용자 정보 반영 — 기본값 대체 없음(없으면 빈 값으로 둠)
 function applyCurrentUser() {
-    try {
-        const cu = JSON.parse(localStorage.getItem('currentUser') || 'null');
-        if (cu) {
-            state.profile.name = state.profile.name || cu.name || cu.nickname || cu.username;
-            state.profile.email = state.profile.email || cu.email;
-        }
-    } catch (_) {}
-    if (!state.profile.name) state.profile.name = '회원';
+    const cu = Auth.getUser();
+    if (!cu) return;
+    state.profile.name = cu.name || cu.nickname || cu.username || '';
+    state.profile.email = cu.email || '';
 }
+// [E] edit by smsong
 
 // 체중·신체정보(백엔드 미연동) 로컬 로드/저장
 function loadLocalExtras() {
     try {
         const o = JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}');
         state.bodyLogs = o.bodyLogs || [];
+        if (o.name) state.profile.name = state.profile.name || o.name;
         if (o.height != null) state.profile.height = o.height;
         if (o.targetWeight != null) state.profile.targetWeight = o.targetWeight;
     } catch (_) { state.bodyLogs = []; }
 }
 function saveLocalExtras() {
-    localStorage.setItem(LOCAL_KEY, JSON.stringify({
-        bodyLogs: state.bodyLogs,
-        height: state.profile.height,
-        targetWeight: state.profile.targetWeight
-    }));
+    try {
+        localStorage.setItem(LOCAL_KEY, JSON.stringify({
+            bodyLogs: state.bodyLogs,
+            name: state.profile.name,
+            height: state.profile.height,
+            targetWeight: state.profile.targetWeight
+        }));
+    } catch (_) {}
 }
 
-// 데모(로컬 전체 상태) 저장
-function saveDemo() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
-
-// 메인 로드: 실서버 모드면 백엔드 조회, 아니면 데모
+// 메인 로드: 백엔드 조회 (폴백 없음)
 async function load() {
     state = blankState();
     applyCurrentUser();
 
-    if (API_MODE) {
-        try {
-            const [ws, ms, exs] = await Promise.all([api.listWorkouts(), api.listMeals(), api.listExercises()]);
-            state.workouts = (ws || []).map(fromWorkoutDTO);
-            state.meals = (ms || []).map(fromMealDTO);
-            state.exercises = (exs || []).map(e => e.name);
-            exIdByName = {};
-            (exs || []).forEach(e => { exIdByName[e.name] = e.id; });
-            loadLocalExtras();   // 체중/신체정보는 로컬
-            return;
-        } catch (err) {
-            if (err && err.auth) {   // 토큰 만료 → 로그인으로
-                localStorage.removeItem('accessToken');
-                window.location.replace(LOGIN_PAGE);
-                return;
-            }
-            console.warn('백엔드 조회 실패 → 로컬 데모로 전환:', err.message);
-            API_MODE = false;   // 이후 조작도 로컬로
-        }
-    }
-    // 데모 모드
-    try { const s = JSON.parse(localStorage.getItem(STORE_KEY)); if (s) state = s; } catch (_) {}
-    state.exercises = state.exercises || [];
-    state.workouts = state.workouts || [];
-    state.meals = state.meals || [];
-    state.bodyLogs = state.bodyLogs || [];
-    state.profile = state.profile || {};
-    applyCurrentUser();
-    seedIfEmpty();
+    const [ws, ms, exs] = await Promise.all([api.listWorkouts(), api.listMeals(), api.listExercises()]);
+    state.workouts = (ws || []).map(fromWorkoutDTO);
+    state.meals = (ms || []).map(fromMealDTO);
+    state.exercises = (exs || []).map(e => e.name);
+    exIdByName = {};
+    (exs || []).forEach(e => { exIdByName[e.name] = e.id; });
+    loadLocalExtras();   // 체중/신체정보는 로컬
 }
 
 // ============================================================
-//  데이터 조작 (실서버 ↔ 데모 공통 인터페이스)
+//  데이터 조작
 // ============================================================
 async function addWorkoutRec(rec) {
-    if (API_MODE) {
-        const dto = await api.addWorkout(toWorkoutDTO(rec));
-        state.workouts.push(fromWorkoutDTO(dto));
-    } else {
-        state.workouts.push(Object.assign({ id: uid() }, rec)); saveDemo();
-    }
+    const dto = await api.addWorkout(toWorkoutDTO(rec));
+    state.workouts.push(fromWorkoutDTO(dto));
 }
 async function delWorkoutRec(id) {
-    if (API_MODE) await api.delWorkout(id);
+    await api.delWorkout(id);
     state.workouts = state.workouts.filter(w => String(w.id) !== String(id));
-    if (!API_MODE) saveDemo();
 }
 async function addMealRec(rec) {
-    if (API_MODE) {
-        const dto = await api.addMeal(toMealDTO(rec));
-        state.meals.push(fromMealDTO(dto));
-    } else {
-        state.meals.push(Object.assign({ id: uid() }, rec)); saveDemo();
-    }
+    const dto = await api.addMeal(toMealDTO(rec));
+    state.meals.push(fromMealDTO(dto));
 }
 async function delMealRec(id) {
-    if (API_MODE) await api.delMeal(id);
+    await api.delMeal(id);
     state.meals = state.meals.filter(m => String(m.id) !== String(id));
-    if (!API_MODE) saveDemo();
 }
 async function addExerciseType(name) {
-    if (API_MODE) {
-        const dto = await api.addExercise(name);
-        state.exercises.push(dto.name); exIdByName[dto.name] = dto.id;
-    } else {
-        state.exercises.push(name); saveDemo();
-    }
+    const dto = await api.addExercise(name);
+    state.exercises.push(dto.name); exIdByName[dto.name] = dto.id;
 }
 // 체중/신체정보(로컬 항목) 저장
-function persistExtras() { if (API_MODE) saveLocalExtras(); else saveDemo(); }
+function persistExtras() { saveLocalExtras(); }
+
 // 에러 메시지 표준화
 function errMsg(err, fallback) {
     if (err && err.auth) return '로그인이 만료되었어요. 다시 로그인해 주세요';
     return fallback || '문제가 발생했어요';
-}
-
-// ---------- 최초 1회 샘플 데이터 ----------
-function seedIfEmpty() {
-    if (API_MODE) return;                          // 실서버 모드에선 시드하지 않음
-    if (localStorage.getItem(SEED_FLAG)) return;
-    localStorage.setItem(SEED_FLAG, '1');
-    if (state.workouts.length || state.meals.length) return;
-
-    state.exercises = ['벤치프레스', '스쿼트', '데드리프트', '오버헤드프레스', '랫풀다운'];
-    const W = (date, exercise, weight, reps, sets) => ({ id: uid(), date, exercise, weight, reps, sets, memo: '' });
-    state.workouts = [
-        W(shiftDays(-6), '벤치프레스', 100, 5, 1),
-        W(shiftDays(-6), '스쿼트', 120, 5, 2),
-        W(shiftDays(-4), '벤치프레스', 100, 6, 1),
-        W(shiftDays(-4), '오버헤드프레스', 40, 8, 1),
-        W(shiftDays(-2), '벤치프레스', 102, 5, 1),
-        W(shiftDays(-2), '스쿼트', 125, 5, 2),
-        W(shiftDays(-2), '데드리프트', 140, 3, 1),
-        W(shiftDays(0),  '벤치프레스', 102, 6, 1),
-        W(shiftDays(0),  '랫풀다운', 60, 10, 1)
-    ];
-    const M = (date, mealType, name, kcal) => ({ id: uid(), date, mealType, name, kcal, carb: 0, protein: 0, fat: 0 });
-    state.meals = [
-        M(shiftDays(-2), 'breakfast', '오트밀 + 바나나', 320),
-        M(shiftDays(-2), 'lunch', '닭가슴살 도시락', 540),
-        M(shiftDays(0), 'breakfast', '계란 3개 + 토스트', 320),
-        M(shiftDays(0), 'lunch', '소고기 덮밥', 620),
-        M(shiftDays(0), 'snack', '프로틴 셰이크', 180)
-    ];
-    const B = (date, weight) => ({ id: uid(), date, weight });
-    state.bodyLogs = [B(shiftDays(-6), 78.5), B(shiftDays(-4), 78.2), B(shiftDays(-2), 77.9), B(shiftDays(0), 77.6)];
-    state.profile.height = state.profile.height || 178;
-    state.profile.targetWeight = state.profile.targetWeight || 74;
-    saveDemo();
 }
 
 // ---------- 계산 ----------
@@ -283,8 +232,20 @@ function setsOfDate(date) { return workoutsByDate(date).reduce((s, w) => s + (w.
 // ============================================================
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// [B] edit by smsong : 차트 색을 CSS 변수에서 읽어 테마에 따라 자동 전환
+function cssVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+}
+// [E] edit by smsong
+
 function render() {
-    document.getElementById('hdrName').textContent = state.profile.name || '회원';
+    // [B] edit by smsong : 이름이 없으면 인사말 자체를 숨김 ('회원' 같은 기본값 사용 안 함)
+    const nm = state.profile.name || '';
+    const hello = document.getElementById('hdrHello');
+    document.getElementById('hdrName').textContent = nm;
+    if (hello) hello.style.display = nm ? '' : 'none';
+    // [E] edit by smsong
     document.getElementById('hdrDate').textContent = fmtHeaderDate();
     renderHome();
     renderWorkout();
@@ -514,6 +475,13 @@ function mealBadge(key) {
 
 // ---------- 변화(그래프) ----------
 function renderChange() {
+    // [B] edit by smsong : 차트 색상 = 테마 변수
+    const C_VOL = cssVar('--chart-volume', '#38bdf8');
+    const C_WEIGHT = cssVar('--chart-weight', '#2dd4a0');
+    const C_KCAL = cssVar('--chart-kcal', '#fbbf24');
+    const C_TARGET = cssVar('--chart-target', '#ff5a6a');
+    // [E] edit by smsong
+
     // 종목 셀렉트 (볼륨 추이)
     const exsWithData = state.exercises.filter(ex => exerciseSessions(ex).length);
     if (!ui.changeExercise || !exsWithData.includes(ui.changeExercise)) ui.changeExercise = exsWithData[0] || null;
@@ -531,8 +499,8 @@ function renderChange() {
             ${exsWithData.map(ex => `<option value="${esc(ex)}" ${ex === ui.changeExercise ? 'selected' : ''}>${esc(ex)}</option>`).join('')}
         </select>`;
         const ss = exerciseSessions(ui.changeExercise);
-        html += lineChart(ss.map(s => ({ label: labelMd(s.date), value: s.volume })), { color: '#38bdf8', unit: 'kg' });
-        html += chartLegend([['#38bdf8', '볼륨 (kg)']]);
+        html += lineChart(ss.map(s => ({ label: labelMd(s.date), value: s.volume })), { color: C_VOL, unit: 'kg' });
+        html += chartLegend([[C_VOL, '볼륨 (kg)']]);
     } else {
         html += emptyBlock('chart', '표시할 운동 데이터가 없어요', '운동을 2회 이상 기록하면 추이가 그려져요');
     }
@@ -544,8 +512,8 @@ function renderChange() {
         <div class="card">`;
     const bl = state.bodyLogs.slice().sort((a, b) => a.date < b.date ? -1 : 1);
     if (bl.length) {
-        html += lineChart(bl.map(b => ({ label: labelMd(b.date), value: b.weight })), { color: '#2dd4a0', unit: 'kg', target: state.profile.targetWeight });
-        html += chartLegend([['#2dd4a0', '체중 (kg)']].concat(state.profile.targetWeight ? [['#ff5a6a', '목표']] : []));
+        html += lineChart(bl.map(b => ({ label: labelMd(b.date), value: b.weight })), { color: C_WEIGHT, unit: 'kg', target: state.profile.targetWeight, targetColor: C_TARGET });
+        html += chartLegend([[C_WEIGHT, '체중 (kg)']].concat(state.profile.targetWeight ? [[C_TARGET, '목표']] : []));
         html += `<button class="btn sm block" id="addBodyBtn" style="margin-top:14px">오늘 체중 기록</button>`;
     } else {
         html += emptyBlock('chart', '체중 기록이 없어요', '아래 버튼으로 오늘 체중을 남겨보세요');
@@ -561,8 +529,8 @@ function renderChange() {
     for (let i = 13; i >= 0; i--) days.push(shiftDays(-i));
     const kcalPoints = days.map(d => ({ label: labelMd(d), value: kcalOfDate(d) }));
     if (kcalPoints.some(p => p.value > 0)) {
-        html += lineChart(kcalPoints, { color: '#fbbf24', unit: 'kcal', everyLabel: 3 });
-        html += chartLegend([['#fbbf24', '섭취 칼로리 (kcal)']]);
+        html += lineChart(kcalPoints, { color: C_KCAL, unit: 'kcal', everyLabel: 3 });
+        html += chartLegend([[C_KCAL, '섭취 칼로리 (kcal)']]);
     } else {
         html += emptyBlock('chart', '식단 데이터가 없어요', '식단을 기록하면 칼로리 추이가 그려져요');
     }
@@ -585,15 +553,17 @@ function renderProfile() {
     const totalMeals = state.meals.length;
     const lastWeight = state.bodyLogs.length ? state.bodyLogs.slice().sort((a, b) => a.date < b.date ? 1 : -1)[0].weight : null;
 
+    // [B] edit by smsong : 이름/이메일 기본 문구 제거 — 값이 없으면 표시하지 않음
     document.getElementById('view-profile').innerHTML = `
     <div class="view-title">내 정보</div>
     <div class="profile-top">
-        <img id="pfAvatar" src="${logoSrc()}" alt="">
+        <img id="pfAvatar" src="${window.UpFitTheme ? window.UpFitTheme.logoSrc() : 'icons/upfit-light.png'}" data-theme-logo alt="">
         <div>
-            <div class="pt-name">${esc(p.name || '회원')}</div>
-            <div class="pt-email">${esc(p.email || '소셜 계정으로 로그인됨')}</div>
+            ${p.name ? `<div class="pt-name">${esc(p.name)}</div>` : ''}
+            ${p.email ? `<div class="pt-email">${esc(p.email)}</div>` : ''}
         </div>
     </div>
+    <!-- [E] edit by smsong -->
 
     <div class="section">
         <div class="section-head"><h2>신체 정보</h2><button class="btn sm" id="editBodyBtn">수정</button></div>
@@ -637,12 +607,9 @@ function renderProfile() {
     document.getElementById('editBodyBtn').onclick = openProfileSheet;
     document.getElementById('profileSetBtn').onclick = openProfileSheet;
     document.getElementById('settingsBtn').onclick = openSettingsSheet;
-    document.getElementById('logoutBtn').onclick = () => {
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('currentUser');
-        localStorage.removeItem('auth');
-        window.location.replace(LOGIN_PAGE);
-    };
+    // [B] edit by smsong : 세션 정리는 auth.js 로 일원화
+    document.getElementById('logoutBtn').onclick = () => Auth.logout();
+    // [E] edit by smsong
 }
 
 // ============================================================
@@ -729,7 +696,7 @@ function lineChart(points, opts) {
     const x = i => padL + (innerW * i) / (points.length - 1);
     const y = v => padT + innerH - ((v - min) / range) * innerH;
 
-    const color = opts.color || '#38bdf8';
+    const color = opts.color || cssVar('--chart-volume', '#38bdf8');
     const gid = 'g' + Math.random().toString(36).slice(2, 7);
 
     let path = '', area = '';
@@ -743,7 +710,8 @@ function lineChart(points, opts) {
     let targetLine = '';
     if (opts.target != null) {
         const ty = y(opts.target).toFixed(1);
-        targetLine = `<line x1="${padL}" y1="${ty}" x2="${W - padR}" y2="${ty}" stroke="#ff5a6a" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.7"/>`;
+        const tc = opts.targetColor || cssVar('--chart-target', '#ff5a6a');
+        targetLine = `<line x1="${padL}" y1="${ty}" x2="${W - padR}" y2="${ty}" stroke="${tc}" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.7"/>`;
     }
 
     // 점 + 값
@@ -755,14 +723,15 @@ function lineChart(points, opts) {
     const li = points.length - 1;
     dots += `<text x="${x(li).toFixed(1)}" y="${(y(points[li].value) - 8).toFixed(1)}" text-anchor="end" fill="${color}" font-size="11" font-weight="700">${points[li].value}${opts.unit || ''}</text>`;
 
-    // x축 라벨
+    // x축 라벨 — [B] edit by smsong : 테마 변수 사용(style 로 지정해야 var() 가 안전하게 적용됨)
     const every = opts.everyLabel || Math.ceil(points.length / 6);
     let labels = '';
     points.forEach((p, i) => {
         if (i % every === 0 || i === points.length - 1) {
-            labels += `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" fill="#5f748f" font-size="9.5">${p.label}</text>`;
+            labels += `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" style="fill:var(--text-mute)" font-size="9.5">${p.label}</text>`;
         }
     });
+    // [E] edit by smsong
 
     return `<div class="chart-wrap"><svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
@@ -941,13 +910,12 @@ function openProfileSheet() {
         <button class="btn grad block" id="pSave" style="margin-top:6px">저장</button>
     `);
     document.getElementById('pSave').onclick = () => {
-        const nm = document.getElementById('pName').value.trim();
-        state.profile.name = nm || state.profile.name;
+        state.profile.name = document.getElementById('pName').value.trim();
         state.profile.height = parseInt(document.getElementById('pHeight').value, 10) || null;
         state.profile.targetWeight = parseFloat(document.getElementById('pTarget').value) || null;
         // 표시 이름은 로그인 사용자 정보에도 반영(새로고침 후에도 유지)
         try {
-            const cu = JSON.parse(localStorage.getItem('currentUser') || '{}');
+            const cu = Auth.getUser() || {};
             cu.name = state.profile.name; localStorage.setItem('currentUser', JSON.stringify(cu));
         } catch (_) {}
         persistExtras(); closeSheet(); render(); toast('프로필을 저장했어요');
@@ -956,10 +924,11 @@ function openProfileSheet() {
 
 // 설정 (다크/라이트 테마)
 function openSettingsSheet() {
-    const cur = currentTheme();
+    // [B] edit by smsong : 테마 상태/저장은 theme.js 로 일원화 (선택값은 기기에 계속 남음)
+    const cur = window.UpFitTheme ? window.UpFitTheme.current() : 'light';
     openSheet(`
         <h3>설정</h3>
-        <div class="sheet-desc">화면 테마를 선택하세요.</div>
+        <div class="sheet-desc">화면 테마를 선택하세요. 선택한 테마는 이 기기에 계속 유지돼요.</div>
         <div class="field">
             <label>테마</label>
             <div class="seg theme-seg" id="themeSeg">
@@ -970,10 +939,11 @@ function openSettingsSheet() {
         <button class="btn block" id="setDone" style="margin-top:6px">완료</button>
     `);
     document.querySelectorAll('#themeSeg button').forEach(b => b.onclick = () => {
-        applyTheme(b.dataset.theme, true);
+        window.UpFitTheme.apply(b.dataset.theme, true);   // persist = true
         document.querySelectorAll('#themeSeg button').forEach(x => x.classList.toggle('active', x === b));
     });
     document.getElementById('setDone').onclick = closeSheet;
+    // [E] edit by smsong
 }
 
 // ============================================================
@@ -1015,7 +985,9 @@ document.querySelectorAll('.nav-item').forEach(btn => btn.onclick = () => activa
 function icon(name) {
     const s = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
     const map = {
-        plus: `<svg viewBox="0 0 24 24" fill="none" stroke="#06121f" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
+        // [B] edit by smsong : 고정색(#06121f) → currentColor (버튼 글자색 = --on-grad 를 따라감)
+        plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
+        // [E] edit by smsong
         dumbbell: `<svg viewBox="0 0 24 24" ${s}><path d="M6.5 6.5 17.5 17.5"/><path d="M4 8l-1 1a1.4 1.4 0 0 0 0 2l1 1"/><path d="M8 4 7 5a1.4 1.4 0 0 0 0 2l1 1"/><path d="M20 16l1-1a1.4 1.4 0 0 0 0-2l-1-1"/><path d="M16 20l1-1a1.4 1.4 0 0 0 0-2l-1-1"/></svg>`,
         layers: `<svg viewBox="0 0 24 24" ${s}><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>`,
         flame: `<svg viewBox="0 0 24 24" ${s}><path d="M12 3c1 3 4 4 4 8a4 4 0 0 1-8 0c0-1 .5-2 1-2.5C9 10 12 9 12 3Z"/></svg>`,
@@ -1048,43 +1020,28 @@ function toast(msg) {
 }
 
 // ============================================================
-//  테마 (다크/라이트)
-// ============================================================
-function currentTheme() {
-    const saved = localStorage.getItem(THEME_KEY);
-    return (saved === 'light' || saved === 'dark') ? saved : 'dark';   // 기본: 다크(현재 디자인)
-}
-function logoSrc() { return currentTheme() === 'light' ? 'icons/upfit-light.png' : 'icons/upfit.png'; }
-function refreshLogos() {
-    const src = logoSrc();
-    document.querySelectorAll('.app-header .logo, #pfAvatar').forEach(img => { img.src = src; });
-}
-function applyTheme(theme, persist) {
-    if (theme !== 'light' && theme !== 'dark') theme = 'dark';
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'light' ? '#eef2f8' : '#071120');
-    if (persist) localStorage.setItem(THEME_KEY, theme);
-    refreshLogos();
-}
-
-// ============================================================
 //  시작
 // ============================================================
-// 인증 게이트: 토큰이 없으면 게스트(데모)로 둘러보기 허용.
-//   ▸ 로그인 강제하려면 아래 주석을 해제하세요.
-// if (!getToken()) { window.location.replace(LOGIN_PAGE); }
-
-applyTheme(currentTheme());   // 초기 테마 적용(로고 포함)
+// [B] edit by smsong : 테마 변경 시 차트/로고 색을 다시 그림
+if (window.UpFitTheme) {
+    window.UpFitTheme.onChange(function () { if (state) render(); });
+}
+// [E] edit by smsong
 
 (async function init() {
     try {
         await load();
     } catch (err) {
+        if (err && err.auth) return;    // invalidSession() 이 이미 login.html 로 보냄
         console.error('초기 로드 실패:', err);
-        API_MODE = false;
-        state = blankState(); applyCurrentUser(); loadLocalExtras(); seedIfEmpty();
+        // [B] edit by smsong : 샘플 시드/데모 폴백 없음 — 빈 상태로 표시하고 사유만 안내
+        state = blankState();
+        applyCurrentUser();
+        loadLocalExtras();
+        render();
+        toast('데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요');
+        return;
+        // [E] edit by smsong
     }
     render();
     // 새로고침(당겨서 새로고침 포함) 후에도 마지막 탭 유지

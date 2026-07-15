@@ -1,26 +1,77 @@
-/* ===== UpFit 로그인 — 메인 앱과 동일한 디자인 토큰 ===== */
+/* ===== UpFit 로그인 — 메인 앱과 동일한 디자인 토큰 =====
+   [B] edit by smsong : :root = 라이트(기본), :root[data-theme="dark"] = 다크
+                        테마는 theme.js 가 <html data-theme="..."> 로 지정
+   [E] edit by smsong
+*/
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ================= 라이트 (기본) ================= */
 :root {
-    --ink-950: #071120;
-    --ink-900: #0b1a2e;
-    --ink-800: #11253d;
-    --ink-700: #1a3352;
-    --blue: #38bdf8;
-    --green: #2dd4a0;
-    --grad: linear-gradient(120deg, #38bdf8 0%, #2dd4a0 100%);
-    --text: #e8f0fb;
-    --text-dim: #93a4bd;
-    --text-mute: #5b6f8c;
+    color-scheme: light;
+
+    --ink-950: #eef2f8;
+    --ink-900: #ffffff;
+    --ink-800: #ffffff;
+    --ink-700: #d7e0ec;
+    --accent: #0284c7;
+    --accent-2: #0d9488;
+    --grad: linear-gradient(120deg, #0ea5e9 0%, #10b981 100%);
+    --text: #0e2138;
+    --text-dim: #4a5f7a;
+    --text-mute: #8496ad;
     --white: #ffffff;
     --kakao: #fee500;
     --kakao-text: #191600;
     --naver: #03c75a;
-    --shadow-lg: 0 20px 50px rgba(0,0,0,0.5);
+    --shadow-lg: 0 20px 50px rgba(23,49,84,0.16);
     --radius-md: 12px;
     --radius-lg: 16px;
     --radius-xl: 22px;
     --font: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+
+    /* 페이지 배경 (라이트) */
+    --page-bg:
+        radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.22), transparent 55%),
+        radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.20), transparent 55%),
+        #eef2f8;
+    --glow-1: rgba(56,189,248,0.22);
+    --glow-2: rgba(45,212,160,0.20);
+    --card-bg: rgba(255,255,255,0.86);
+    --card-line: rgba(14,33,56,0.08);
+    --divider: rgba(14,33,56,0.12);
+    --logo-shadow: 0 12px 28px rgba(23,49,84,0.18);
+    --toast-bg: #ffffff;
+    --toast-line: rgba(14,33,56,0.10);
+}
+
+/* ================= 다크 ================= */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --ink-950: #071120;
+    --ink-900: #0b1a2e;
+    --ink-800: #11253d;
+    --ink-700: #1a3352;
+    --accent: #38bdf8;
+    --accent-2: #2dd4a0;
+    --grad: linear-gradient(120deg, #38bdf8 0%, #2dd4a0 100%);
+    --text: #e8f0fb;
+    --text-dim: #93a4bd;
+    --text-mute: #5b6f8c;
+    --shadow-lg: 0 20px 50px rgba(0,0,0,0.5);
+
+    --page-bg:
+        radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
+        radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
+        #071120;
+    --glow-1: rgba(56,189,248,0.14);
+    --glow-2: rgba(45,212,160,0.14);
+    --card-bg: rgba(17,37,61,0.72);
+    --card-line: rgba(255,255,255,0.07);
+    --divider: rgba(255,255,255,0.10);
+    --logo-shadow: 0 12px 28px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.05);
+    --toast-bg: #0d1e34;
+    --toast-line: rgba(255,255,255,0.10);
 }
 
 /* Daylog 방식: 배경을 고정된 풀스크린(html+body)에 직접 → 세이프에어리어까지 채워 하단 띠 제거 */
@@ -31,10 +82,8 @@ html, body {
     overflow: hidden;
     overscroll-behavior: none;
     touch-action: none;
-    background:
-        radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
-        radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
-        var(--ink-950);
+    background: var(--page-bg);
+    transition: background-color 0.25s;
 }
 
 .login-page {
@@ -51,15 +100,15 @@ html, body {
     content: ''; position: absolute; border-radius: 50%;
     filter: blur(30px); pointer-events: none;
 }
-.login-page::before { width: 300px; height: 300px; top: -90px; right: -70px; background: rgba(56,189,248,0.14); }
-.login-page::after  { width: 260px; height: 260px; bottom: -90px; left: -70px; background: rgba(45,212,160,0.14); }
+.login-page::before { width: 300px; height: 300px; top: -90px; right: -70px; background: var(--glow-1); }
+.login-page::after  { width: 260px; height: 260px; bottom: -90px; left: -70px; background: var(--glow-2); }
 
 /* 로그인 카드 */
 .login-card {
     position: relative; z-index: 1;
     width: 100%; max-width: 380px;
-    background: rgba(17,37,61,0.72);
-    border: 1px solid rgba(255,255,255,0.07);
+    background: var(--card-bg);
+    border: 1px solid var(--card-line);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-lg);
     backdrop-filter: blur(16px);
@@ -77,7 +126,7 @@ html, body {
     width: 72px; height: 72px; margin: 0 auto 16px;
     border-radius: var(--radius-lg);
     display: block; object-fit: cover;
-    box-shadow: 0 12px 28px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.05);
+    box-shadow: var(--logo-shadow);
 }
 .brand-name {
     font-size: 26px; font-weight: 800; letter-spacing: 1.5px;
@@ -97,7 +146,7 @@ html, body {
 }
 .social-login-label::before, .social-login-label::after {
     content: ''; position: absolute; top: 50%;
-    width: 52px; height: 1px; background: rgba(255,255,255,0.1);
+    width: 52px; height: 1px; background: var(--divider);
 }
 .social-login-label::before { left: 0; }
 .social-login-label::after  { right: 0; }
@@ -117,10 +166,15 @@ html, body {
 .social-btn.kakao { background: var(--kakao); color: var(--kakao-text); }
 .social-btn.naver { background: var(--naver); color: var(--white); }
 .social-btn.google {
-    background: rgba(255,255,255,0.95); color: #1f2937;
+    background: #ffffff; color: #1f2937;
+    border-color: rgba(14,33,56,0.12);
+}
+.social-btn.google:active { background: #f1f5f9; }
+:root[data-theme="dark"] .social-btn.google {
+    background: rgba(255,255,255,0.95);
     border-color: rgba(255,255,255,0.15);
 }
-.social-btn.google:active { background: rgba(255,255,255,0.85); }
+:root[data-theme="dark"] .social-btn.google:active { background: rgba(255,255,255,0.85); }
 
 /* 푸터 */
 .login-footer {
@@ -134,10 +188,11 @@ html, body {
 #toast {
     position: fixed; bottom: 40px; left: 50%;
     transform: translateX(-50%) translateY(20px);
-    background: #0d1e34; color: var(--text);
-    border: 1px solid rgba(255,255,255,0.1);
+    background: var(--toast-bg); color: var(--text);
+    border: 1px solid var(--toast-line);
     padding: 11px 20px; border-radius: 20px;
     font-size: 13px; font-weight: 500;
+    box-shadow: var(--shadow-lg);
     opacity: 0; transition: opacity 0.25s, transform 0.25s;
     z-index: 9999; max-width: calc(100% - 48px); text-align: center;
 }

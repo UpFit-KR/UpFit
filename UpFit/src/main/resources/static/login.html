@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#071120">
+    <meta name="theme-color" content="#eef2f8">
     <link rel="manifest" href="manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,14 +12,22 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
     <title>로그인 — UpFit</title>
-    <link rel="stylesheet" href="login.css?v=1.0.2">
+
+    <!-- [B] edit by smsong : 공통 테마/인증 모듈 (로그인 페이지는 게이트 없이 유틸만 사용) -->
+    <script src="theme.js?v=1.0.3"></script>
+    <script src="auth.js?v=1.0.3"></script>
+    <!-- [E] edit by smsong -->
+
+    <link rel="stylesheet" href="login.css?v=1.0.3">
 </head>
 <body>
 <div class="login-page">
     <div class="login-card">
         <!-- 브랜드 -->
         <div class="brand">
-            <img class="brand-logo" src="icons/upfit.png" alt="UpFit">
+            <!-- [B] edit by smsong : 테마별 로고 자동 교체 -->
+            <img class="brand-logo" src="icons/upfit-light.png" data-theme-logo alt="UpFit">
+            <!-- [E] edit by smsong -->
             <div class="brand-name">UPFIT</div>
             <div class="brand-tagline">운동과 식단을 기록하고<br>어제보다 나아진 나를 확인하세요</div>
         </div>
@@ -68,6 +76,6 @@
 <div id="toast"></div>
 
 <script src="config.js?v=1.0.1"></script>
-<script src="login.js?v=1.0.1"></script>
+<script src="login.js?v=1.0.3"></script>
 </body>
 </html>

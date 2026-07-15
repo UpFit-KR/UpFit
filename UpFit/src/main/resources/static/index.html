@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="theme-color" content="#071120">
+    <meta name="theme-color" content="#eef2f8">
     <link rel="manifest" href="manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,17 +12,52 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
     <title>UpFit</title>
+
+    <!-- [B] edit by smsong : 공통 테마/인증 모듈 (<head> 최상단 → 인트로도 저장된 테마로 표시) -->
+    <script src="theme.js?v=1.0.3"></script>
+    <script src="auth.js?v=1.0.3"></script>
+    <!-- [E] edit by smsong -->
+
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+        /* [B] edit by smsong : :root = 라이트(기본) / [data-theme="dark"] = 다크 */
         :root {
-            --ink-950: #071120;
-            --ink-900: #0b1a2e;
-            --blue: #38bdf8;
-            --green: #2dd4a0;
-            --white: #ffffff;
+            color-scheme: light;
+            --grad: linear-gradient(100deg, #0ea5e9, #10b981);
+            --dot-grad: linear-gradient(120deg, #0ea5e9, #10b981);
+            --text-dim: rgba(14,33,56,0.66);
+            --page-bg:
+                radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.22), transparent 55%),
+                radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.20), transparent 55%),
+                #eef2f8;
+            --glow-1: rgba(56,189,248,0.22);
+            --glow-2: rgba(45,212,160,0.20);
+            --logo-shadow: 0 20px 50px rgba(23,49,84,0.18);
+            --skip-bg: rgba(255,255,255,0.7);
+            --skip-bg-active: rgba(255,255,255,0.95);
+            --skip-line: rgba(14,33,56,0.10);
+            --skip-text: #0e2138;
             --font: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
         }
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --grad: linear-gradient(100deg, #38bdf8, #2dd4a0);
+            --dot-grad: linear-gradient(120deg, #38bdf8, #2dd4a0);
+            --text-dim: rgba(232,240,251,0.72);
+            --page-bg:
+                radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
+                radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
+                #071120;
+            --glow-1: rgba(56,189,248,0.14);
+            --glow-2: rgba(45,212,160,0.14);
+            --logo-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+            --skip-bg: rgba(255,255,255,0.07);
+            --skip-bg-active: rgba(255,255,255,0.16);
+            --skip-line: rgba(255,255,255,0.12);
+            --skip-text: rgba(232,240,251,0.85);
+        }
+        /* [E] edit by smsong */
 
         /* Daylog 방식: 배경을 고정된 풀스크린(html+body)에 직접 → 세이프에어리어까지 빈틈없이 채워 하단 띠 제거 */
         html, body {
@@ -32,10 +67,7 @@
             overflow: hidden;
             overscroll-behavior: none;
             touch-action: none;
-            background:
-                radial-gradient(120% 90% at 50% -10%, rgba(56,189,248,0.16), transparent 55%),
-                radial-gradient(120% 90% at 50% 110%, rgba(45,212,160,0.14), transparent 55%),
-                var(--ink-950);
+            background: var(--page-bg);
         }
 
         .intro {
@@ -54,8 +86,8 @@
             content: ''; position: absolute; border-radius: 50%;
             pointer-events: none; filter: blur(30px);
         }
-        .intro::before { width: 300px; height: 300px; top: -90px; right: -70px; background: rgba(56,189,248,0.14); }
-        .intro::after  { width: 260px; height: 260px; bottom: -90px; left: -70px; background: rgba(45,212,160,0.14); }
+        .intro::before { width: 300px; height: 300px; top: -90px; right: -70px; background: var(--glow-1); }
+        .intro::after  { width: 260px; height: 260px; bottom: -90px; left: -70px; background: var(--glow-2); }
 
         .intro-inner {
             position: relative; z-index: 1; text-align: center;
@@ -68,7 +100,7 @@
             width: 108px; height: 108px; margin: 0 auto 22px;
             border-radius: 28px;
             display: block; object-fit: cover;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+            box-shadow: var(--logo-shadow);
             animation: float 3s ease-in-out infinite;
         }
         @keyframes float {
@@ -78,20 +110,20 @@
 
         .name {
             font-size: 30px; font-weight: 800; letter-spacing: 2px;
-            background: linear-gradient(100deg, var(--blue), var(--green));
+            background: var(--grad);
             -webkit-background-clip: text; background-clip: text; color: transparent;
         }
         .tagline {
             margin-top: 12px;
             font-size: 15px; line-height: 1.6;
-            color: rgba(232,240,251,0.72);
+            color: var(--text-dim);
             font-weight: 500;
         }
 
         .dots { margin-top: 30px; display: flex; gap: 7px; justify-content: center; }
         .dots span {
             width: 7px; height: 7px; border-radius: 50%;
-            background: linear-gradient(120deg, var(--blue), var(--green));
+            background: var(--dot-grad);
             animation: blink 1.2s ease-in-out infinite;
         }
         .dots span:nth-child(2) { animation-delay: 0.2s; }
@@ -104,15 +136,15 @@
         .skip {
             position: absolute; bottom: max(24px, env(safe-area-inset-bottom)); left: 50%;
             transform: translateX(-50%); z-index: 2;
-            color: rgba(232,240,251,0.85);
+            color: var(--skip-text);
             font-size: 13px; font-weight: 600;
-            background: rgba(255,255,255,0.07);
-            border: 1px solid rgba(255,255,255,0.12);
+            background: var(--skip-bg);
+            border: 1px solid var(--skip-line);
             border-radius: 18px; padding: 9px 20px;
             cursor: pointer; font-family: var(--font);
             backdrop-filter: blur(6px);
         }
-        .skip:active { background: rgba(255,255,255,0.16); }
+        .skip:active { background: var(--skip-bg-active); }
 
         @media (prefers-reduced-motion: reduce) {
             .intro-inner { animation: none; opacity: 1; transform: none; }
@@ -124,7 +156,9 @@
 <body>
     <div class="intro" id="intro">
         <div class="intro-inner">
-            <img class="logo" src="icons/upfit.png" alt="UpFit">
+            <!-- [B] edit by smsong : 테마별 로고 자동 교체 -->
+            <img class="logo" src="icons/upfit-light.png" data-theme-logo alt="UpFit">
+            <!-- [E] edit by smsong -->
             <div class="name">UPFIT</div>
             <div class="tagline">오늘의 운동과 식단을 기록하고<br>어제보다 얼마나 성장했는지 확인하세요</div>
             <div class="dots"><span></span><span></span><span></span></div>
@@ -134,7 +168,15 @@
 
     <script>
         (function () {
+            // [B] edit by smsong : 토큰이 유효하면 main, 아니면 login (만료 토큰은 정리)
+            var Auth = window.UpFitAuth;
             var NEXT = 'login.html';
+            if (Auth) {
+                if (Auth.hasValidSession()) NEXT = 'main.html';
+                else if (Auth.getToken()) Auth.clearSession();
+            }
+            // [E] edit by smsong
+
             var STAY = 2200;
             var FADE = 550;
 

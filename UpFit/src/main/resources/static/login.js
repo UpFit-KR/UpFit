@@ -72,9 +72,16 @@ document.querySelectorAll('.social-btn').forEach(btn => {
     btn.addEventListener('click', () => startSocialLogin(btn.dataset.provider));
 });
 
-if (localStorage.getItem('accessToken')) {
-    window.location.href = SUCCESS_REDIRECT;
-}
+// [B] edit by smsong
+// 이미 로그인된 상태(토큰 유효)면 바로 main 으로,
+// 토큰이 남아 있으나 만료된 경우엔 조용히 세션만 정리하고 로그인 화면 유지.
+(function checkExistingSession() {
+    const Auth = window.UpFitAuth;
+    if (!Auth) return;
+    if (Auth.hasValidSession()) { window.location.replace(SUCCESS_REDIRECT); return; }
+    if (Auth.getToken()) Auth.clearSession();   // 만료 토큰 잔여물 제거
+})();
+// [E] edit by smsong
 
 // =====================================================
 // TOAST

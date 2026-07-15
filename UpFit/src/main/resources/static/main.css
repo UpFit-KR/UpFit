@@ -1,68 +1,20 @@
 /* ============================================================
    UpFit — 메인 앱 스타일
-   다크 피트니스-테크 테마 · 하단 5탭 네비 · 증권형 등락 티커
+   피트니스-테크 테마 · 하단 5탭 네비 · 증권형 등락 티커
+   ------------------------------------------------------------
+   [B] edit by smsong
+   · 토큰 구조 변경: :root = 라이트(기본), :root[data-theme="dark"] = 다크
+     → JS가 실패하더라도 기본 화면은 라이트로 그려짐
+   · 하드코딩 색(#06121f, #97a8c0 등)을 테마 변수로 치환
+   [E] edit by smsong
    ============================================================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ================= 라이트 모드 (기본값) ================= */
 :root {
+    color-scheme: light;
+
     /* 배경/표면 */
-    --ink-950: #071120;
-    --ink-900: #0b1a2e;
-    --ink-850: #0e2035;
-    --ink-800: #11253d;
-    --ink-750: #16304d;
-    --ink-700: #1c3a5c;
-    --line: rgba(255,255,255,0.08);
-    --line-soft: rgba(255,255,255,0.05);
-
-    /* 브랜드 */
-    --blue: #38bdf8;
-    --green: #2dd4a0;
-    --grad: linear-gradient(120deg, #38bdf8 0%, #2dd4a0 100%);
-    --grad-soft: linear-gradient(120deg, rgba(56,189,248,0.16), rgba(45,212,160,0.16));
-
-    /* 텍스트 */
-    --text: #e9f1fb;
-    --text-dim: #97a8c0;
-    --text-mute: #5f748f;
-
-    /* 등락 (증권형: 상승=빨강, 하락=파랑) */
-    --up: #ff5a6a;
-    --up-bg: rgba(255,90,106,0.14);
-    --down: #4d9dff;
-    --down-bg: rgba(77,157,255,0.14);
-    --flat: #8ea3bf;
-    --flat-bg: rgba(142,163,191,0.12);
-
-    /* 끼니 색 */
-    --meal-breakfast: #fbbf24;
-    --meal-lunch: #34d399;
-    --meal-dinner: #a78bfa;
-    --meal-snack: #f472b6;
-
-    --radius-sm: 10px;
-    --radius-md: 14px;
-    --radius-lg: 18px;
-    --radius-xl: 24px;
-    --shadow-md: 0 8px 24px rgba(0,0,0,0.35);
-    --shadow-lg: 0 20px 50px rgba(0,0,0,0.5);
-
-    /* 테마 표면(다크 기본값) — 라이트 모드에서 재정의됨 */
-    --body-bg: var(--ink-950);
-    --body-glow: rgba(56,189,248,0.10);
-    --header-bg: linear-gradient(180deg, rgba(7,17,32,0.92), rgba(7,17,32,0.6));
-    --nav-bg: linear-gradient(180deg, rgba(10,22,38,0.85), rgba(7,17,32,0.98));
-    --toast-bg: #0d1e34;
-    --logo-src: url("icons/upfit.png");
-    --on-grad: #06121f;              /* 그라데이션 버튼 위 글자색 */
-
-    --nav-h: 64px;
-    --font: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
-    --num: 'SF Mono', ui-monospace, 'Menlo', 'Consolas', monospace;
-}
-
-/* ================= 라이트 모드 ================= */
-:root[data-theme="light"] {
     --ink-950: #eef2f8;   /* 앱 배경 */
     --ink-900: #ffffff;   /* 시트/헤더 표면 */
     --ink-850: #f3f6fb;   /* 달력 셀/세그 */
@@ -72,20 +24,113 @@
     --line: rgba(14,33,56,0.10);
     --line-soft: rgba(14,33,56,0.06);
 
+    /* 브랜드 (라이트에선 대비를 위해 한 단계 진하게) */
+    --blue: #38bdf8;
+    --green: #2dd4a0;
+    --accent: #0284c7;
+    --accent-2: #0d9488;
+    --grad: linear-gradient(120deg, #0ea5e9 0%, #10b981 100%);
+    --grad-soft: linear-gradient(120deg, rgba(14,165,233,0.14), rgba(16,185,129,0.14));
+    --on-grad: #ffffff;              /* 그라데이션 버튼 위 글자색 */
+
+    /* 텍스트 */
     --text: #0e2138;
     --text-dim: #4a5f7a;
     --text-mute: #8496ad;
 
-    --grad-soft: linear-gradient(120deg, rgba(56,189,248,0.16), rgba(45,212,160,0.16));
+    /* 등락 (증권형: 상승=빨강, 하락=파랑) */
+    --up: #e0384c;
+    --up-bg: rgba(224,56,76,0.10);
+    --down: #2563eb;
+    --down-bg: rgba(37,99,235,0.10);
+    --flat: #6b7f99;
+    --flat-bg: rgba(107,127,153,0.10);
+
+    /* 끼니 색 */
+    --meal-breakfast: #f59e0b;
+    --meal-lunch: #10b981;
+    --meal-dinner: #8b5cf6;
+    --meal-snack: #ec4899;
+
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 18px;
+    --radius-xl: 24px;
     --shadow-md: 0 8px 24px rgba(23,49,84,0.10);
     --shadow-lg: 0 20px 50px rgba(23,49,84,0.16);
 
+    /* 테마 표면 */
     --body-bg: #eef2f8;
     --body-glow: rgba(56,189,248,0.16);
     --header-bg: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(238,242,248,0.6));
     --nav-bg: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0.98));
     --toast-bg: #ffffff;
-    --logo-src: url("icons/upfit-light.png");
+    --backdrop: rgba(23,49,84,0.35);
+    --logo-shadow: 0 4px 12px rgba(23,49,84,0.18);
+    --arrow-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%234a5f7a' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+
+    /* 차트 색 (main.js 가 읽어감) */
+    --chart-volume: #0ea5e9;
+    --chart-weight: #0d9488;
+    --chart-kcal: #d97706;
+    --chart-target: #e0384c;
+
+    --nav-h: 64px;
+    --font: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+    --num: 'SF Mono', ui-monospace, 'Menlo', 'Consolas', monospace;
+}
+
+/* ================= 다크 모드 ================= */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --ink-950: #071120;
+    --ink-900: #0b1a2e;
+    --ink-850: #0e2035;
+    --ink-800: #11253d;
+    --ink-750: #16304d;
+    --ink-700: #1c3a5c;
+    --line: rgba(255,255,255,0.08);
+    --line-soft: rgba(255,255,255,0.05);
+
+    --accent: #38bdf8;
+    --accent-2: #2dd4a0;
+    --grad: linear-gradient(120deg, #38bdf8 0%, #2dd4a0 100%);
+    --grad-soft: linear-gradient(120deg, rgba(56,189,248,0.16), rgba(45,212,160,0.16));
+    --on-grad: #06121f;
+
+    --text: #e9f1fb;
+    --text-dim: #97a8c0;
+    --text-mute: #5f748f;
+
+    --up: #ff5a6a;
+    --up-bg: rgba(255,90,106,0.14);
+    --down: #4d9dff;
+    --down-bg: rgba(77,157,255,0.14);
+    --flat: #8ea3bf;
+    --flat-bg: rgba(142,163,191,0.12);
+
+    --meal-breakfast: #fbbf24;
+    --meal-lunch: #34d399;
+    --meal-dinner: #a78bfa;
+    --meal-snack: #f472b6;
+
+    --shadow-md: 0 8px 24px rgba(0,0,0,0.35);
+    --shadow-lg: 0 20px 50px rgba(0,0,0,0.5);
+
+    --body-bg: #071120;
+    --body-glow: rgba(56,189,248,0.10);
+    --header-bg: linear-gradient(180deg, rgba(7,17,32,0.92), rgba(7,17,32,0.6));
+    --nav-bg: linear-gradient(180deg, rgba(10,22,38,0.85), rgba(7,17,32,0.98));
+    --toast-bg: #0d1e34;
+    --backdrop: rgba(4,10,20,0.6);
+    --logo-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    --arrow-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2397a8c0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+
+    --chart-volume: #38bdf8;
+    --chart-weight: #2dd4a0;
+    --chart-kcal: #fbbf24;
+    --chart-target: #ff5a6a;
 }
 
 html, body { height: 100%; }
@@ -101,6 +146,10 @@ body {
 }
 button { font-family: var(--font); cursor: pointer; }
 .tabnum { font-variant-numeric: tabular-nums; }
+
+/* 네비 활성 아이콘 그라데이션 (main.html 의 <linearGradient id="navgrad">) */
+#navgrad .navgrad-a { stop-color: var(--accent); }
+#navgrad .navgrad-b { stop-color: var(--accent-2); }
 
 /* ---------- 앱 셸 ---------- */
 .app {
@@ -119,7 +168,7 @@ button { font-family: var(--font); cursor: pointer; }
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--line-soft);
 }
-.app-header .logo { width: 36px; height: 36px; border-radius: 10px; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.app-header .logo { width: 36px; height: 36px; border-radius: 10px; object-fit: cover; box-shadow: var(--logo-shadow); }
 .app-header .head-txt { flex: 1; min-width: 0; }
 .app-header .hello { font-size: 13px; color: var(--text-dim); }
 .app-header .hello b { color: var(--text); font-weight: 700; }
@@ -168,7 +217,7 @@ button { font-family: var(--font); cursor: pointer; }
     border-radius: var(--radius-md); padding: 14px 12px;
     text-align: center;
 }
-.stat-card .ico { width: 30px; height: 30px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; border-radius: 9px; background: var(--grad-soft); }
+.stat-card .ico { width: 30px; height: 30px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; border-radius: 9px; background: var(--grad-soft); color: var(--accent); }
 .stat-card .ico svg { width: 17px; height: 17px; }
 .stat-card .val { font-size: 20px; font-weight: 800; line-height: 1.1; }
 .stat-card .val .unit { font-size: 12px; font-weight: 600; color: var(--text-dim); margin-left: 2px; }
@@ -185,7 +234,7 @@ button { font-family: var(--font); cursor: pointer; }
 .delta.up   { color: var(--up);   background: var(--up-bg); }
 .delta.down { color: var(--down); background: var(--down-bg); }
 .delta.flat { color: var(--flat); background: var(--flat-bg); }
-.delta.new  { color: var(--green); background: rgba(45,212,160,0.14); }
+.delta.new  { color: var(--accent-2); background: var(--grad-soft); }
 
 /* 관심종목형 성장 리스트 (홈) */
 .watch-row {
@@ -211,7 +260,7 @@ button { font-family: var(--font); cursor: pointer; }
     font-size: 13px; font-weight: 700; padding: 7px 14px; border-radius: 9px;
     transition: color 0.15s, background 0.15s;
 }
-.seg button.active { color: #06121f; background: var(--grad); }
+.seg button.active { color: var(--on-grad); background: var(--grad); }
 
 /* ---------- 버튼 ---------- */
 .btn {
@@ -221,15 +270,16 @@ button { font-family: var(--font); cursor: pointer; }
     transition: transform 0.1s, opacity 0.15s;
 }
 .btn:active { transform: scale(0.98); }
-.btn.grad { background: var(--grad); color: #06121f; border: 0; }
+.btn.grad { background: var(--grad); color: var(--on-grad); border: 0; }
 .btn.block { width: 100%; }
 .btn.sm { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
 .btn.ghost { background: transparent; }
-.btn.danger { color: var(--up); border-color: rgba(255,90,106,0.3); background: rgba(255,90,106,0.08); }
+.btn.danger { color: var(--up); border-color: var(--up); background: var(--up-bg); }
+.btn:disabled { opacity: 0.55; }
 
 .icon-btn {
     display: inline-flex; align-items: center; gap: 6px;
-    background: var(--grad); color: #06121f;
+    background: var(--grad); color: var(--on-grad);
     border: 0; border-radius: 11px; font-weight: 800; font-size: 13px;
     padding: 8px 13px;
 }
@@ -261,18 +311,20 @@ button { font-family: var(--font); cursor: pointer; }
 /* 끼니 배지 */
 .meal-badge {
     font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px;
-    color: #06121f;
+    color: #ffffff;
 }
 .meal-badge.breakfast { background: var(--meal-breakfast); }
 .meal-badge.lunch { background: var(--meal-lunch); }
-.meal-badge.dinner { background: var(--meal-dinner); color: #fff; }
-.meal-badge.snack { background: var(--meal-snack); color: #fff; }
+.meal-badge.dinner { background: var(--meal-dinner); }
+.meal-badge.snack { background: var(--meal-snack); }
+:root[data-theme="dark"] .meal-badge.breakfast,
+:root[data-theme="dark"] .meal-badge.lunch { color: #06121f; }
 
 .rec-del {
     background: transparent; border: 0; color: var(--text-mute);
     padding: 4px; border-radius: 8px; line-height: 0;
 }
-.rec-del:active { background: rgba(255,90,106,0.12); color: var(--up); }
+.rec-del:active { background: var(--up-bg); color: var(--up); }
 .rec-del svg { width: 16px; height: 16px; }
 
 /* ---------- 달력 ---------- */
@@ -307,12 +359,12 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .cal-cell.empty { background: transparent; }
 .cal-cell .dnum { font-size: 13px; font-weight: 700; color: var(--text-dim); }
-.cal-cell.today { border-color: var(--blue); }
-.cal-cell.today .dnum { color: var(--blue); }
-.cal-cell.selected { background: var(--grad-soft); border-color: var(--green); }
+.cal-cell.today { border-color: var(--accent); }
+.cal-cell.today .dnum { color: var(--accent); }
+.cal-cell.selected { background: var(--grad-soft); border-color: var(--accent-2); }
 .cal-cell.has .dnum { color: var(--text); }
 .cal-cell .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--grad); }
-.cal-cell .kcal-tag { font-size: 9px; font-weight: 700; color: var(--green); }
+.cal-cell .kcal-tag { font-size: 9px; font-weight: 700; color: var(--accent-2); }
 
 .cal-day-detail { margin-top: 16px; }
 
@@ -325,7 +377,7 @@ button { font-family: var(--font); cursor: pointer; }
 
 .select-pill {
     appearance: none; -webkit-appearance: none;
-    background: var(--ink-800) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2397a8c0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E") no-repeat right 12px center;
+    background: var(--ink-800) var(--arrow-url) no-repeat right 12px center;
     border: 1px solid var(--line); color: var(--text);
     border-radius: 11px; padding: 10px 36px 10px 13px; font-size: 14px; font-weight: 600;
     font-family: var(--font);
@@ -351,7 +403,7 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .menu-card .menu-item:last-child { border-bottom: 0; }
 .menu-item:active { background: var(--grad-soft); border-radius: 10px; }
-.menu-item .mi-ico { width: 34px; height: 34px; border-radius: 10px; background: var(--grad-soft); display: flex; align-items: center; justify-content: center; color: var(--blue); }
+.menu-item .mi-ico { width: 34px; height: 34px; border-radius: 10px; background: var(--grad-soft); display: flex; align-items: center; justify-content: center; color: var(--accent); }
 .menu-item .mi-ico svg { width: 18px; height: 18px; }
 .menu-item .mi-label { flex: 1; }
 .menu-item .mi-chev { color: var(--text-mute); line-height: 0; }
@@ -365,7 +417,7 @@ button { font-family: var(--font); cursor: pointer; }
 .empty {
     text-align: center; padding: 44px 20px; color: var(--text-mute);
 }
-.empty .e-ico { width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 16px; background: var(--grad-soft); display: flex; align-items: center; justify-content: center; }
+.empty .e-ico { width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 16px; background: var(--grad-soft); display: flex; align-items: center; justify-content: center; color: var(--accent); }
 .empty .e-ico svg { width: 26px; height: 26px; }
 .empty .e-title { font-size: 15px; font-weight: 700; color: var(--text-dim); margin-bottom: 4px; }
 .empty .e-sub { font-size: 13px; line-height: 1.5; }
@@ -388,13 +440,13 @@ button { font-family: var(--font); cursor: pointer; }
     transition: color 0.15s;
 }
 .nav-item svg { width: 22px; height: 22px; }
-.nav-item.active { color: var(--blue); }
+.nav-item.active { color: var(--accent); }
 .nav-item.active svg { stroke: url(#navgrad); }
 
 /* ---------- 바텀시트 모달 ---------- */
 .sheet-backdrop {
     position: fixed; inset: 0; z-index: 100;
-    background: rgba(4,10,20,0.6); backdrop-filter: blur(2px);
+    background: var(--backdrop); backdrop-filter: blur(2px);
     opacity: 0; pointer-events: none; transition: opacity 0.25s;
 }
 .sheet-backdrop.open { opacity: 1; pointer-events: auto; }
@@ -407,6 +459,7 @@ button { font-family: var(--font); cursor: pointer; }
     padding: 8px 18px calc(20px + env(safe-area-inset-bottom));
     transition: transform 0.32s cubic-bezier(0.32,0.72,0,1);
     max-height: 88vh; overflow-y: auto;
+    box-shadow: var(--shadow-lg);
 }
 .sheet.open { transform: translateX(-50%) translateY(0); }
 .sheet-grip { width: 40px; height: 4px; border-radius: 2px; background: var(--ink-700); margin: 8px auto 14px; }
@@ -422,10 +475,11 @@ button { font-family: var(--font); cursor: pointer; }
     border-radius: 11px; color: var(--text); font-size: 15px; font-family: var(--font);
     transition: border-color 0.15s;
 }
-.input:focus, .select:focus { outline: 0; border-color: var(--blue); }
+.input::placeholder { color: var(--text-mute); }
+.input:focus, .select:focus { outline: 0; border-color: var(--accent); }
 .select {
     appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2397a8c0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-image: var(--arrow-url);
     background-repeat: no-repeat; background-position: right 12px center; padding-right: 38px;
 }
 .field-row { display: flex; gap: 10px; }
@@ -437,7 +491,7 @@ button { font-family: var(--font); cursor: pointer; }
     padding: 9px 14px; border-radius: 11px; font-size: 14px; font-weight: 700;
     background: var(--ink-800); border: 1px solid var(--line); color: var(--text-dim);
 }
-.chip.active { background: var(--grad); color: #06121f; border: 0; }
+.chip.active { background: var(--grad); color: var(--on-grad); border: 0; }
 
 /* ---------- 토스트 ---------- */
 #toast {
