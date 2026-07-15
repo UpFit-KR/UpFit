@@ -40,6 +40,11 @@ public class WorkoutSessionEntity {
     @Column(name = "condition_score")
     private Integer conditionScore;
 
+    // 이 날 운동한 부위(콤마 구분, 예: "가슴,삼두").
+    // 개별 운동이 아니라 운동 기록(세션) 단위로 관리한다.
+    @Column(length = 120)
+    private String bodyParts;
+
     // 세션 이름(선택, 예: "오전 운동")
     @Column(length = 60)
     private String title;

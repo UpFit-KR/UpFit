@@ -31,9 +31,8 @@ public class WorkoutEntity {
     private int sets;            // 세트
     private String memo;
 
-    // 운동 부위(콤마 구분, 예: "가슴,삼두").
-    @Column(length = 120)
-    private String bodyParts;
+    // NOTE: 운동 부위(bodyParts)는 workout_sessions 로 이동했다.
+    //       부위는 개별 운동이 아니라 그날의 운동 기록(세션) 단위로 관리한다.
 
     // 맨몸 운동 여부. 체크 시 weight = 0.
     private Boolean bodyweight;

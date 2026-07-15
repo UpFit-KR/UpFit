@@ -20,7 +20,7 @@
     <script src="auth.js?v=1.0.3"></script>
     <!-- [E] edit by smsong -->
 
-    <link rel="stylesheet" href="main.css?v=1.0.4">
+    <link rel="stylesheet" href="main.css?v=1.0.5">
 </head>
 <body>
 <!-- 아이콘 그라데이션 정의 (활성 네비 아이콘용) -->
@@ -92,14 +92,20 @@
     </nav>
 </div>
 
-<!-- 바텀시트 (운동/식단 입력) -->
+<!-- 바텀시트 1차 (운동 기록/식단/체중/프로필/설정) -->
 <div class="sheet-backdrop" id="sheetBackdrop"></div>
 <div class="sheet" id="sheet"></div>
+
+<!-- [B] edit by smsong : 바텀시트 2차 — 운동 입력 전용. 1차(운동 기록) 시트 위에 겹쳐 열린다.
+     날짜(세션) 폼과 운동 폼을 완전히 분리하기 위한 별도 레이어. -->
+<div class="sheet-backdrop lv2" id="sheetBackdrop2"></div>
+<div class="sheet lv2" id="sheet2"></div>
+<!-- [E] edit by smsong -->
 
 <!-- 토스트 -->
 <div id="toast"></div>
 
 <script src="config.js?v=1.0.1"></script>
-<script src="main.js?v=1.0.4"></script>
+<script src="main.js?v=1.0.5"></script>
 </body>
 </html>

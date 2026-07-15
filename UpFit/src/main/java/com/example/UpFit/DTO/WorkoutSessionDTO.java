@@ -23,6 +23,7 @@ public class WorkoutSessionDTO {
     private String endTime;         // "HH:mm" (운동 종료 시각)
     private Integer durationMin;    // 총 운동 시간(분)
     private Integer conditionScore; // 컨디션 0~100
+    private String bodyParts;       // 이 날 운동한 부위(콤마 구분)
     private String title;
     private String memo;
     private Integer sortOrder;      // 같은 날짜 내 세션 순서
@@ -40,6 +41,7 @@ public class WorkoutSessionDTO {
                 s.getEndTime(),
                 s.getDurationMin(),
                 s.getConditionScore(),
+                s.getBodyParts(),
                 s.getTitle(),
                 s.getMemo(),
                 s.getSortOrder(),

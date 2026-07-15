@@ -105,6 +105,7 @@ public class WorkoutSessionService {
                 .endTime(normTime(dto.getEndTime()))
                 .durationMin(resolveDuration(dto))
                 .conditionScore(clampCondition(dto.getConditionScore()))
+                .bodyParts(trimOrNull(dto.getBodyParts(), 120))
                 .title(trimOrNull(dto.getTitle(), 60))
                 .memo(trimOrNull(dto.getMemo(), 300))
                 .sortOrder(nextOrder)
@@ -134,6 +135,7 @@ public class WorkoutSessionService {
         entity.setEndTime(normTime(dto.getEndTime()));
         entity.setDurationMin(resolveDuration(dto));
         entity.setConditionScore(clampCondition(dto.getConditionScore()));
+        entity.setBodyParts(trimOrNull(dto.getBodyParts(), 120));
         entity.setTitle(trimOrNull(dto.getTitle(), 60));
         entity.setMemo(trimOrNull(dto.getMemo(), 300));
 
@@ -311,8 +313,7 @@ public class WorkoutSessionService {
         e.setReps(d.getReps());
         e.setSets(d.getSets());
         e.setMemo(trimOrNull(d.getMemo(), 255));
-        e.setBodyParts(trimOrNull(d.getBodyParts(), 120));
-        e.setSortOrder(order);
+        e.setSortOrder(order);   // 부위(bodyParts)는 세션이 보유 → 여기서 다루지 않음
     }
 
     private void requireDate(String date) {

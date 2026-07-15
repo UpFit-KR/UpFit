@@ -494,6 +494,9 @@ button { font-family: var(--font); cursor: pointer; }
     overscroll-behavior: contain;
 }
 .sheet.dragging { transition: none; }
+/* 2차 시트(운동 입력) — 1차 시트 위에 겹침 */
+.sheet-backdrop.lv2 { z-index: 102; }
+.sheet.lv2 { z-index: 103; }
 
 /* 드래그 손잡이 영역(그립 + 제목). touch-action:none → 브라우저 기본 스크롤 제스처와 충돌 방지 */
 .sheet-drag {
@@ -510,12 +513,19 @@ button { font-family: var(--font); cursor: pointer; }
 .sheet h3 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
 .sheet .sheet-desc { font-size: 13px; color: var(--text-dim); }
 
-/* 본문: 남는 높이를 전부 차지하며 내부 스크롤 */
+/* 본문: 남는 높이를 전부 차지하며 내부 스크롤
+   [B] edit by smsong — 모바일 스크롤 불가 버그 수정
+     시트 높이는 100dvh 인데 half 단계에서는 34% 만큼 아래로 내려가 있다.
+     → 스크롤 컨테이너의 아래쪽 34% 가 화면 밖에 위치해, 내용이 컨테이너보다 짧으면
+       스크롤이 아예 생기지 않아 하단 입력들이 영영 가려졌다.
+     → 현재 스냅 오프셋(--sheet-off, main.js 가 갱신)만큼 하단 패딩을 주어
+       화면 밖 영역까지 정확히 스크롤해서 도달할 수 있게 한다.
+   [E] edit by smsong */
 .sheet-body {
     flex: 1 1 auto; min-height: 0;
     overflow-y: auto; -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    padding: 16px 18px calc(28px + env(safe-area-inset-bottom));
+    padding: 16px 18px calc(var(--sheet-off, 0px) + 28px + env(safe-area-inset-bottom));
 }
 /* 시트를 끌어내리는 동안에는 본문 스크롤을 잠깐 잠근다 */
 .sheet-body.no-scroll { overflow-y: hidden; }
@@ -748,25 +758,30 @@ button { font-family: var(--font); cursor: pointer; }
 .cond-line .cond-bar i { display: block; height: 100%; border-radius: 3px; transition: width .25s; }
 .cond-line .cond-num { font-size: 11px; font-weight: 800; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 
-/* ---------- 컨디션 드래그 슬라이더 (시트 안) ---------- */
-.cond-field { margin-bottom: 18px; }
-.cond-chip {
-    font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
-    background: var(--grad-soft); margin-left: 6px;
+/* ---------- 컨디션 드래그 슬라이더 (시트 안) ----------
+   [B] edit by smsong : 숫자/라벨을 슬라이더 위로 올리고, 슬라이더가 가로 한 줄을 전부 사용 */
+.cond-field { margin-bottom: 20px; }
+.cond-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px; gap: 10px;
 }
-.cond-wrap { display: flex; align-items: center; gap: 14px; }
+.cond-head label { margin-bottom: 0; }
+.cond-readout { display: flex; align-items: baseline; gap: 8px; }
+.cond-chip {
+    font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px;
+    background: var(--grad-soft);
+}
 .cond-big {
-    flex: 0 0 54px; text-align: right;
-    font-size: 26px; font-weight: 800; line-height: 1;
+    font-size: 28px; font-weight: 800; line-height: 1;
     font-variant-numeric: tabular-nums;
 }
 .cond-range {
     -webkit-appearance: none; appearance: none;
-    flex: 1; min-width: 0; height: 26px; background: transparent;
+    display: block; width: 100%; height: 28px; background: transparent;
     /* --cond-pct / --cond-color 는 main.js 가 값 변경 시 갱신 */
     --cond-pct: 70%;
     --cond-color: var(--accent-2);
-    touch-action: pan-y;   /* 좌우 드래그는 슬라이더가 가져간다 */
+    touch-action: pan-y;   /* 세로 제스처는 본문 스크롤에 양보, 좌우 드래그만 슬라이더가 처리 */
 }
 .cond-range::-webkit-slider-runnable-track {
     height: 8px; border-radius: 4px;
@@ -802,17 +817,7 @@ button { font-family: var(--font); cursor: pointer; }
     font-size: 11px; padding: 2px 6px; border-radius: 999px;
     background: var(--grad-soft); color: var(--accent); margin-left: 4px;
 }
-/* 운동 입력 폼: 부드럽게 펼침/접힘 */
-.se-form-wrap {
-    overflow: hidden; max-height: 0; opacity: 0; margin-bottom: 0;
-    transition: max-height .34s cubic-bezier(.4,0,.2,1), opacity .24s ease, margin-bottom .34s ease;
-}
-.se-form-wrap.open { max-height: 860px; opacity: 1; margin-bottom: 14px; }
-.se-form {
-    background: var(--ink-850); border: 1px solid var(--line);
-    border-radius: var(--radius-md); padding: 14px 13px 4px;
-}
-.se-form .field:last-of-type { margin-bottom: 12px; }
+/* 운동 입력 폼은 2차 시트(#sheet2)로 분리됨 → 인라인 펼침 폼 제거 */
 .se-list { margin-bottom: 6px; }
 .se-empty {
     text-align: center; padding: 26px 12px; font-size: 13px; color: var(--text-mute);

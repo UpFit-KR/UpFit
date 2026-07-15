@@ -106,11 +106,12 @@ const api = {
 // ---------- DTO ↔ 화면 레코드 매핑 ----------
 function partsToArr(s) { return (s ? String(s).split(',') : []).map(x => x.trim()).filter(Boolean); }
 
+// [B] edit by smsong : 운동 부위(bodyParts)는 운동이 아니라 운동 기록(세션)이 보유한다.
 function fromWorkoutDTO(d) {
     return {
         id: d.id, sessionId: d.sessionId,
         exercise: d.exercise, weight: d.weight, reps: d.reps, sets: d.sets,
-        memo: d.memo || '', bodyParts: partsToArr(d.bodyParts), bodyweight: !!d.bodyweight,
+        memo: d.memo || '', bodyweight: !!d.bodyweight,
         sortOrder: d.sortOrder == null ? null : d.sortOrder
     };
 }
@@ -118,9 +119,10 @@ function toWorkoutDTO(w) {
     return {
         id: (w.id == null ? null : w.id),     // id 유지 → 서버가 수정/신규를 구분
         exercise: w.exercise, weight: w.weight, reps: w.reps, sets: w.sets,
-        memo: w.memo || '', bodyParts: (w.bodyParts || []).join(','), bodyweight: !!w.bodyweight
+        memo: w.memo || '', bodyweight: !!w.bodyweight
     };
 }
+// [E] edit by smsong
 // 세션(운동 기록) — 화면 레코드는 sessionDate → date, conditionScore → condition 으로 축약
 function fromSessionDTO(d) {
     return {
@@ -130,6 +132,7 @@ function fromSessionDTO(d) {
         endTime: d.endTime || '',
         durationMin: d.durationMin == null ? null : d.durationMin,
         condition: d.conditionScore == null ? null : d.conditionScore,
+        bodyParts: partsToArr(d.bodyParts),   // [B][E] edit by smsong : 부위는 세션 단위
         title: d.title || '',
         memo: d.memo || '',
         sortOrder: d.sortOrder == null ? null : d.sortOrder,
@@ -143,6 +146,7 @@ function toSessionDTO(s) {
         endTime: s.endTime || null,
         durationMin: s.durationMin == null ? null : s.durationMin,
         conditionScore: s.condition == null ? null : s.condition,
+        bodyParts: (s.bodyParts || []).join(','),   // [B][E] edit by smsong : 부위는 세션 단위
         title: s.title || null,
         memo: s.memo || '',
         workouts: (s.workouts || []).map(toWorkoutDTO)
@@ -316,9 +320,9 @@ function volumeOf(w) { return (w.weight || 0) * (w.reps || 0) * (w.sets || 0); }
 // [B] edit by smsong : 세션 기준 집계
 function sessionVolume(s) { return (s.workouts || []).reduce((a, w) => a + volumeOf(w), 0); }
 function sessionSets(s) { return (s.workouts || []).reduce((a, w) => a + (w.sets || 0), 0); }
+// 세션이 직접 보유한 부위 (BODY_PARTS 순서 유지)
 function sessionBodyParts(s) {
-    const set = new Set();
-    (s.workouts || []).forEach(w => (w.bodyParts || []).forEach(p => set.add(p)));
+    const set = new Set(s.bodyParts || []);
     return BODY_PARTS.filter(p => set.has(p));
 }
 // 세션의 총 운동 시간: 저장값 우선, 없으면 시작~종료로 계산
@@ -344,9 +348,10 @@ function orderedSessions() {
     });
 }
 function workoutsOfDate(date) { return sessionsByDate(date).reduce((acc, s) => acc.concat(s.workouts || []), []); }
+// 하루 부위 요약 = 그날 세션들의 부위 합집합
 function dayBodyParts(date) {
     const set = new Set();
-    workoutsOfDate(date).forEach(w => (w.bodyParts || []).forEach(p => set.add(p)));
+    sessionsByDate(date).forEach(s => (s.bodyParts || []).forEach(p => set.add(p)));
     return BODY_PARTS.filter(p => set.has(p));
 }
 function volumeOfDate(date) { return sessionsByDate(date).reduce((a, s) => a + sessionVolume(s), 0); }
@@ -585,6 +590,26 @@ async function commitReorder(date, ids) {
     }
 }
 
+// [B] edit by smsong
+// position:fixed 의 기준점 계산.
+//   CSS 사양상 transform 이 걸린 조상이 있으면 fixed 요소의 기준(포함 블록)이
+//   뷰포트가 아니라 그 조상이 된다. 바텀시트(.sheet)는 translateY 로 단계를 표현하므로
+//   시트 안 목록을 드래그할 때 뷰포트 좌표를 그대로 쓰면 위치가 어긋난다.
+//   → 가장 가까운 transform 조상의 rect 를 원점으로 되돌려 준다.
+function fixedOrigin(el) {
+    let n = el.parentElement;
+    while (n && n !== document.body && n !== document.documentElement) {
+        const cs = getComputedStyle(n);
+        if (cs.transform !== 'none' || cs.filter !== 'none' || cs.perspective !== 'none') {
+            const r = n.getBoundingClientRect();
+            return { x: r.left, y: r.top };
+        }
+        n = n.parentElement;
+    }
+    return { x: 0, y: 0 };
+}
+// [E] edit by smsong
+
 // 포인터 기반 드래그 순서 변경 (모바일 터치 + 마우스 공통).
 // 대상 행을 position:fixed 로 띄우고, 같은 높이의 자리표시자로 슬롯을 유지하며 이동.
 // onCommit(ids) 은 서버 저장(세션 목록) 또는 로컬 배열 정렬(시트 안 운동 목록)에 쓰인다.
@@ -604,6 +629,7 @@ function enableDragReorder(listEl, onCommit) {
         const pointerId = e.pointerId;
         const rect = row.getBoundingClientRect();
         const grabOffset = e.clientY - rect.top;
+        const org = fixedOrigin(row);   // [B][E] edit by smsong : 시트(transform) 안에서도 좌표가 맞도록
 
         // 슬롯 유지용 자리표시자
         const ph = document.createElement('div');
@@ -614,15 +640,15 @@ function enableDragReorder(listEl, onCommit) {
         // 대상 행을 화면에 고정
         row.classList.add('dragging');
         row.style.position = 'fixed';
-        row.style.left = rect.left + 'px';
-        row.style.top = rect.top + 'px';
+        row.style.left = (rect.left - org.x) + 'px';
+        row.style.top = (rect.top - org.y) + 'px';
         row.style.width = rect.width + 'px';
         row.style.margin = '0';
 
         try { handle.setPointerCapture(pointerId); } catch (_) {}
 
         function onMove(ev) {
-            row.style.top = (ev.clientY - grabOffset) + 'px';
+            row.style.top = (ev.clientY - grabOffset - org.y) + 'px';
             const others = [].slice.call(listEl.querySelectorAll('[data-reorder-id]')).filter(x => x !== row);
             let placed = false;
             for (let i = 0; i < others.length; i++) {
@@ -739,8 +765,8 @@ function workoutRowHtml(w, sessionId, k) {
     const vol = volumeOf(w);
     const prev = prevExerciseVolume(w.exercise, sessionId);
     const weightTxt = w.bodyweight ? '맨몸' : `${w.weight}kg`;
-    const tags = (w.bodyParts || []).map(p => `<span class="bp">${esc(p)}</span>`);
-    if (w.bodyweight) tags.push(`<span class="bw">맨몸</span>`);
+    // 부위 태그는 세션 카드/세션 폼에만 표시 → 운동 행에는 맨몸 표시만 남긴다
+    const tags = w.bodyweight ? [`<span class="bw">맨몸</span>`] : [];
     return `
     <div class="rec" data-reorder-id="${k}">
         <div class="drag-handle" title="드래그하여 순서 변경">${icon('grip')}</div>
@@ -1156,166 +1182,184 @@ function chartLegend(items) {
 // ============================================================
 //  [B] edit by smsong — 바텀시트 (네이버 지도앱식 3단 스냅)
 //    1차 full   : 전체 화면
-//    2차 half   : 화면의 2/3만 걸침 (기본 열림 단계)
+//    2차 half   : 화면의 2/3만 걸침 (열릴 때 기본 단계)
 //    3차 closed : 완전히 내림
-//  · .sheet 자체를 화면 높이로 두고 translateY 로 단계를 표현한다.
+//  · .sheet 자체를 뷰포트 높이로 두고 translateY(px) 로 단계를 표현한다.
 //  · 그립/헤더 영역은 항상 드래그, 본문은 스크롤 최상단에서 아래로 당길 때만 드래그.
 //  · 놓았을 때 이동 속도(플링)가 빠르면 다음 단계로, 아니면 가장 가까운 단계로 스냅.
+//  · [스크롤 수정] half 단계에서는 시트 하단 34% 가 화면 밖에 있다.
+//    → 스냅 오프셋을 CSS 변수 --sheet-off 로 내려보내 .sheet-body 하단 패딩으로 보정
+//      (그래야 화면 밖으로 밀린 입력까지 스크롤해서 도달할 수 있다).
+//  · 시트를 2개 운용한다: 1차 = 운동 기록(세션)/식단/체중/프로필/설정,
+//    2차 = 운동 입력 전용(1차 위에 겹침) → 날짜(세션) 폼과 운동 폼 완전 분리.
 // ============================================================
-const sheet = document.getElementById('sheet');
-const backdrop = document.getElementById('sheetBackdrop');
-
 const HALF_RATIO = 0.34;      // 아래로 34% 내림 → 화면의 약 2/3 노출
 const FLING_V = 0.55;         // px/ms 이상이면 플링으로 간주
 const SNAP_ORDER = ['full', 'half', 'closed'];
 
-let sheetSnap = 'closed';
-let sheetY = 0;
-let sheetCloseTimer = null;
+function createSheet(sheetId, backdropId) {
+    const sheet = document.getElementById(sheetId);
+    const backdrop = document.getElementById(backdropId);
+    let snap = 'closed';
+    let curY = 0;
+    let closeTimer = null;
 
-function sheetH() { return sheet.offsetHeight || window.innerHeight; }
-function snapPoints() {
-    const h = sheetH();
-    return { full: 0, half: Math.round(h * HALF_RATIO), closed: h };
-}
-function nearestSnap(y) {
-    const p = snapPoints();
-    let best = 'half', bestD = Infinity;
-    SNAP_ORDER.forEach(k => {
-        const d = Math.abs(p[k] - y);
-        if (d < bestD) { bestD = d; best = k; }
-    });
-    return best;
-}
-function applyY(y) {
-    sheetY = y;
-    sheet.style.transform = `translateX(-50%) translateY(${y}px)`;
-}
-function setSnap(name, animate) {
-    const p = snapPoints();
-    if (p[name] == null) name = 'half';
-    sheetSnap = name;
-    sheet.classList.toggle('dragging', animate === false);
-    sheet.classList.toggle('full', name === 'full');
-    sheet.classList.toggle('open', name !== 'closed');
-    backdrop.classList.toggle('open', name !== 'closed');
-    applyY(p[name]);
-    if (animate === false) requestAnimationFrame(() => sheet.classList.remove('dragging'));
-}
+    function h() { return sheet.offsetHeight || window.innerHeight; }
+    function points() {
+        const hh = h();
+        return { full: 0, half: Math.round(hh * HALF_RATIO), closed: hh };
+    }
+    function nearest(y) {
+        const p = points();
+        let best = 'half', bestD = Infinity;
+        SNAP_ORDER.forEach(k => { const d = Math.abs(p[k] - y); if (d < bestD) { bestD = d; best = k; } });
+        return best;
+    }
+    function applyY(y) {
+        curY = y;
+        sheet.style.transform = `translateX(-50%) translateY(${y}px)`;
+    }
+    function setSnap(name, animate) {
+        const p = points();
+        if (p[name] == null) name = 'half';
+        snap = name;
+        if (animate === false) sheet.classList.add('dragging');
+        sheet.classList.toggle('full', name === 'full');
+        sheet.classList.toggle('open', name !== 'closed');
+        backdrop.classList.toggle('open', name !== 'closed');
+        applyY(p[name]);
+        // 화면 밖으로 밀린 만큼 본문 하단에 여백 → 스크롤로 도달 가능해진다
+        sheet.style.setProperty('--sheet-off', p[name] + 'px');
+        if (animate === false) requestAnimationFrame(() => sheet.classList.remove('dragging'));
+    }
 
-function openSheet(html, opts) {
-    opts = opts || {};
-    clearTimeout(sheetCloseTimer);
-    sheet.innerHTML = `
-        <div class="sheet-drag" id="sheetDrag">
-            <div class="sheet-grip"></div>
-            ${opts.title ? `<h3>${opts.title}</h3>` : ''}
-            ${opts.desc ? `<div class="sheet-desc">${opts.desc}</div>` : ''}
-        </div>
-        <div class="sheet-body" id="sheetBody">${html}</div>`;
+    function open(html, opts) {
+        opts = opts || {};
+        clearTimeout(closeTimer);
+        sheet.innerHTML = `
+            <div class="sheet-drag">
+                <div class="sheet-grip"></div>
+                ${opts.title ? `<h3>${opts.title}</h3>` : ''}
+                ${opts.desc ? `<div class="sheet-desc">${opts.desc}</div>` : ''}
+            </div>
+            <div class="sheet-body">${html}</div>`;
 
-    // 닫힘 위치에서 시작 → 다음 프레임에 목표 단계로 애니메이션
-    sheet.classList.remove('full');
-    applyY(snapPoints().closed);
-    backdrop.classList.add('open');
-    requestAnimationFrame(() => setSnap(opts.snap || 'half', true));
-    wireSheetDrag();
-}
-function closeSheet() {
-    setSnap('closed', true);
-    clearTimeout(sheetCloseTimer);
-    sheetCloseTimer = setTimeout(() => { if (sheetSnap === 'closed') sheet.innerHTML = ''; }, 380);
-}
-backdrop.onclick = closeSheet;
-window.addEventListener('resize', () => { if (sheetSnap !== 'closed') setSnap(sheetSnap, false); });
+        // 닫힘 위치에서 시작 → 다음 프레임에 목표 단계로 애니메이션
+        sheet.classList.remove('full');
+        applyY(points().closed);
+        backdrop.classList.add('open');
+        requestAnimationFrame(() => setSnap(opts.snap || 'half', true));
+        wireDrag();
+    }
+    function close() {
+        setSnap('closed', true);
+        clearTimeout(closeTimer);
+        closeTimer = setTimeout(() => { if (snap === 'closed') sheet.innerHTML = ''; }, 380);
+    }
 
-// 드래그 배선 — openSheet 로 내용이 바뀔 때마다 다시 건다
-function wireSheetDrag() {
-    const dragArea = document.getElementById('sheetDrag');
-    const body = document.getElementById('sheetBody');
-    if (dragArea) dragArea.addEventListener('pointerdown', e => startDrag(e, false));
-    if (body) body.addEventListener('pointerdown', e => startDrag(e, true));
-}
+    function body() { return sheet.querySelector('.sheet-body'); }
 
-function startDrag(e, fromBody) {
-    if (e.button != null && e.button > 0) return;
-    // 슬라이더/입력/버튼 위에서 시작한 제스처는 시트 드래그로 가로채지 않는다
-    if (e.target.closest('input, select, textarea, button, .drag-handle')) return;
+    function wireDrag() {
+        const dragArea = sheet.querySelector('.sheet-drag');
+        const bd = body();
+        if (dragArea) dragArea.addEventListener('pointerdown', e => startDrag(e, false));
+        if (bd) bd.addEventListener('pointerdown', e => startDrag(e, true));
+    }
 
-    const body = document.getElementById('sheetBody');
-    const startY = e.clientY;
-    const baseY = sheetY;
-    let dragging = !fromBody;      // 헤더에서 시작하면 즉시 드래그
-    let lastY = startY, lastT = performance.now(), vel = 0;
+    function startDrag(e, fromBody) {
+        if (e.button != null && e.button > 0) return;
+        // 슬라이더/입력/버튼/정렬 핸들 위에서 시작한 제스처는 시트 드래그로 가로채지 않는다
+        if (e.target.closest('input, select, textarea, button, .drag-handle')) return;
 
-    if (dragging) sheet.classList.add('dragging');
+        const bd = body();
+        const startY = e.clientY;
+        const baseY = curY;
+        let dragging = !fromBody;      // 헤더에서 시작하면 즉시 드래그
+        let lastY = startY, lastT = performance.now(), vel = 0;
 
-    function onMove(ev) {
-        const dy = ev.clientY - startY;
+        if (dragging) sheet.classList.add('dragging');
 
-        if (!dragging) {
-            // 본문에서 시작한 경우: 최상단에서 아래로 당길 때만 시트 드래그로 전환
-            if (dy > 8 && body && body.scrollTop <= 0) {
-                dragging = true;
-                sheet.classList.add('dragging');
-                body.classList.add('no-scroll');
-            } else if (Math.abs(dy) > 8) {
-                cleanup();   // 일반 스크롤 → 시트 드래그 포기
-                return;
-            } else {
-                return;
+        function onMove(ev) {
+            const dy = ev.clientY - startY;
+
+            if (!dragging) {
+                // 본문에서 시작한 경우: 최상단에서 아래로 당길 때만 시트 드래그로 전환
+                // (그 외에는 즉시 포기 → 네이티브 세로 스크롤이 그대로 동작)
+                if (dy > 8 && bd && bd.scrollTop <= 0) {
+                    dragging = true;
+                    sheet.classList.add('dragging');
+                    bd.classList.add('no-scroll');
+                } else if (Math.abs(dy) > 8) {
+                    cleanup();
+                    return;
+                } else {
+                    return;
+                }
             }
+
+            const now = performance.now();
+            const dt = now - lastT;
+            if (dt > 0) vel = (ev.clientY - lastY) / dt;
+            lastY = ev.clientY; lastT = now;
+
+            const p = points();
+            let y = baseY + dy;
+            if (y < p.full) y = p.full + (y - p.full) * 0.25;   // 최상단 저항(고무줄)
+            if (y > p.closed) y = p.closed;
+            applyY(y);
+            ev.preventDefault();
         }
 
-        const now = performance.now();
-        const dt = now - lastT;
-        if (dt > 0) vel = (ev.clientY - lastY) / dt;
-        lastY = ev.clientY; lastT = now;
+        function onUp() {
+            if (!dragging) { cleanup(); return; }
+            sheet.classList.remove('dragging');
+            if (bd) bd.classList.remove('no-scroll');
 
-        const p = snapPoints();
-        let y = baseY + dy;
-        if (y < p.full) y = p.full + (y - p.full) * 0.25;   // 최상단 저항(고무줄)
-        if (y > p.closed) y = p.closed;
-        applyY(y);
-        ev.preventDefault();
-    }
-
-    function onUp() {
-        if (!dragging) { cleanup(); return; }
-        sheet.classList.remove('dragging');
-        if (body) body.classList.remove('no-scroll');
-
-        let target;
-        if (Math.abs(vel) >= FLING_V) {
-            // 플링: 속도 방향으로 한 단계 이동
-            const cur = SNAP_ORDER.indexOf(nearestSnap(sheetY));
-            const next = vel > 0 ? Math.min(cur + 1, SNAP_ORDER.length - 1) : Math.max(cur - 1, 0);
-            target = SNAP_ORDER[next];
-        } else {
-            target = nearestSnap(sheetY);
+            let target;
+            if (Math.abs(vel) >= FLING_V) {
+                // 플링: 속도 방향으로 한 단계 이동
+                const cur = SNAP_ORDER.indexOf(nearest(curY));
+                const next = vel > 0 ? Math.min(cur + 1, SNAP_ORDER.length - 1) : Math.max(cur - 1, 0);
+                target = SNAP_ORDER[next];
+            } else {
+                target = nearest(curY);
+            }
+            if (target === 'closed') close(); else setSnap(target, true);
+            cleanup();
         }
-        if (target === 'closed') closeSheet(); else setSnap(target, true);
-        cleanup();
+
+        function cleanup() {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
+            if (bd) bd.classList.remove('no-scroll');
+        }
+
+        document.addEventListener('pointermove', onMove, { passive: false });
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onUp);
     }
 
-    function cleanup() {
-        document.removeEventListener('pointermove', onMove);
-        document.removeEventListener('pointerup', onUp);
-        document.removeEventListener('pointercancel', onUp);
-        if (body) body.classList.remove('no-scroll');
-    }
+    backdrop.onclick = close;
+    window.addEventListener('resize', () => { if (snap !== 'closed') setSnap(snap, false); });
 
-    document.addEventListener('pointermove', onMove, { passive: false });
-    document.addEventListener('pointerup', onUp);
-    document.addEventListener('pointercancel', onUp);
+    return { open, close, isOpen: () => snap !== 'closed' };
 }
+
+const Sheet1 = createSheet('sheet', 'sheetBackdrop');    // 운동 기록(세션)/식단/체중/프로필/설정
+const Sheet2 = createSheet('sheet2', 'sheetBackdrop2');  // 운동 입력 전용 (1차 위에 겹침)
+
+function openSheet(html, opts) { Sheet1.open(html, opts); }
+function closeSheet() { Sheet1.close(); }
 // [E] edit by smsong
 
 // ============================================================
-//  [B] edit by smsong — 운동 기록(세션) 에디터
-//    · 신규 생성과 상세 보기/수정을 하나의 시트로 통합
-//    · 시트 안에서 운동을 여러 개 먼저 만들어 두고(초안) '저장'에 한 번에 반영
-//    · 저장 시 서버가 workouts 배열을 id 기준으로 동기화(추가/수정/삭제)
+//  [B] edit by smsong — 1차 시트 : 운동 기록(세션) 폼
+//    · 날짜 / 시작·종료 시각 / 총 운동 시간 / 컨디션(0~100 드래그) / 운동 부위 / 메모
+//    · 그 아래에 이 기록에 담긴 운동 목록 (드래그 정렬 · 수정 · 삭제)
+//    · 운동 입력은 여기 두지 않고 2차 시트(openWorkoutSheet)로 완전히 분리
+//    · 운동은 초안(로컬)으로 여러 개 담아 두고 '저장' 한 번에 서버 반영
+//      → 서버가 workouts 배열을 id 기준으로 동기화(추가/수정/삭제)
 // ============================================================
 function openSessionEditor(sessionId, date) {
     const existing = sessionId ? state.sessions.find(s => String(s.id) === String(sessionId)) : null;
@@ -1324,17 +1368,16 @@ function openSessionEditor(sessionId, date) {
     const draft = existing ? JSON.parse(JSON.stringify(existing)) : {
         id: null, date: date || todayStr(),
         startTime: '', endTime: '', durationMin: null,
-        condition: DEFAULT_CONDITION, title: '', memo: '', workouts: []
+        condition: DEFAULT_CONDITION, bodyParts: [], title: '', memo: '', workouts: []
     };
     // 로컬 키(_k): 아직 서버 id 가 없는 운동도 목록에서 식별/정렬하기 위함
-    draft.workouts = (draft.workouts || []).map(w => Object.assign({}, w, { _k: localKey(w) }));
+    draft.workouts = (draft.workouts || []).map(w => Object.assign({}, w, { _k: w.id != null ? 'i' + w.id : 'n' + uid() }));
 
-    let editKey = null;             // 수정 중인 운동의 _k (null = 추가 모드)
-    const selectedParts = new Set();
+    const selectedParts = new Set(draft.bodyParts || []);
 
     openSheet(editorBodyHtml(), {
         title: existing ? '운동 기록 상세' : '운동 기록 추가',
-        desc: existing ? '시간·컨디션과 운동 목록을 관리해요.' : '먼저 시간·컨디션을 정하고, 운동을 여러 개 담아 저장하세요.',
+        desc: existing ? '시간·컨디션·부위와 운동 목록을 관리해요.' : '먼저 시간·컨디션·부위를 정하고, 운동을 담아 저장하세요.',
         snap: 'half'
     });
 
@@ -1343,6 +1386,7 @@ function openSessionEditor(sessionId, date) {
 
     // ---------- HTML ----------
     function editorBodyHtml() {
+        const cond = draft.condition == null ? DEFAULT_CONDITION : draft.condition;
         return `
         <div class="field"><label>날짜</label><input class="input" id="seDate" type="date" value="${draft.date}"></div>
 
@@ -1354,12 +1398,20 @@ function openSessionEditor(sessionId, date) {
         <div class="hint" id="seDurHint"></div>
 
         <div class="field cond-field">
-            <label>컨디션 <span class="cond-chip" id="seCondLbl">${condLabel(draft.condition)}</span></label>
-            <div class="cond-wrap">
-                <input type="range" class="cond-range" id="seCond" min="0" max="100" step="1" value="${draft.condition == null ? DEFAULT_CONDITION : draft.condition}">
-                <div class="cond-big tabnum" id="seCondVal">${draft.condition == null ? DEFAULT_CONDITION : draft.condition}</div>
+            <div class="cond-head">
+                <label>컨디션</label>
+                <div class="cond-readout">
+                    <span class="cond-big tabnum" id="seCondVal">${cond}</span>
+                    <span class="cond-chip" id="seCondLbl">${condLabel(cond)}</span>
+                </div>
             </div>
+            <input type="range" class="cond-range" id="seCond" min="0" max="100" step="1" value="${cond}">
             <div class="cond-scale"><span>0 · 최악</span><span>50 · 보통</span><span>100 · 최상</span></div>
+        </div>
+
+        <div class="field">
+            <label>운동 부위 (여러 개 선택 가능)</label>
+            <div class="chip-row" id="seParts">${BODY_PARTS.map(p => `<button class="chip sm ${selectedParts.has(p) ? 'active' : ''}" data-bp="${esc(p)}" type="button">${esc(p)}</button>`).join('')}</div>
         </div>
 
         <div class="field"><label>기록 이름 (선택)</label><input class="input" id="seTitle" value="${esc(draft.title)}" placeholder="예: 오전 운동, 저녁 하체"></div>
@@ -1367,47 +1419,7 @@ function openSessionEditor(sessionId, date) {
 
         <div class="se-head">
             <h4>운동 <span class="cnt tabnum" id="seCount">0</span></h4>
-            <button class="btn sm ex-btn toggle" id="seAddToggle" type="button">＋ 운동</button>
-        </div>
-
-        <div class="se-form-wrap" id="seFormWrap">
-            <div class="se-form">
-                <div class="field">
-                    <label>운동 종목</label>
-                    <div class="exercise-picker">
-                        <select class="select" id="wExercise">${exOptionsHtml('')}</select>
-                        <button class="btn sm ex-btn toggle" id="wAddEx" type="button">＋ 종목</button>
-                    </div>
-                    <div class="ex-new-wrap" id="wNewExWrap">
-                        <div class="exercise-picker">
-                            <input class="input" id="wNewEx" placeholder="새 종목 이름 (예: 인클라인 벤치)">
-                            <button class="btn sm grad ex-btn" id="wNewExSave" type="button">추가</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="field">
-                    <label>운동 부위 (여러 개 선택 가능)</label>
-                    <div class="chip-row" id="wParts">${BODY_PARTS.map(p => `<button class="chip sm" data-bp="${esc(p)}" type="button">${esc(p)}</button>`).join('')}</div>
-                </div>
-
-                <label class="check-row">
-                    <input type="checkbox" id="wBodyweight">
-                    <span class="box">${icon('check')}</span>
-                    <span>맨몸 운동 (무게 0kg 고정)</span>
-                </label>
-
-                <div class="field-row">
-                    <div class="field"><label>무게 (kg)</label><input class="input" id="wWeight" type="number" inputmode="decimal" placeholder="100"></div>
-                    <div class="field"><label>횟수 (회)</label><input class="input" id="wReps" type="number" inputmode="numeric" placeholder="5"></div>
-                    <div class="field"><label>세트</label><input class="input" id="wSets" type="number" inputmode="numeric" placeholder="1" value="1"></div>
-                </div>
-                <div class="field"><label>운동 메모 (선택)</label><input class="input" id="wMemo" placeholder="그립, 템포 등"></div>
-                <div class="field-row">
-                    <button class="btn grad" id="wApply" style="flex:1" type="button">목록에 추가</button>
-                    <button class="btn" id="wCancel" style="flex:0 0 92px" type="button">취소</button>
-                </div>
-            </div>
+            <button class="btn sm grad" id="seAddW" type="button">＋ 운동 추가</button>
         </div>
 
         <div class="reorder-list se-list" id="seList"></div>
@@ -1418,22 +1430,13 @@ function openSessionEditor(sessionId, date) {
         </div>`;
     }
 
-    function exOptionsHtml(selectedName) {
-        if (!state.exercises.length) return `<option value="" disabled selected>종목을 추가하세요</option>`;
-        return state.exercises.map(e => `<option value="${esc(e)}" ${e === selectedName ? 'selected' : ''}>${esc(e)}</option>`).join('');
-    }
-
-    function localKey(w) {
-        return w.id != null ? 'i' + w.id : 'n' + uid();
-    }
-
-    // ---------- 목록 그리기 ----------
+    // ---------- 운동 목록 그리기 ----------
     function paintList() {
         const el = document.getElementById('seList');
         if (!el) return;
         el.innerHTML = draft.workouts.length
             ? draft.workouts.map(w => workoutRowHtml(w, draft.id, w._k)).join('')
-            : `<div class="se-empty">아직 담은 운동이 없어요. ‘＋ 운동’으로 추가하세요.</div>`;
+            : `<div class="se-empty">아직 담은 운동이 없어요. ‘＋ 운동 추가’로 담아보세요.</div>`;
         document.getElementById('seCount').textContent = draft.workouts.length;
 
         // 목록 내 드래그 정렬(로컬 배열만 재정렬 → 저장 시 서버 반영)
@@ -1447,56 +1450,28 @@ function openSessionEditor(sessionId, date) {
             ev.stopPropagation();
             const k = b.dataset.rmW;
             draft.workouts = draft.workouts.filter(w => w._k !== k);
-            if (editKey === k) { editKey = null; resetForm(); }
             paintList();
         });
         el.querySelectorAll('[data-edit-w]').forEach(b => b.onclick = ev => {
             ev.stopPropagation();
-            loadIntoForm(b.dataset.editW);
+            openWorkoutForm(b.dataset.editW);
         });
     }
 
-    // ---------- 폼 제어 ----------
-    function openForm(open) {
-        const wrap = document.getElementById('seFormWrap');
-        const btn = document.getElementById('seAddToggle');
-        wrap.classList.toggle('open', open);
-        btn.classList.toggle('open', open);
-        btn.textContent = open ? '－ 닫기' : '＋ 운동';
-        if (open) wrap.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-    function resetForm() {
-        editKey = null;
-        selectedParts.clear();
-        document.querySelectorAll('#wParts .chip').forEach(c => c.classList.remove('active'));
-        const bw = document.getElementById('wBodyweight');
-        bw.checked = false;
-        const ww = document.getElementById('wWeight');
-        ww.disabled = false; ww.value = '';
-        document.getElementById('wReps').value = '';
-        document.getElementById('wSets').value = '1';
-        document.getElementById('wMemo').value = '';
-        document.getElementById('wApply').textContent = '목록에 추가';
-    }
-    function loadIntoForm(k) {
-        const w = draft.workouts.find(x => x._k === k);
-        if (!w) return;
-        editKey = k;
-        const sel = document.getElementById('wExercise');
-        sel.innerHTML = exOptionsHtml(w.exercise);
-        selectedParts.clear();
-        (w.bodyParts || []).forEach(p => selectedParts.add(p));
-        document.querySelectorAll('#wParts .chip').forEach(c => c.classList.toggle('active', selectedParts.has(c.dataset.bp)));
-        const bw = document.getElementById('wBodyweight');
-        bw.checked = !!w.bodyweight;
-        const ww = document.getElementById('wWeight');
-        ww.value = w.bodyweight ? '0' : w.weight;
-        ww.disabled = !!w.bodyweight;
-        document.getElementById('wReps').value = w.reps;
-        document.getElementById('wSets').value = w.sets;
-        document.getElementById('wMemo').value = w.memo || '';
-        document.getElementById('wApply').textContent = '수정 반영';
-        openForm(true);
+    // 2차 시트(운동 폼) 열기. k 가 있으면 수정, 없으면 추가.
+    function openWorkoutForm(k) {
+        const target = k ? draft.workouts.find(w => w._k === k) : null;
+        openWorkoutSheet(target, item => {
+            if (target) {
+                const i = draft.workouts.findIndex(w => w._k === k);
+                if (i >= 0) draft.workouts[i] = Object.assign({}, draft.workouts[i], item);
+                toast('운동을 수정했어요');
+            } else {
+                draft.workouts.push(Object.assign({ id: null, _k: 'n' + uid() }, item));
+                toast('운동을 목록에 담았어요');
+            }
+            paintList();
+        });
     }
 
     // 총 시간 힌트 + 자동 계산 (사용자가 직접 입력하면 그 값을 우선)
@@ -1508,7 +1483,8 @@ function openSessionEditor(sessionId, date) {
         if (auto && span != null) durEl.value = span;
         const hint = document.getElementById('seDurHint');
         if (span != null) {
-            hint.textContent = `시작~종료 기준 ${fmtDur(span)}${span !== Number(durEl.value) && durEl.value !== '' ? ' (직접 입력한 값이 우선 저장돼요)' : ''}`;
+            const manual = durEl.value !== '' && Number(durEl.value) !== span;
+            hint.textContent = `시작~종료 기준 ${fmtDur(span)}${manual ? ' · 직접 입력한 값이 우선 저장돼요' : ''}`;
         } else {
             hint.textContent = '시작·종료를 넣으면 총 시간이 자동 계산돼요. 총 시간만 적어도 괜찮아요.';
         }
@@ -1540,87 +1516,15 @@ function openSessionEditor(sessionId, date) {
         if (!existing && !draft.startTime) document.getElementById('seStart').value = nowTimeStr();
         refreshDuration(false);
 
-        // 운동 폼 토글
-        document.getElementById('seAddToggle').onclick = () => {
-            const wrap = document.getElementById('seFormWrap');
-            const opening = !wrap.classList.contains('open');
-            if (opening) resetForm();
-            openForm(opening);
-        };
-        document.getElementById('wCancel').onclick = () => { resetForm(); openForm(false); };
-
-        // 종목 추가 토글
-        const newWrap = document.getElementById('wNewExWrap');
-        const addExBtn = document.getElementById('wAddEx');
-        addExBtn.onclick = () => {
-            const opening = !newWrap.classList.contains('open');
-            newWrap.classList.toggle('open', opening);
-            addExBtn.classList.toggle('open', opening);
-            addExBtn.textContent = opening ? '－ 종목' : '＋ 종목';
-            if (opening) document.getElementById('wNewEx').focus();
-        };
-        document.getElementById('wNewExSave').onclick = async () => {
-            const name = document.getElementById('wNewEx').value.trim();
-            if (!name) return toast('종목 이름을 입력하세요');
-            if (state.exercises.includes(name)) { toast('이미 있는 종목이에요'); return; }
-            const btn = document.getElementById('wNewExSave'); btn.disabled = true;
-            try {
-                await addExerciseType(name);
-                document.getElementById('wExercise').innerHTML = exOptionsHtml(name);
-                document.getElementById('wNewEx').value = '';
-                newWrap.classList.remove('open');
-                addExBtn.classList.remove('open');
-                addExBtn.textContent = '＋ 종목';
-                toast(`'${name}' 종목을 추가했어요`);
-            } catch (err) { toast(errMsg(err, '종목 추가에 실패했어요')); }
-            finally { btn.disabled = false; }
-        };
-
-        // 부위 다중 선택
-        document.querySelectorAll('#wParts .chip').forEach(c => c.onclick = () => {
+        // 운동 부위 다중 선택 (세션 단위)
+        document.querySelectorAll('#seParts .chip').forEach(c => c.onclick = () => {
             const p = c.dataset.bp;
             if (selectedParts.has(p)) { selectedParts.delete(p); c.classList.remove('active'); }
             else { selectedParts.add(p); c.classList.add('active'); }
         });
 
-        // 맨몸 → 무게 0 고정 + 입력 잠금
-        const bwChk = document.getElementById('wBodyweight');
-        const wWeight = document.getElementById('wWeight');
-        let prevWeight = '';
-        bwChk.onchange = () => {
-            if (bwChk.checked) { prevWeight = wWeight.value; wWeight.value = '0'; wWeight.disabled = true; }
-            else { wWeight.disabled = false; wWeight.value = prevWeight; }
-        };
-
-        // 운동 목록에 추가/수정 반영 (아직 서버 저장 아님)
-        document.getElementById('wApply').onclick = () => {
-            const exercise = document.getElementById('wExercise').value;
-            const bodyweight = bwChk.checked;
-            const weight = bodyweight ? 0 : parseFloat(wWeight.value);
-            const reps = parseInt(document.getElementById('wReps').value, 10);
-            const sets = parseInt(document.getElementById('wSets').value, 10);
-            if (!exercise) return toast('종목을 선택하세요');
-            if (!reps || !sets) return toast('횟수·세트를 입력하세요');
-            if (!bodyweight && !weight) return toast('무게를 입력하세요 (맨몸이면 체크)');
-
-            const item = {
-                exercise, weight, reps, sets,
-                memo: document.getElementById('wMemo').value.trim(),
-                bodyParts: BODY_PARTS.filter(p => selectedParts.has(p)),
-                bodyweight
-            };
-            if (editKey) {
-                const i = draft.workouts.findIndex(w => w._k === editKey);
-                if (i >= 0) draft.workouts[i] = Object.assign({}, draft.workouts[i], item);
-                toast('운동을 수정했어요');
-            } else {
-                draft.workouts.push(Object.assign({ id: null, _k: 'n' + uid() }, item));
-                toast('운동을 목록에 담았어요');
-            }
-            resetForm();
-            openForm(false);
-            paintList();
-        };
+        // 운동 추가 → 2차 시트
+        document.getElementById('seAddW').onclick = () => openWorkoutForm(null);
 
         // 저장
         document.getElementById('seSave').onclick = async () => {
@@ -1648,7 +1552,7 @@ function openSessionEditor(sessionId, date) {
         };
     }
 
-    // 화면의 메타 입력값을 draft 로 회수
+    // 화면의 입력값을 draft 로 회수
     function syncMeta() {
         draft.date = document.getElementById('seDate').value;
         draft.startTime = document.getElementById('seStart').value || '';
@@ -1656,9 +1560,117 @@ function openSessionEditor(sessionId, date) {
         const d = document.getElementById('seDur').value;
         draft.durationMin = d === '' ? null : Math.max(0, parseInt(d, 10) || 0);
         draft.condition = Number(document.getElementById('seCond').value);
+        draft.bodyParts = BODY_PARTS.filter(p => selectedParts.has(p));
         draft.title = document.getElementById('seTitle').value.trim();
         draft.memo = document.getElementById('seMemo').value.trim();
     }
+}
+
+// ============================================================
+//  2차 시트 : 운동 입력 폼 (종목 / 맨몸 / 무게 / 횟수 / 세트 / 메모)
+//    · 세션 폼과 완전히 분리된 별도 시트로, 1차 시트 위에 겹쳐 열린다.
+//    · 부위는 세션이 보유하므로 여기에는 없다.
+//    · 저장하지 않고 onApply(item) 으로 초안만 돌려준다(서버 반영은 세션 저장 시).
+// ============================================================
+function openWorkoutSheet(initial, onApply) {
+    const editing = !!initial;
+
+    Sheet2.open(`
+        <div class="field">
+            <label>운동 종목</label>
+            <div class="exercise-picker">
+                <select class="select" id="wExercise">${exOptions(editing ? initial.exercise : '')}</select>
+                <button class="btn sm ex-btn toggle" id="wAddEx" type="button">＋ 종목</button>
+            </div>
+            <div class="ex-new-wrap" id="wNewExWrap">
+                <div class="exercise-picker">
+                    <input class="input" id="wNewEx" placeholder="새 종목 이름 (예: 인클라인 벤치)">
+                    <button class="btn sm grad ex-btn" id="wNewExSave" type="button">추가</button>
+                </div>
+            </div>
+        </div>
+
+        <label class="check-row">
+            <input type="checkbox" id="wBodyweight" ${editing && initial.bodyweight ? 'checked' : ''}>
+            <span class="box">${icon('check')}</span>
+            <span>맨몸 운동 (무게 0kg 고정)</span>
+        </label>
+
+        <div class="field-row">
+            <div class="field"><label>무게 (kg)</label><input class="input" id="wWeight" type="number" inputmode="decimal" placeholder="100" value="${editing ? (initial.bodyweight ? 0 : initial.weight) : ''}" ${editing && initial.bodyweight ? 'disabled' : ''}></div>
+            <div class="field"><label>횟수 (회)</label><input class="input" id="wReps" type="number" inputmode="numeric" placeholder="5" value="${editing ? initial.reps : ''}"></div>
+            <div class="field"><label>세트</label><input class="input" id="wSets" type="number" inputmode="numeric" placeholder="1" value="${editing ? initial.sets : 1}"></div>
+        </div>
+        <div class="field"><label>운동 메모 (선택)</label><input class="input" id="wMemo" placeholder="그립, 템포 등" value="${editing ? esc(initial.memo || '') : ''}"></div>
+
+        <button class="btn grad block" id="wApply" style="margin-top:6px">${editing ? '수정 반영' : '목록에 담기'}</button>
+        <button class="btn block" id="wCancel" style="margin-top:8px">취소</button>
+    `, {
+        title: editing ? '운동 수정' : '운동 추가',
+        desc: '종목을 고르고 무게·횟수·세트를 입력하세요. 부위는 운동 기록(날짜)에서 선택해요.',
+        snap: 'half'
+    });
+
+    function exOptions(selectedName) {
+        if (!state.exercises.length) return `<option value="" disabled selected>종목을 추가하세요</option>`;
+        return state.exercises.map(e => `<option value="${esc(e)}" ${e === selectedName ? 'selected' : ''}>${esc(e)}</option>`).join('');
+    }
+
+    // 종목 추가 토글
+    const newWrap = document.getElementById('wNewExWrap');
+    const addExBtn = document.getElementById('wAddEx');
+    addExBtn.onclick = () => {
+        const opening = !newWrap.classList.contains('open');
+        newWrap.classList.toggle('open', opening);
+        addExBtn.classList.toggle('open', opening);
+        addExBtn.textContent = opening ? '－ 종목' : '＋ 종목';
+        if (opening) document.getElementById('wNewEx').focus();
+    };
+    document.getElementById('wNewExSave').onclick = async () => {
+        const name = document.getElementById('wNewEx').value.trim();
+        if (!name) return toast('종목 이름을 입력하세요');
+        if (state.exercises.includes(name)) { toast('이미 있는 종목이에요'); return; }
+        const btn = document.getElementById('wNewExSave'); btn.disabled = true;
+        try {
+            await addExerciseType(name);
+            document.getElementById('wExercise').innerHTML = exOptions(name);
+            document.getElementById('wNewEx').value = '';
+            newWrap.classList.remove('open');
+            addExBtn.classList.remove('open');
+            addExBtn.textContent = '＋ 종목';
+            toast(`'${name}' 종목을 추가했어요`);
+        } catch (err) { toast(errMsg(err, '종목 추가에 실패했어요')); }
+        finally { btn.disabled = false; }
+    };
+
+    // 맨몸 → 무게 0 고정 + 입력 잠금
+    const bwChk = document.getElementById('wBodyweight');
+    const wWeight = document.getElementById('wWeight');
+    let prevWeight = editing && !initial.bodyweight ? String(initial.weight) : '';
+    bwChk.onchange = () => {
+        if (bwChk.checked) { prevWeight = wWeight.value; wWeight.value = '0'; wWeight.disabled = true; }
+        else { wWeight.disabled = false; wWeight.value = prevWeight; }
+    };
+
+    document.getElementById('wCancel').onclick = () => Sheet2.close();
+
+    document.getElementById('wApply').onclick = () => {
+        const exercise = document.getElementById('wExercise').value;
+        const bodyweight = bwChk.checked;
+        const weight = bodyweight ? 0 : parseFloat(wWeight.value);
+        const reps = parseInt(document.getElementById('wReps').value, 10);
+        const sets = parseInt(document.getElementById('wSets').value, 10);
+        if (!exercise) return toast('종목을 선택하세요');
+        if (!reps || !sets) return toast('횟수·세트를 입력하세요');
+        if (!bodyweight && !weight) return toast('무게를 입력하세요 (맨몸이면 체크)');
+
+        onApply({
+            exercise, weight, reps, sets,
+            memo: document.getElementById('wMemo').value.trim(),
+            bodyweight
+        });
+        Sheet2.close();
+    };
 }
 // [E] edit by smsong
 
