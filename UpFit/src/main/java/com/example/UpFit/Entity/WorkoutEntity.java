@@ -3,7 +3,9 @@ package com.example.UpFit.Entity;
 import jakarta.persistence.*;
 import lombok.*;
 
-// [B] edit by smsong - 운동 기록 엔티티 (users.id 를 외래키(userId)로 소유자 구분)
+// [B] edit by smsong - 운동 엔티티.
+//   구조 변경: 더 이상 날짜를 직접 갖지 않고, 운동 기록(세션)에 소속된다.
+//   날짜/시간/컨디션은 workout_sessions 가 보유 → workoutDate 컬럼 제거, sessionId 추가.
 @Entity(name = "workouts")
 @NoArgsConstructor
 @AllArgsConstructor
@@ -15,26 +17,28 @@ public class WorkoutEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // users 테이블 PK(id) 를 가리키는 외래키. 이 값으로 사용자별 기록을 필터링한다.
+    // users 테이블 PK(id). 세션을 거치지 않고도 소유자 필터링이 가능하도록 비정규화 보관.
     @Column(nullable = false)
     private Long userId;
 
-    private String workoutDate;  // "YYYY-MM-DD" (프론트 date input 포맷과 동일)
+    // workout_sessions.id 를 가리키는 외래키. 이 운동이 속한 운동 기록(세션).
+    @Column(nullable = false)
+    private Long sessionId;
+
     private String exercise;     // 종목명 (exercise_types 의 name 과 매칭)
     private double weight;       // kg
     private int reps;            // 회
     private int sets;            // 세트
     private String memo;
 
-    // 운동 부위(콤마 구분, 예: "가슴,삼두"). 하루에 여러 부위 체크 가능.
+    // 운동 부위(콤마 구분, 예: "가슴,삼두").
     @Column(length = 120)
     private String bodyParts;
 
-    // 맨몸 운동 여부. 체크 시 weight = 0. 기존 행 호환을 위해 래퍼(Boolean)로 둠(null 허용).
+    // 맨몸 운동 여부. 체크 시 weight = 0.
     private Boolean bodyweight;
 
-    // 같은 날짜 안에서의 사용자 지정 표시 순서(오름차순). 재정렬 API 로 갱신.
-    // 기존 행 호환을 위해 래퍼(Integer)로 두어 null 허용(null 은 맨 뒤 + id 순으로 취급).
+    // 같은 세션 안에서의 표시 순서(오름차순).
     private Integer sortOrder;
 }
 // [E] edit by smsong

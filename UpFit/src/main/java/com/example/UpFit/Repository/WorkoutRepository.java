@@ -8,18 +8,27 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
-// [B] edit by smsong - 운동 기록 리포지토리 (userId 기준 조회)
+// [B] edit by smsong - 운동 리포지토리.
+//   구조 변경: workoutDate 기준 조회 제거 → sessionId(운동 기록) 기준 조회로 전환.
 public interface WorkoutRepository extends JpaRepository<WorkoutEntity, Long> {
 
-    // 날짜 오름차순 → 같은 날짜는 sortOrder 오름차순 → 미지정(null)은 맨 뒤 + id 순.
-    // COALESCE 로 null 을 큰 값으로 치환해 DB 별 NULL 정렬 차이를 없앤다(기존 행 호환).
+    // 사용자의 전체 운동 (세션별 그룹핑 후 전달용). 세션 → 세션 내 순서 → id 순.
     @Query("SELECT w FROM workouts w WHERE w.userId = :userId " +
-           "ORDER BY w.workoutDate ASC, COALESCE(w.sortOrder, 1000000) ASC, w.id ASC")
+           "ORDER BY w.sessionId ASC, COALESCE(w.sortOrder, 1000000) ASC, w.id ASC")
     List<WorkoutEntity> findAllForUserOrdered(@Param("userId") Long userId);
 
-    // 특정 날짜의 기록(재정렬 대상)
-    List<WorkoutEntity> findByUserIdAndWorkoutDate(Long userId, String workoutDate);
+    // 특정 세션 안의 운동 (표시 순서대로)
+    @Query("SELECT w FROM workouts w WHERE w.sessionId = :sessionId " +
+           "ORDER BY COALESCE(w.sortOrder, 1000000) ASC, w.id ASC")
+    List<WorkoutEntity> findBySessionIdOrdered(@Param("sessionId") Long sessionId);
 
-    Optional<WorkoutEntity> findByIdAndUserId(Long id, Long userId);
+    // 여러 세션의 운동을 한 번에 (N+1 방지)
+    @Query("SELECT w FROM workouts w WHERE w.sessionId IN :sessionIds " +
+           "ORDER BY w.sessionId ASC, COALESCE(w.sortOrder, 1000000) ASC, w.id ASC")
+    List<WorkoutEntity> findBySessionIdsOrdered(@Param("sessionIds") List<Long> sessionIds);
+
+    Optional<WorkoutEntity> findByIdAndUserIdAndSessionId(Long id, Long userId, Long sessionId);
+
+    void deleteBySessionId(Long sessionId);
 }
 // [E] edit by smsong
