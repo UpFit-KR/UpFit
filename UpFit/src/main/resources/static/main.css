@@ -133,17 +133,31 @@
     --chart-target: #ff5a6a;
 }
 
-html, body { height: 100%; }
+/* [B] edit by smsong
+   하단 색 끊김 수정:
+   기존엔 body 에 그라데이션을 얹었는데 body 높이가 뷰포트(100%)로 고정되어
+   그 아래로 배경이 반복(repeat)되며 두 번째 타일의 상단 글로우가 띠처럼 보였음.
+   → html 에 단색을 깔고, 글로우는 no-repeat + attachment:fixed 로 뷰포트에 고정.
+     (메인은 .app-main 내부 스크롤이라 fixed 로 인한 성능 이슈 없음) */
+html {
+    height: 100%;
+    background-color: var(--body-bg);
+}
 body {
+    height: 100%;
     font-family: var(--font);
     color: var(--text);
-    background:
-        radial-gradient(130% 60% at 50% -5%, var(--body-glow), transparent 55%),
-        var(--body-bg);
+    background-color: var(--body-bg);
+    background-image: radial-gradient(130% 60% at 50% -5%, var(--body-glow), transparent 55%);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-position: top center;
+    background-size: 100% 100%;
     -webkit-font-smoothing: antialiased;
     overscroll-behavior-y: none;
     transition: background-color 0.25s, color 0.25s;
 }
+/* [E] edit by smsong */
 button { font-family: var(--font); cursor: pointer; }
 .tabnum { font-variant-numeric: tabular-nums; }
 
@@ -482,8 +496,54 @@ button { font-family: var(--font); cursor: pointer; }
     background-image: var(--arrow-url);
     background-repeat: no-repeat; background-position: right 12px center; padding-right: 38px;
 }
+/* [B] edit by smsong
+   iOS Safari 날짜 입력 보정:
+   · -webkit-appearance:none → 기본 네이티브 박스(내재폭) 제거
+   · ::-webkit-date-and-time-value 는 iOS 에서 가운데 정렬 + 자체 폭을 가져 박스를 넘침
+     → text-align:left / width:100% / min-width:0 으로 컨테이너에 딱 맞춤
+   · iOS 는 date 입력의 height 를 무시하므로 min-height 로 다른 입력과 높이 통일 */
+.input[type="date"],
+.input[type="time"],
+.input[type="datetime-local"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 45px;             /* .input 의 12px*2 + 15px 라인 ≈ 45px */
+    text-align: left;
+    line-height: 1.2;
+}
+.input[type="date"]::-webkit-date-and-time-value,
+.input[type="time"]::-webkit-date-and-time-value,
+.input[type="datetime-local"]::-webkit-date-and-time-value {
+    text-align: left;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+}
+.input[type="date"]::-webkit-datetime-edit,
+.input[type="time"]::-webkit-datetime-edit,
+.input[type="datetime-local"]::-webkit-datetime-edit {
+    padding: 0;
+    line-height: 1.2;
+}
+.input[type="date"]::-webkit-calendar-picker-indicator {
+    margin-left: auto; padding: 0 2px; opacity: 0.55;
+}
+:root[data-theme="dark"] .input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(1.6);   /* 다크에서 아이콘이 묻히지 않게 */
+}
+.input[type="date"]::-webkit-inner-spin-button,
+.input[type="date"]::-webkit-clear-button {
+    -webkit-appearance: none; display: none;
+}
+/* [E] edit by smsong */
+
 .field-row { display: flex; gap: 10px; }
-.field-row .field { flex: 1; }
+.field-row .field { flex: 1; min-width: 0; }   /* [B][E] edit by smsong : 3분할 시 입력이 넘치지 않도록 */
 .exercise-picker { display: flex; gap: 8px; }
 .exercise-picker .select { flex: 1; }
 .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
