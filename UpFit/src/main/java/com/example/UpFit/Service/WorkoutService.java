@@ -9,8 +9,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 // [B] edit by smsong - 운동 기록 서비스. JWT(uid) → users.id 로 소유자 확인 후 CRUD
@@ -35,7 +38,7 @@ public class WorkoutService {
     // 내 운동 기록 전체 조회 (날짜 오름차순)
     public List<WorkoutDTO> getMyWorkouts(String uid, UserDetails userDetails) {
         Long userId = ownerId(uid, userDetails);
-        List<WorkoutDTO> list = workoutRepository.findByUserIdOrderByWorkoutDateAscIdAsc(userId).stream()
+        List<WorkoutDTO> list = workoutRepository.findAllForUserOrdered(userId).stream()
                 .map(WorkoutDTO::entityToDto)
                 .collect(Collectors.toList());
         logger.info("{} 운동 기록 {}건 조회", uid, list.size());
@@ -51,6 +54,38 @@ public class WorkoutService {
         WorkoutEntity saved = workoutRepository.save(entity);
         logger.info("{} 운동 기록 생성 (id={})", uid, saved.getId());
         return WorkoutDTO.entityToDto(saved);
+    }
+
+    // 운동 기록 순서 변경 (특정 날짜의 기록을 클라이언트가 보낸 id 순서대로 재번호)
+    // orderedIds 에 없는(신규/누락) 기록은 id 순으로 뒤에 붙인다. 본인·해당 날짜의 것만 반영.
+    @Transactional
+    public List<WorkoutDTO> reorderWorkouts(String uid, String workoutDate,
+                                            List<Long> orderedIds, UserDetails userDetails) {
+        Long userId = ownerId(uid, userDetails);
+        List<WorkoutEntity> dayRecords = workoutRepository.findByUserIdAndWorkoutDate(userId, workoutDate);
+        Map<Long, WorkoutEntity> byId = dayRecords.stream()
+                .collect(Collectors.toMap(WorkoutEntity::getId, e -> e));
+
+        int order = 0;
+        if (orderedIds != null) {
+            for (Long id : orderedIds) {
+                WorkoutEntity e = byId.remove(id);   // 소유·해당 날짜의 것만 처리(위조/타 날짜 무시)
+                if (e != null) e.setSortOrder(order++);
+            }
+        }
+        // 목록에 없던 나머지는 id 순으로 뒤에 배치
+        List<WorkoutEntity> remaining = byId.values().stream()
+                .sorted(Comparator.comparing(WorkoutEntity::getId))
+                .collect(Collectors.toList());
+        for (WorkoutEntity e : remaining) e.setSortOrder(order++);
+
+        workoutRepository.saveAll(dayRecords);
+        logger.info("{} {} 운동 순서 변경 ({}건)", uid, workoutDate, dayRecords.size());
+
+        return dayRecords.stream()
+                .sorted(Comparator.comparing(WorkoutEntity::getSortOrder))
+                .map(WorkoutDTO::entityToDto)
+                .collect(Collectors.toList());
     }
 
     // 운동 기록 삭제 (본인 것만)

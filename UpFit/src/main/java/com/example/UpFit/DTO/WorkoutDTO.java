@@ -20,6 +20,7 @@ public class WorkoutDTO {
     private String memo;
     private String bodyParts;    // 운동 부위(콤마 구분)
     private Boolean bodyweight;  // 맨몸 여부
+    private Integer sortOrder;   // 같은 날짜 내 표시 순서
 
     public static WorkoutDTO entityToDto(WorkoutEntity e) {
         return new WorkoutDTO(
@@ -32,11 +33,12 @@ public class WorkoutDTO {
                 e.getSets(),
                 e.getMemo(),
                 e.getBodyParts(),
-                e.getBodyweight());
+                e.getBodyweight(),
+                e.getSortOrder());
     }
 
     public WorkoutEntity dtoToEntity() {
-        return new WorkoutEntity(id, userId, workoutDate, exercise, weight, reps, sets, memo, bodyParts, bodyweight);
+        return new WorkoutEntity(id, userId, workoutDate, exercise, weight, reps, sets, memo, bodyParts, bodyweight, sortOrder);
     }
 }
 // [E] edit by smsong

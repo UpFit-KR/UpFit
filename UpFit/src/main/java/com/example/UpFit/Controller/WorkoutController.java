@@ -39,6 +39,17 @@ public class WorkoutController {
         return ResponseEntity.ok(workoutService.createWorkout(uid, workoutDTO, userDetails));
     }
 
+    // 운동 기록 순서 변경 (날짜별). body = 정렬된 id 배열, ?date=YYYY-MM-DD
+    @Operation(summary = "운동 기록 순서 변경 (uid, 날짜별)")
+    @PutMapping("/{uid}/reorder")
+    public ResponseEntity<List<WorkoutDTO>> reorderWorkouts(
+            @PathVariable("uid") String uid,
+            @RequestParam("date") String date,
+            @RequestBody List<Long> orderedIds,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        return ResponseEntity.ok(workoutService.reorderWorkouts(uid, date, orderedIds, userDetails));
+    }
+
     // 운동 기록 삭제
     @Operation(summary = "운동 기록 삭제 (uid, id)")
     @DeleteMapping("/{uid}/{id}")

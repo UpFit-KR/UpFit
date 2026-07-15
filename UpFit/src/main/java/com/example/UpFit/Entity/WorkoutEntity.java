@@ -32,5 +32,9 @@ public class WorkoutEntity {
 
     // 맨몸 운동 여부. 체크 시 weight = 0. 기존 행 호환을 위해 래퍼(Boolean)로 둠(null 허용).
     private Boolean bodyweight;
+
+    // 같은 날짜 안에서의 사용자 지정 표시 순서(오름차순). 재정렬 API 로 갱신.
+    // 기존 행 호환을 위해 래퍼(Integer)로 두어 null 허용(null 은 맨 뒤 + id 순으로 취급).
+    private Integer sortOrder;
 }
 // [E] edit by smsong

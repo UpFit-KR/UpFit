@@ -78,6 +78,7 @@ const api = {
     listWorkouts:  ()   => apiReq('GET',    `/workout/${UID}`),
     addWorkout:    (d)  => apiReq('POST',   `/workout/${UID}`, d),
     delWorkout:    (id) => apiReq('DELETE', `/workout/${UID}/${id}`),
+    reorderWorkouts: (date, ids) => apiReq('PUT', `/workout/${UID}/reorder?date=${encodeURIComponent(date)}`, ids),
     listMeals:     ()   => apiReq('GET',    `/meal/${UID}`),
     addMeal:       (d)  => apiReq('POST',   `/meal/${UID}`, d),
     delMeal:       (id) => apiReq('DELETE', `/meal/${UID}/${id}`),
@@ -89,7 +90,7 @@ const api = {
 // DTO ↔ 화면 레코드 매핑 (서버의 workoutDate/mealDate ↔ 화면의 date)
 // [B] edit by smsong : bodyParts(부위, 콤마문자열↔배열) / bodyweight(맨몸) 필드 추가
 function partsToArr(s) { return (s ? String(s).split(',') : []).map(x => x.trim()).filter(Boolean); }
-function fromWorkoutDTO(d) { return { id: d.id, date: d.workoutDate, exercise: d.exercise, weight: d.weight, reps: d.reps, sets: d.sets, memo: d.memo || '', bodyParts: partsToArr(d.bodyParts), bodyweight: !!d.bodyweight }; }
+function fromWorkoutDTO(d) { return { id: d.id, date: d.workoutDate, exercise: d.exercise, weight: d.weight, reps: d.reps, sets: d.sets, memo: d.memo || '', bodyParts: partsToArr(d.bodyParts), bodyweight: !!d.bodyweight, sortOrder: d.sortOrder == null ? null : d.sortOrder }; }
 function toWorkoutDTO(r)   { return { workoutDate: r.date, exercise: r.exercise, weight: r.weight, reps: r.reps, sets: r.sets, memo: r.memo || '', bodyParts: (r.bodyParts || []).join(','), bodyweight: !!r.bodyweight }; }
 // [E] edit by smsong
 function fromMealDTO(d)    { return { id: d.id, date: d.mealDate, mealType: d.mealType, name: d.name, kcal: d.kcal, carb: d.carb, protein: d.protein, fat: d.fat }; }
@@ -119,7 +120,7 @@ const ui = {
 };
 function firstOfThisMonth() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; }
 
-function blankState() { return { exercises: [], workouts: [], meals: [], bodyLogs: [], profile: {}, workoutOrder: {} }; }
+function blankState() { return { exercises: [], workouts: [], meals: [], bodyLogs: [], profile: {} }; }
 
 // [B] edit by smsong : 로그인 사용자 정보 반영 — 기본값 대체 없음(없으면 빈 값으로 둠)
 function applyCurrentUser() {
@@ -135,17 +136,15 @@ function loadLocalExtras() {
     try {
         const o = JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}');
         state.bodyLogs = o.bodyLogs || [];
-        state.workoutOrder = o.workoutOrder || {};   // [B][E] edit by smsong : 날짜별 수동 정렬 순서
         if (o.name) state.profile.name = state.profile.name || o.name;
         if (o.height != null) state.profile.height = o.height;
         if (o.targetWeight != null) state.profile.targetWeight = o.targetWeight;
-    } catch (_) { state.bodyLogs = []; state.workoutOrder = {}; }
+    } catch (_) { state.bodyLogs = []; }
 }
 function saveLocalExtras() {
     try {
         localStorage.setItem(LOCAL_KEY, JSON.stringify({
             bodyLogs: state.bodyLogs,
-            workoutOrder: state.workoutOrder,   // [B][E] edit by smsong
             name: state.profile.name,
             height: state.profile.height,
             targetWeight: state.profile.targetWeight
@@ -244,18 +243,14 @@ function deltaChip(cur, prev, unit) {
 }
 
 function workoutsByDate(date) { return state.workouts.filter(w => w.date === date); }
-// [B] edit by smsong : 저장된 수동 순서대로 정렬 (순서 미지정 항목은 뒤쪽에 기본순으로)
+// [B] edit by smsong : 서버 저장 순서(sortOrder)대로 정렬. 미지정(null)은 뒤쪽 + id 순
+// (백엔드 COALESCE(sortOrder,1000000), id 정렬과 동일 규칙)
 function orderedWorkoutsByDate(date) {
-    const recs = workoutsByDate(date);
-    const order = (state.workoutOrder && state.workoutOrder[date]) || [];
-    const pos = {};
-    order.forEach((id, i) => { pos[String(id)] = i; });
-    return recs.slice().sort((a, b) => {
-        const pa = pos[String(a.id)], pb = pos[String(b.id)];
-        if (pa == null && pb == null) return 0;
-        if (pa == null) return 1;
-        if (pb == null) return -1;
-        return pa - pb;
+    return workoutsByDate(date).slice().sort((a, b) => {
+        const sa = a.sortOrder == null ? 1e9 : a.sortOrder;
+        const sb = b.sortOrder == null ? 1e9 : b.sortOrder;
+        if (sa !== sb) return sa - sb;
+        return (Number(a.id) || 0) - (Number(b.id) || 0);
     });
 }
 // 하루 운동의 부위 요약(중복 제거, BODY_PARTS 순서 유지)
@@ -402,14 +397,28 @@ function renderWorkout() {
     wireReorder();   // [B][E] edit by smsong : 드래그 순서 변경 활성화
 }
 
-// [B] edit by smsong : 각 날짜 목록에 드래그 순서 변경 연결
+// [B] edit by smsong : 각 날짜 목록에 드래그 순서 변경 연결(서버 저장 → 기기 간 동기화)
 function wireReorder() {
     document.querySelectorAll('#view-workout .reorder-list[data-reorder-date]').forEach(list => {
-        enableDragReorder(list, ids => {
-            state.workoutOrder[list.dataset.reorderDate] = ids;
-            persistExtras();   // 순서를 기기에 저장
-        });
+        enableDragReorder(list, ids => commitReorder(list.dataset.reorderDate, ids));
     });
+}
+
+// 드래그로 만든 순서를 서버에 저장. 성공 시 sortOrder 를 응답값으로 갱신,
+// 실패 시 서버 기준으로 되돌리기 위해 다시 렌더.
+async function commitReorder(date, ids) {
+    try {
+        const updated = await api.reorderWorkouts(date, ids.map(Number));
+        const orderMap = {};
+        (updated || []).forEach(d => { orderMap[String(d.id)] = d.sortOrder; });
+        state.workouts.forEach(w => {
+            if (orderMap[String(w.id)] != null) w.sortOrder = orderMap[String(w.id)];
+        });
+        toast('순서를 저장했어요');
+    } catch (err) {
+        toast(errMsg(err, '순서 저장에 실패했어요'));
+        renderWorkout();   // 낙관적 DOM 변경을 서버 기준으로 되돌림
+    }
 }
 
 // 포인터 기반 드래그 순서 변경 (모바일 터치 + 마우스 공통).
