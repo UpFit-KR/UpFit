@@ -29,6 +29,12 @@ public class UserDTO {
         private String agencyAddress;
         // [E] edit by smsong
 
+        // [B] edit by smsong - UpFit 신체 정보(키/현재 체중/목표 체중)
+        private Double height;
+        private Double weight;
+        private Double targetWeight;
+        // [E] edit by smsong
+
         public static UserDTO entityToDto(UserEntity userEntity) {
                 return new UserDTO(
                         userEntity.getId(),
@@ -47,13 +53,17 @@ public class UserDTO {
                         // [B] edit by smsong - 공인중개사사무소 필드 매핑
                         userEntity.getAgencyName(),
                         userEntity.getAgencyPhone(),
-                        userEntity.getAgencyAddress());
+                        userEntity.getAgencyAddress(),
+                        // 신체 정보(키/현재 체중/목표 체중) 매핑
+                        userEntity.getHeight(),
+                        userEntity.getWeight(),
+                        userEntity.getTargetWeight());
                         // [E] edit by smsong
         }
 
         public UserEntity dtoToEntity() {
-                // [B] edit by smsong - 공인중개사사무소 필드(agencyName/agencyPhone/agencyAddress) 추가
-                return new UserEntity(id, uid, password, name, age, gender, nickname, address, email, phone, profileURL, provider, likeCount, agencyName, agencyPhone, agencyAddress);
+                // [B] edit by smsong - 공인중개사사무소 + 신체 정보 필드 추가
+                return new UserEntity(id, uid, password, name, age, gender, nickname, address, email, phone, profileURL, provider, likeCount, agencyName, agencyPhone, agencyAddress, height, weight, targetWeight);
                 // [E] edit by smsong
         }
 }

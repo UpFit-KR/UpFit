@@ -354,35 +354,39 @@ button { font-family: var(--font); cursor: pointer; }
 .cal-nav button svg { width: 16px; height: 16px; }
 
 /* minmax(0,1fr): 7칸이 컨테이너 폭을 정확히 7등분하며 넘치지 않도록 강제(달력 잘림 방지) */
-/* [B] edit by smsong : 날짜 타일이 서로 떨어져 보이던 문제 수정 → gap 축소 + 셀 배경 제거로 하나의 붙은 달력처럼 표시 */
+/* [B] edit by smsong : 첨부 이미지의 채워진 타일 달력 유지. 날짜가 벌어져 보이던 문제 →
+   column/row gap 을 3px 로 좁혀 타일이 서로 붙은 하나의 달력처럼 보이게 한다. */
 .cal-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 2px;
+    column-gap: 3px;
+    row-gap: 3px;
     width: 100%;
 }
 /* [E] edit by smsong */
 .cal-dow {
     text-align: center; font-size: 11px; font-weight: 700; color: var(--text-mute);
-    padding: 4px 0; min-width: 0; overflow: hidden;
+    padding: 2px 0 6px; min-width: 0; overflow: hidden;
 }
 .cal-dow.sun { color: var(--up); }
 .cal-dow.sat { color: var(--down); }
 .cal-cell {
-    aspect-ratio: 1 / 1; border-radius: 10px;
-    /* [B] edit by smsong : 셀별 배경 제거(투명) → 날짜가 분리된 타일처럼 보이지 않고 하나의 달력으로 붙어 보임 */
-    background: transparent; border: 1px solid transparent;
+    /* [B] edit by smsong : 첨부 이미지의 채워진 타일 스타일 유지 + 간격을 좁혀 날짜가 붙어 보이게 */
+    aspect-ratio: 1 / 0.95; border-radius: 11px;
+    background: var(--ink-850); border: 1.5px solid transparent;
     /* [E] edit by smsong */
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     position: relative; font-variant-numeric: tabular-nums;
     min-width: 0; overflow: hidden;   /* 트랙이 콘텐츠보다 좁아질 수 있게 하여 오버플로 차단 */
 }
 .cal-cell.empty { background: transparent; }
-.cal-cell .dnum { font-size: 13px; font-weight: 700; color: var(--text-dim); }
-.cal-cell.today { border-color: var(--accent); }
+/* [B] edit by smsong : 이미지처럼 크고 진한 날짜 숫자 */
+.cal-cell .dnum { font-size: 15px; font-weight: 800; color: var(--text-dim); letter-spacing: -0.2px; }
+.cal-cell.today { border-color: var(--accent); }              /* 오늘 = 파란 라운드 사각 외곽선 */
 .cal-cell.today .dnum { color: var(--accent); }
-.cal-cell.selected { background: var(--grad-soft); border-color: var(--accent-2); }
+.cal-cell.selected { background: var(--grad-soft); border-color: var(--accent-2); }  /* 선택 = 연한 그린 채움 */
 .cal-cell.has .dnum { color: var(--text); }
+/* [E] edit by smsong */
 .cal-cell .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--grad); }
 .cal-cell .kcal-tag { font-size: 9px; font-weight: 700; color: var(--accent-2); }
 
@@ -838,6 +842,45 @@ button { font-family: var(--font); cursor: pointer; }
 .se-locked-txt { font-size: 13px; line-height: 1.6; font-weight: 600; color: var(--text-mute); }
 /* 운동 행의 수정/삭제 버튼 묶음 */
 .rec .rec-acts { display: flex; gap: 2px; }
+
+/* [B] edit by smsong : 운동 기록 상세 — 조회/수정 분리 + 운동 보기 툴바 */
+.se-toolbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line);
+}
+.se-tb-left { display: flex; gap: 8px; }
+.se-toolbar .btn { display: inline-flex; align-items: center; gap: 5px; }
+.se-toolbar .btn svg { width: 15px; height: 15px; }
+
+.se-view .kv:first-child { padding-top: 2px; }
+.se-view .kv.col { flex-direction: column; align-items: stretch; gap: 8px; }
+.se-view .kv.col .k { margin-bottom: 2px; }
+.se-view .v.muted, .se-view .muted { color: var(--text-mute); font-weight: 600; }
+.se-view .chip.view-chip { pointer-events: none; }
+
+.cond-inline { display: inline-flex; align-items: center; gap: 8px; }
+.cond-inline .cond-bar {
+    width: 84px; height: 6px; border-radius: 3px; background: var(--line);
+    overflow: hidden; display: inline-block; flex: 0 0 auto;
+}
+.cond-inline .cond-bar b { display: block; height: 100%; border-radius: 3px; transition: width .25s; }
+.cond-inline-lbl { font-size: 12px; color: var(--text-mute); font-weight: 600; }
+
+.se-summary {
+    margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-md);
+    background: var(--grad-soft); color: var(--accent); font-weight: 700; font-size: 13px; text-align: center;
+}
+.se-head-sum { font-size: 12px; color: var(--text-mute); font-weight: 700; }
+
+/* 운동 부위: 가슴/등중앙/광배/하체 한 줄, 이두/삼두/복근 한 줄 (4열 그리드 → 4+3) */
+.chip-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.chip-grid .chip { width: 100%; text-align: center; padding: 9px 6px; }
+
+/* 총 시간(분): 자동 계산 전용 — 입력 잠금 표시 */
+.input.readonly {
+    background: var(--ink-850); color: var(--text-dim); cursor: default; caret-color: transparent;
+}
+/* [E] edit by smsong */
 /* [E] edit by smsong */
 
 /* ---------- 토스트 ---------- */

@@ -151,6 +151,11 @@ public class UserService {
         if (userDTO.getAgencyPhone() != null) userEntity.setAgencyPhone(userDTO.getAgencyPhone());
         if (userDTO.getAgencyAddress() != null) userEntity.setAgencyAddress(userDTO.getAgencyAddress());
         // [E] edit by smsong
+        // [B] edit by smsong - UpFit 신체 정보(키/현재 체중/목표 체중) 부분 업데이트
+        if (userDTO.getHeight() != null) userEntity.setHeight(userDTO.getHeight());
+        if (userDTO.getWeight() != null) userEntity.setWeight(userDTO.getWeight());
+        if (userDTO.getTargetWeight() != null) userEntity.setTargetWeight(userDTO.getTargetWeight());
+        // [E] edit by smsong
         userEntity.setAge(userDTO.getAge());
 
         // ★ 핵심 수정: 새 이미지가 있을 때만 프로필 교체. 없으면 기존 프로필 URL 유지.

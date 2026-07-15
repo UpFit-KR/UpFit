@@ -59,7 +59,8 @@ const MEAL_TYPES = [
     { key: 'snack',     label: '간식' }
 ];
 // [B] edit by smsong : 운동 부위 타입(하나의 운동에 여러 개 체크 가능)
-const BODY_PARTS = ['가슴', '등중앙', '광배', '이두', '삼두', '하체', '복근'];
+//   표시 순서 = 가슴/등중앙/광배/하체(한 줄), 이두/삼두/복근(한 줄). 4열 그리드로 자연스럽게 4+3 배치.
+const BODY_PARTS = ['가슴', '등중앙', '광배', '하체', '이두', '삼두', '복근'];
 // 컨디션 기본값(신규 세션)
 const DEFAULT_CONDITION = 70;
 // [E] edit by smsong
@@ -106,8 +107,32 @@ const api = {
     delMeal:       (id) => apiReq('DELETE', `/meal/${UID}/${id}`),
     listExercises: ()   => apiReq('GET',    `/exercise/${UID}`),
     addExercise:   (nm) => apiReq('POST',   `/exercise/${UID}`, { name: nm }),
-    delExercise:   (id) => apiReq('DELETE', `/exercise/${UID}/${id}`)
+    delExercise:   (id) => apiReq('DELETE', `/exercise/${UID}/${id}`),
+    // [B] edit by smsong : 내 정보(신체 정보 포함) 조회/수정 — 키/현재 체중/목표 체중을 DB에 영속화
+    getMe:      ()      => apiReq('GET', `/user/uid/${UID}`),
+    updateMe:   (dto)   => apiUserUpdate(dto)
+    // [E] edit by smsong
 };
+
+// [B] edit by smsong : 회원 수정은 multipart(PUT /user) — userData 파트에 JSON 을 실어 보낸다.
+//   신체 정보(키/현재 체중/목표 체중)만 바꿔도 다른 필드가 지워지지 않도록,
+//   호출부에서 기존 사용자 전체(state.userRaw)에 변경값을 병합해 넘긴다.
+async function apiUserUpdate(userDto) {
+    const token = Auth.getToken();
+    if (!token || Auth.isExpired(token)) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
+    const fd = new FormData();
+    fd.append('userData', JSON.stringify(userDto));   // @RequestPart("userData") String
+    const res = await fetch(BACKEND_BASE + '/user', {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + token },   // Content-Type 은 브라우저가 boundary 와 함께 자동 설정
+        body: fd
+    });
+    if (res.status === 401 || res.status === 403) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const txt = await res.text();
+    return txt ? JSON.parse(txt) : null;
+}
+// [E] edit by smsong
 
 // ---------- DTO ↔ 화면 레코드 매핑 ----------
 function partsToArr(s) { return (s ? String(s).split(',') : []).map(x => x.trim()).filter(Boolean); }
@@ -235,7 +260,7 @@ const ui = {
 function firstOfThisMonth() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; }
 
 // [B] edit by smsong : workouts → sessions (세션이 운동을 품는 구조)
-function blankState() { return { exercises: [], sessions: [], meals: [], bodyLogs: [], profile: {} }; }
+function blankState() { return { exercises: [], sessions: [], meals: [], bodyLogs: [], profile: {}, userRaw: null }; }
 // [E] edit by smsong
 
 // [B] edit by smsong : 로그인 사용자 정보 반영 — 기본값 대체 없음(없으면 빈 값으로 둠)
@@ -247,26 +272,32 @@ function applyCurrentUser() {
 }
 // [E] edit by smsong
 
-// 체중·신체정보(백엔드 미연동) 로컬 로드/저장
+// [B] edit by smsong : 체중 변화 그래프용 일별 기록(bodyLogs)만 로컬 보관.
+//   키/현재 체중/목표 체중은 이제 DB(users)에서 관리하므로 로컬에는 "예전 값 폴백"으로만 남긴다.
+//   (DB 값이 아직 비어 있는 기존 사용자를 위해, DB 가 null 일 때만 로컬 값을 채운다.)
 function loadLocalExtras() {
     try {
         const o = JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}');
         state.bodyLogs = o.bodyLogs || [];
-        if (o.name) state.profile.name = state.profile.name || o.name;
-        if (o.height != null) state.profile.height = o.height;
-        if (o.targetWeight != null) state.profile.targetWeight = o.targetWeight;
+        if (o.name && !state.profile.name) state.profile.name = o.name;
+        if (state.profile.height == null && o.height != null) state.profile.height = o.height;
+        if (state.profile.weight == null && o.weight != null) state.profile.weight = o.weight;
+        if (state.profile.targetWeight == null && o.targetWeight != null) state.profile.targetWeight = o.targetWeight;
     } catch (_) { state.bodyLogs = []; }
 }
+// bodyLogs 는 로컬, 신체 정보 값은 폴백용으로만 유지(정본은 DB).
 function saveLocalExtras() {
     try {
         localStorage.setItem(LOCAL_KEY, JSON.stringify({
             bodyLogs: state.bodyLogs,
             name: state.profile.name,
             height: state.profile.height,
+            weight: state.profile.weight,
             targetWeight: state.profile.targetWeight
         }));
     } catch (_) {}
 }
+// [E] edit by smsong
 
 // 메인 로드: 백엔드 조회 (폴백 없음)
 async function load() {
@@ -279,7 +310,23 @@ async function load() {
     state.exercises = (exs || []).map(e => e.name);
     exIdByName = {};
     (exs || []).forEach(e => { exIdByName[e.name] = e.id; });
-    loadLocalExtras();   // 체중/신체정보는 로컬
+
+    // [B] edit by smsong : 내 정보(키/현재 체중/목표 체중)를 DB 에서 로드.
+    //   실패해도 앱 전체가 죽지 않도록 개별 try/catch (auth 오류는 apiReq 가 이미 처리).
+    try {
+        const me = await api.getMe();
+        if (me) {
+            state.userRaw = me;
+            state.profile.name = me.name || me.nickname || state.profile.name || '';
+            state.profile.email = me.email || state.profile.email || '';
+            if (me.height != null) state.profile.height = me.height;
+            if (me.weight != null) state.profile.weight = me.weight;
+            if (me.targetWeight != null) state.profile.targetWeight = me.targetWeight;
+        }
+    } catch (err) { if (err && err.auth) throw err; }
+    // [E] edit by smsong
+
+    loadLocalExtras();   // 체중 변화 그래프용 bodyLogs(로컬) + DB 가 비었을 때의 폴백
 }
 
 // ============================================================
@@ -340,8 +387,36 @@ async function addExerciseType(name) {
     const dto = await api.addExercise(name);
     state.exercises.push(dto.name); exIdByName[dto.name] = dto.id;
 }
-// 체중/신체정보(로컬 항목) 저장
+// 체중 변화 그래프(bodyLogs) 등 로컬 항목 저장
 function persistExtras() { saveLocalExtras(); }
+
+// [B] edit by smsong : 신체 정보(키/현재 체중/목표 체중)를 DB 에 저장.
+//   기존 사용자 전체(userRaw)에 변경값만 병합해 PUT → 다른 필드(나이/공인중개사 정보 등) 보존.
+async function saveBodyInfo(patch) {
+    Object.assign(state.profile, patch);   // 화면 즉시 반영
+    saveLocalExtras();                     // 로컬 폴백도 갱신
+    let base = state.userRaw;
+    if (!base) { try { base = await api.getMe(); } catch (_) { base = null; } }
+    const dto = Object.assign({}, base || { uid: UID }, {
+        uid: UID,
+        name: state.profile.name || (base && base.name) || null,
+        height: state.profile.height,
+        weight: state.profile.weight,
+        targetWeight: state.profile.targetWeight
+    });
+    const saved = await api.updateMe(dto);
+    if (saved) state.userRaw = saved;
+}
+
+// 현재 체중: DB 값이 우선, 없으면 가장 최근 체중 기록(bodyLog)으로 폴백
+function currentWeight() {
+    if (state.profile.weight != null) return state.profile.weight;
+    if (state.bodyLogs.length) {
+        return state.bodyLogs.slice().sort((a, b) => a.date < b.date ? 1 : -1)[0].weight;
+    }
+    return null;
+}
+// [E] edit by smsong
 
 // 에러 메시지 표준화
 function errMsg(err, fallback) {
@@ -580,8 +655,6 @@ function renderHome() {
 // ---------- 운동 ----------
 function renderWorkout() {
     let html = `
-    <div class="view-title">운동 기록</div>
-    <div class="view-desc">날짜 안에 운동 기록을 만들고, 그 안에 운동을 담아 관리해요. 하루에 여러 번 기록할 수 있어요.</div>
     <div class="section-head">
         <div class="seg" id="workoutSeg">
             <button data-v="calendar" class="${ui.workoutView === 'calendar' ? 'active' : ''}">달력</button>
@@ -825,8 +898,6 @@ function workoutRowHtml(w, sessionId) {
 // ---------- 식단 ----------
 function renderDiet() {
     let html = `
-    <div class="view-title">식단 기록</div>
-    <div class="view-desc">끼니별로 먹은 음식과 칼로리를 기록하세요.</div>
     <div class="section-head">
         <div class="seg" id="dietSeg">
             <button data-v="calendar" class="${ui.dietView === 'calendar' ? 'active' : ''}">달력</button>
@@ -905,9 +976,7 @@ function renderChange() {
     const exsWithData = state.exercises.filter(ex => exerciseSessionStats(ex).length);
     if (!ui.changeExercise || !exsWithData.includes(ui.changeExercise)) ui.changeExercise = exsWithData[0] || null;
 
-    let html = `
-    <div class="view-title">변화</div>
-    <div class="view-desc">기록이 쌓일수록 그래프가 선명해져요.</div>`;
+    let html = '';
 
     // 1) 종목별 성장 분석 : 직전 세션 대비 무게·횟수·세트·볼륨 등락(상승=빨강/하락=파랑) + 추이 그래프
     html += `<div class="section">
@@ -1011,15 +1080,13 @@ function renderProfile() {
     const totalSessions = state.sessions.length;
     const totalWorkouts = totalWorkoutCount();
     // [E] edit by smsong
-    const lastWeight = state.bodyLogs.length ? state.bodyLogs.slice().sort((a, b) => a.date < b.date ? 1 : -1)[0].weight : null;
+    const lastWeight = currentWeight();   // [B][E] edit by smsong : 현재 체중 = DB 값 우선
 
     // [B] edit by smsong : 이름/이메일 기본 문구 제거 — 값이 없으면 표시하지 않음
     const nm = p.name || '';
     const em = p.email || '';
+    // [B] edit by smsong : 탭 상단 제목/설명 제거
     document.getElementById('view-profile').innerHTML = `
-    <div class="view-title">내 정보</div>
-    <div class="view-desc">프로필과 앱 설정을 관리해요.</div>
-
     ${(nm || em) ? `<div class="profile-top">
         <div class="pt-txt">
             ${nm ? `<div class="pt-name">${esc(nm)}</div>` : ''}
@@ -1397,118 +1464,258 @@ function closeSheet() { Sheet1.close(); }
 // [E] edit by smsong
 
 // ============================================================
-//  [B] edit by smsong — 1차 시트 : 운동 기록(날짜/세션) 폼
-//    흐름: 세션을 먼저 만든다 → 만들어진 세션 안에서 운동을 추가한다.
-//      · 신규      : 날짜 / 시작·종료 / 총 시간 / 컨디션(0~100 드래그) / 부위 / 메모 만 입력
-//                    → '운동 기록 만들기' 로 서버에 세션 생성(운동 0개)
-//                    → 곧바로 같은 시트가 상세 모드로 바뀌어 운동을 추가할 수 있다.
-//      · 상세/수정 : 위 메타 + 이 기록에 담긴 운동 목록(추가/수정/삭제/드래그 정렬)
-//                    운동 조작은 즉시 서버에 반영된다(/session/{uid}/{sessionId}/workout).
-//    운동 입력 폼은 2차 시트(openWorkoutSheet)로 완전히 분리.
+//  [B] edit by smsong — 1차 시트 : 운동 기록(날짜/세션)
+//    모드: 'new'(생성) | 'view'(조회) | 'edit'(수정) | 'workouts'(운동 보기)
+//      · new      : 메타 입력 폼(부위 4+3 그리드 / 총 시간 자동계산·입력잠금 / 컨디션 맨 아래).
+//                   만들면 곧바로 'view' 모드로 전환.
+//      · view     : 읽기 전용. 상단 좌측 [수정][삭제], 우측 [운동 보기].
+//      · edit     : view 에서 수정 → 메타 편집 폼 → 저장하면 view 로 복귀.
+//      · workouts : 이 기록에 담긴 운동 목록(추가/수정/삭제/드래그). 세션과 운동을 분리해 본다.
+//    개별 운동 입력 폼은 2차 시트(openWorkoutSheet)로 분리(1차 위에 겹침).
 // ============================================================
-function openSessionEditor(sessionId, date) {
+function openSessionEditor(sessionId, date, mode) {
     const isNew = !sessionId;
-    const cur = isNew ? null : sessionById(sessionId);
-    if (!isNew && !cur) return;   // 삭제된 기록을 다시 여는 경우 방어
+    let curMode = isNew ? 'new' : (mode || 'view');
+    let sid = sessionId || null;
 
-    // 메타 초안. 운동 목록은 초안으로 들고 있지 않고 항상 state(서버 반영본)를 읽는다.
-    const draft = isNew ? {
-        id: null, date: date || todayStr(),
+    // new 모드 임시 초안(생성 전). 생성 후에는 항상 state(서버본)를 읽는다.
+    const newDraft = {
+        date: date || todayStr(),
         startTime: '', endTime: '', durationMin: null,
-        condition: DEFAULT_CONDITION, bodyParts: [], title: '', memo: ''
-    } : {
-        id: cur.id, date: cur.date,
-        startTime: cur.startTime, endTime: cur.endTime, durationMin: cur.durationMin,
-        condition: cur.condition == null ? DEFAULT_CONDITION : cur.condition,
-        bodyParts: (cur.bodyParts || []).slice(), title: cur.title, memo: cur.memo
+        condition: DEFAULT_CONDITION, bodyParts: [], memo: ''
     };
-    const selectedParts = new Set(draft.bodyParts);
 
-    openSheet(editorBodyHtml(), {
-        title: isNew ? '운동 기록 만들기' : '운동 기록 상세',
-        desc: isNew
-            ? '먼저 날짜·시간·컨디션·부위를 정해 기록을 만드세요. 운동은 만든 다음에 추가해요.'
-            : '시간·컨디션·부위를 수정하고, 이 기록 안에 운동을 추가하세요.',
-        snap: 'half'
-    });
+    renderMode();
 
-    bindEditor();
-    if (!isNew) paintList();
+    function sess() { return sid ? sessionById(sid) : null; }
 
-    // ---------- HTML ----------
-    function editorBodyHtml() {
-        const cond = draft.condition == null ? DEFAULT_CONDITION : draft.condition;
-        return `
-        <div class="field"><label>날짜</label><input class="input" id="seDate" type="date" value="${draft.date}"></div>
-
-        <div class="field-row">
-            <div class="field"><label>시작 시간</label><input class="input" id="seStart" type="time" value="${draft.startTime || ''}"></div>
-            <div class="field"><label>종료 시간</label><input class="input" id="seEnd" type="time" value="${draft.endTime || ''}"></div>
-            <div class="field"><label>총 시간(분)</label><input class="input" id="seDur" type="number" inputmode="numeric" placeholder="자동" value="${draft.durationMin == null ? '' : draft.durationMin}"></div>
-        </div>
-        <div class="hint" id="seDurHint"></div>
-
-        <div class="field cond-field">
-            <div class="cond-head">
-                <label>컨디션</label>
-                <div class="cond-readout">
-                    <span class="cond-big tabnum" id="seCondVal">${cond}</span>
-                    <span class="cond-chip" id="seCondLbl">${condLabel(cond)}</span>
-                </div>
-            </div>
-            <input type="range" class="cond-range" id="seCond" min="0" max="100" step="1" value="${cond}">
-            <div class="cond-scale"><span>0 · 최악</span><span>50 · 보통</span><span>100 · 최상</span></div>
-        </div>
-
-        <div class="field">
-            <label>운동 부위 (여러 개 선택 가능)</label>
-            <div class="chip-row" id="seParts">${BODY_PARTS.map(p => `<button class="chip sm ${selectedParts.has(p) ? 'active' : ''}" data-bp="${esc(p)}" type="button">${esc(p)}</button>`).join('')}</div>
-        </div>
-
-        <div class="field"><label>기록 이름 (선택)</label><input class="input" id="seTitle" value="${esc(draft.title || '')}" placeholder="예: 오전 운동, 저녁 하체"></div>
-        <div class="field"><label>메모 (선택)</label><input class="input" id="seMemo" value="${esc(draft.memo || '')}" placeholder="그립, 통증, 특이사항 등"></div>
-
-        <div class="se-actions">
-            <button class="btn grad block" id="seSave">${isNew ? '운동 기록 만들기' : '변경사항 저장'}</button>
-        </div>
-
-        ${isNew ? `
-        <div class="se-locked">
-            <div class="se-locked-ico">${icon('dumbbell')}</div>
-            <div class="se-locked-txt">기록을 먼저 만들면<br>이 안에 운동을 추가할 수 있어요</div>
-        </div>` : `
-        <div class="se-head">
-            <h4>운동 <span class="cnt tabnum" id="seCount">0</span></h4>
-            <button class="btn sm grad" id="seAddW" type="button">＋ 운동 추가</button>
-        </div>
-        <div class="reorder-list se-list" id="seList"></div>
-        <div class="se-actions">
-            <button class="btn danger block" id="seDel">이 운동 기록 삭제</button>
-        </div>`}`;
+    function renderMode() {
+        if (curMode === 'new' || curMode === 'edit') renderMetaForm();
+        else if (curMode === 'workouts') renderWorkoutList();
+        else renderMetaView();
     }
 
-    // ---------- 운동 목록 (상세 모드에서만) ----------
+    // ---------- 조회(읽기 전용) ----------
+    function renderMetaView() {
+        const s = sess();
+        if (!s) { closeSheet(); return; }
+        const dur = sessionDuration(s);
+        const parts = sessionBodyParts(s);
+        const c = s.condition;
+        const n = (s.workouts || []).length;
+        openSheet(`
+            <div class="se-toolbar">
+                <div class="se-tb-left">
+                    <button class="btn sm" id="seEdit">${icon('pencil')} 수정</button>
+                    <button class="btn sm danger" id="seDel">${icon('trash')} 삭제</button>
+                </div>
+                <button class="btn sm grad" id="seWorkouts">운동 보기 ${icon('chevR')}</button>
+            </div>
+
+            <div class="se-view">
+                <div class="kv"><span class="k">날짜</span><span class="v">${fmtKorean(s.date)}</span></div>
+                <div class="kv"><span class="k">시간</span><span class="v tabnum">${esc(fmtTimeRange(s))}${dur != null ? ' · ' + fmtDur(dur) : ''}</span></div>
+                <div class="kv"><span class="k">컨디션</span>
+                    <span class="v cond-inline">
+                        <i class="cond-bar"><b style="width:${c == null ? 0 : c}%;background:${condColor(c)}"></b></i>
+                        <span class="tabnum" style="color:${condColor(c)}">${c == null ? '—' : c}</span>
+                        <span class="cond-inline-lbl">${c == null ? '' : condLabel(c)}</span>
+                    </span>
+                </div>
+                <div class="kv col"><span class="k">운동 부위</span>
+                    ${parts.length ? `<div class="chip-row">${parts.map(p => `<span class="chip sm active view-chip">${esc(p)}</span>`).join('')}</div>` : `<span class="v muted">기록 없음</span>`}
+                </div>
+                ${s.memo ? `<div class="kv col"><span class="k">메모</span><span class="v">${esc(s.memo)}</span></div>` : ''}
+                <div class="se-summary tabnum">담긴 운동 ${n}개 · 총 볼륨 ${sessionVolume(s)} kg</div>
+            </div>
+        `, {
+            title: '운동 기록',
+            desc: '이 기록의 정보예요. 왼쪽 위 “수정”으로 고치고, 오른쪽 위 “운동 보기”로 담긴 운동을 확인하세요.',
+            snap: 'half'
+        });
+
+        document.getElementById('seEdit').onclick = () => { curMode = 'edit'; renderMode(); };
+        document.getElementById('seWorkouts').onclick = () => { curMode = 'workouts'; renderMode(); };
+        document.getElementById('seDel').onclick = async () => {
+            if (!confirm('이 운동 기록을 삭제할까요?\n안에 담긴 운동도 함께 삭제됩니다.')) return;
+            const b = document.getElementById('seDel'); b.disabled = true;
+            try { await delSessionRec(sid); closeSheet(); render(); toast('운동 기록을 삭제했어요'); }
+            catch (err) { b.disabled = false; toast(errMsg(err, '삭제에 실패했어요')); }
+        };
+    }
+
+    // ---------- 생성/수정 폼 ----------
+    function renderMetaForm() {
+        const src = curMode === 'edit' ? sess() : newDraft;
+        if (curMode === 'edit' && !src) { closeSheet(); return; }
+        const draft = {
+            date: src.date || todayStr(),
+            startTime: src.startTime || '',
+            endTime: src.endTime || '',
+            durationMin: src.durationMin == null ? null : src.durationMin,
+            condition: src.condition == null ? DEFAULT_CONDITION : src.condition,
+            bodyParts: (src.bodyParts || []).slice(),
+            memo: src.memo || ''
+        };
+        const selectedParts = new Set(draft.bodyParts);
+        const cond = draft.condition;
+
+        openSheet(`
+            <div class="field"><label>날짜</label><input class="input" id="seDate" type="date" value="${draft.date}"></div>
+
+            <div class="field-row">
+                <div class="field"><label>시작 시간</label><input class="input" id="seStart" type="time" value="${draft.startTime || ''}"></div>
+                <div class="field"><label>종료 시간</label><input class="input" id="seEnd" type="time" value="${draft.endTime || ''}"></div>
+                <div class="field"><label>총 시간(분)</label><input class="input readonly" id="seDur" type="text" inputmode="none" placeholder="자동" value="${draft.durationMin == null ? '' : draft.durationMin}" readonly tabindex="-1"></div>
+            </div>
+            <div class="hint" id="seDurHint"></div>
+
+            <div class="field">
+                <label>운동 부위 (여러 개 선택 가능)</label>
+                <div class="chip-grid" id="seParts">${BODY_PARTS.map(p => `<button class="chip sm ${selectedParts.has(p) ? 'active' : ''}" data-bp="${esc(p)}" type="button">${esc(p)}</button>`).join('')}</div>
+            </div>
+
+            <div class="field"><label>메모 (선택)</label><input class="input" id="seMemo" value="${esc(draft.memo || '')}" placeholder="그립, 통증, 특이사항 등"></div>
+
+            <div class="field cond-field">
+                <div class="cond-head">
+                    <label>컨디션</label>
+                    <div class="cond-readout">
+                        <span class="cond-big tabnum" id="seCondVal">${cond}</span>
+                        <span class="cond-chip" id="seCondLbl">${condLabel(cond)}</span>
+                    </div>
+                </div>
+                <input type="range" class="cond-range" id="seCond" min="0" max="100" step="1" value="${cond}">
+                <div class="cond-scale"><span>0 · 최악</span><span>50 · 보통</span><span>100 · 최상</span></div>
+            </div>
+
+            <div class="se-actions">
+                <button class="btn grad block" id="seSave">${curMode === 'new' ? '운동 기록 만들기' : '변경사항 저장'}</button>
+                ${curMode === 'edit' ? `<button class="btn block" id="seCancel" style="margin-top:8px">취소</button>` : ''}
+            </div>
+        `, {
+            title: curMode === 'new' ? '운동 기록 만들기' : '운동 기록 수정',
+            desc: curMode === 'new'
+                ? '날짜·시간·컨디션·부위를 정해 기록을 만드세요. 운동은 만든 뒤 “운동 보기”에서 추가해요.'
+                : '시간·컨디션·부위·메모를 수정하세요.',
+            snap: 'half'
+        });
+
+        // 컨디션 슬라이더
+        const condEl = document.getElementById('seCond');
+        const condVal = document.getElementById('seCondVal');
+        const condLbl = document.getElementById('seCondLbl');
+        const paintCond = () => {
+            const v = Number(condEl.value);
+            condVal.textContent = v; condVal.style.color = condColor(v);
+            condLbl.textContent = condLabel(v); condLbl.style.color = condColor(v);
+            condEl.style.setProperty('--cond-pct', v + '%');
+            condEl.style.setProperty('--cond-color', condColor(v));
+        };
+        condEl.addEventListener('input', paintCond); paintCond();
+
+        // 시작·종료 → 총 시간(분) 자동 계산 (직접 입력 불가)
+        const startEl = document.getElementById('seStart');
+        const endEl = document.getElementById('seEnd');
+        const durEl = document.getElementById('seDur');
+        const hintEl = document.getElementById('seDurHint');
+        function refreshDuration() {
+            const span = spanMinutes(startEl.value, endEl.value);
+            durEl.value = span == null ? '' : span;
+            hintEl.textContent = span == null
+                ? '시작·종료 시간을 넣으면 총 시간이 자동으로 계산돼요.'
+                : `시작~종료 기준 ${fmtDur(span)} · 자동 계산돼요`;
+        }
+        startEl.addEventListener('change', refreshDuration);
+        endEl.addEventListener('change', refreshDuration);
+        if (curMode === 'new' && !draft.startTime) startEl.value = nowTimeStr();
+        refreshDuration();
+
+        // 부위 다중 선택
+        document.querySelectorAll('#seParts .chip').forEach(c => c.onclick = () => {
+            const p = c.dataset.bp;
+            if (selectedParts.has(p)) { selectedParts.delete(p); c.classList.remove('active'); }
+            else { selectedParts.add(p); c.classList.add('active'); }
+        });
+
+        // 저장 (신규=생성 후 조회 모드로 / 수정=저장 후 조회 모드로)
+        document.getElementById('seSave').onclick = async () => {
+            const s = curMode === 'edit' ? sess() : null;
+            const payload = {
+                id: curMode === 'edit' ? sid : null,
+                date: document.getElementById('seDate').value,
+                startTime: startEl.value || '',
+                endTime: endEl.value || '',
+                durationMin: durEl.value === '' ? null : Math.max(0, parseInt(durEl.value, 10) || 0),
+                condition: Number(condEl.value),
+                bodyParts: BODY_PARTS.filter(p => selectedParts.has(p)),
+                title: s ? (s.title || '') : '',
+                memo: document.getElementById('seMemo').value.trim()
+            };
+            if (!payload.date) return toast('날짜를 선택하세요');
+            const btn = document.getElementById('seSave'); btn.disabled = true;
+            try {
+                const rec = await saveSessionRec(payload);
+                sid = rec.id;
+                ui.workoutSel = rec.date;
+                render();
+                curMode = 'view';
+                renderMode();
+                toast(payload.id ? '운동 기록을 저장했어요' : '기록을 만들었어요. “운동 보기”에서 운동을 추가하세요');
+            } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
+        };
+
+        const cancel = document.getElementById('seCancel');
+        if (cancel) cancel.onclick = () => { curMode = 'view'; renderMode(); };
+    }
+
+    // ---------- 운동 목록(운동 보기) ----------
+    function renderWorkoutList() {
+        const s = sess();
+        if (!s) { closeSheet(); return; }
+        openSheet(`
+            <div class="se-toolbar">
+                <button class="btn sm" id="seBack">${icon('chevL')} 기록으로</button>
+                <button class="btn sm grad" id="seAddW" type="button">＋ 운동 추가</button>
+            </div>
+            <div class="se-head">
+                <h4>운동 <span class="cnt tabnum" id="seCount">0</span></h4>
+                <span class="se-head-sum tabnum" id="seVol"></span>
+            </div>
+            <div class="reorder-list se-list" id="seList"></div>
+        `, {
+            title: '운동',
+            desc: `${fmtKorean(s.date)}${s.startTime ? ' · ' + s.startTime : ''} 기록에 담긴 운동이에요.`,
+            snap: 'half'
+        });
+        document.getElementById('seBack').onclick = () => { curMode = 'view'; renderMode(); };
+        document.getElementById('seAddW').onclick = () => openWorkoutSheet(null, async item => {
+            await addWorkoutToSession(sid, item);
+            paintList(); render(); toast('운동을 추가했어요');
+        });
+        paintList();
+    }
+
     function paintList() {
         const el = document.getElementById('seList');
         if (!el) return;
-        const sess = sessionById(draft.id);
-        const list = (sess && sess.workouts) || [];
+        const s = sess();
+        const list = (s && s.workouts) || [];
         el.innerHTML = list.length
-            ? list.map(w => workoutRowHtml(w, draft.id)).join('')
+            ? list.map(w => workoutRowHtml(w, sid)).join('')
             : `<div class="se-empty">아직 운동이 없어요. ‘＋ 운동 추가’로 추가하세요.</div>`;
-        document.getElementById('seCount').textContent = list.length;
+        const cntEl = document.getElementById('seCount'); if (cntEl) cntEl.textContent = list.length;
+        const volEl = document.getElementById('seVol'); if (volEl) volEl.textContent = list.length ? `볼륨 ${sessionVolume(s)} kg` : '';
 
-        // 드래그 정렬 → 서버 저장
         enableDragReorder(el, async ids => {
-            try { await commitWorkoutOrder(draft.id, ids); render(); }
+            try { await commitWorkoutOrder(sid, ids); render(); }
             catch (err) { toast(errMsg(err, '순서 저장에 실패했어요')); paintList(); }
         });
-
         el.querySelectorAll('[data-rm-w]').forEach(b => b.onclick = async ev => {
             ev.stopPropagation();
             if (!confirm('이 운동을 삭제할까요?')) return;
             b.disabled = true;
-            try { await delWorkoutInSession(draft.id, b.dataset.rmW); paintList(); render(); toast('삭제했어요'); }
+            try { await delWorkoutInSession(sid, b.dataset.rmW); paintList(); render(); toast('삭제했어요'); }
             catch (err) { b.disabled = false; toast(errMsg(err, '삭제에 실패했어요')); }
         });
         el.querySelectorAll('[data-edit-w]').forEach(b => b.onclick = ev => {
@@ -1516,111 +1723,13 @@ function openSessionEditor(sessionId, date) {
             const w = list.find(x => String(x.id) === String(b.dataset.editW));
             if (!w) return;
             openWorkoutSheet(w, async item => {
-                await updWorkoutInSession(draft.id, w.id, item);
+                await updWorkoutInSession(sid, w.id, item);
                 paintList(); render(); toast('운동을 수정했어요');
             });
         });
     }
-
-    // 총 시간 힌트 + 자동 계산 (사용자가 직접 입력하면 그 값을 우선)
-    function refreshDuration(auto) {
-        const st = document.getElementById('seStart').value;
-        const en = document.getElementById('seEnd').value;
-        const durEl = document.getElementById('seDur');
-        const span = spanMinutes(st, en);
-        if (auto && span != null) durEl.value = span;
-        const hint = document.getElementById('seDurHint');
-        if (span != null) {
-            const manual = durEl.value !== '' && Number(durEl.value) !== span;
-            hint.textContent = `시작~종료 기준 ${fmtDur(span)}${manual ? ' · 직접 입력한 값이 우선 저장돼요' : ''}`;
-        } else {
-            hint.textContent = '시작·종료를 넣으면 총 시간이 자동 계산돼요. 총 시간만 적어도 괜찮아요.';
-        }
-    }
-
-    // ---------- 배선 ----------
-    function bindEditor() {
-        // 컨디션 드래그 슬라이더
-        const cond = document.getElementById('seCond');
-        const condVal = document.getElementById('seCondVal');
-        const condLbl = document.getElementById('seCondLbl');
-        const paintCond = () => {
-            const v = Number(cond.value);
-            condVal.textContent = v;
-            condVal.style.color = condColor(v);
-            condLbl.textContent = condLabel(v);
-            condLbl.style.color = condColor(v);
-            cond.style.setProperty('--cond-pct', v + '%');
-            cond.style.setProperty('--cond-color', condColor(v));
-        };
-        cond.addEventListener('input', paintCond);
-        paintCond();
-
-        // 시간
-        document.getElementById('seStart').addEventListener('change', () => refreshDuration(true));
-        document.getElementById('seEnd').addEventListener('change', () => refreshDuration(true));
-        document.getElementById('seDur').addEventListener('input', () => refreshDuration(false));
-        if (isNew && !draft.startTime) document.getElementById('seStart').value = nowTimeStr();
-        refreshDuration(false);
-
-        // 운동 부위 다중 선택 (세션 단위)
-        document.querySelectorAll('#seParts .chip').forEach(c => c.onclick = () => {
-            const p = c.dataset.bp;
-            if (selectedParts.has(p)) { selectedParts.delete(p); c.classList.remove('active'); }
-            else { selectedParts.add(p); c.classList.add('active'); }
-        });
-
-        // 세션 메타 저장 (신규 = 생성 후 상세 모드로 전환)
-        document.getElementById('seSave').onclick = async () => {
-            syncMeta();
-            if (!draft.date) return toast('날짜를 선택하세요');
-            const btn = document.getElementById('seSave'); btn.disabled = true;
-            try {
-                const rec = await saveSessionRec(draft);
-                ui.workoutSel = rec.date;
-                render();
-                if (isNew) {
-                    // 만들어진 세션을 곧바로 상세 모드로 다시 열어 운동을 추가하게 한다
-                    toast('기록을 만들었어요. 이제 운동을 추가하세요');
-                    openSessionEditor(rec.id, null);
-                } else {
-                    btn.disabled = false;
-                    toast('운동 기록을 저장했어요');
-                }
-            } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
-        };
-
-        // 상세 모드 전용: 운동 추가 / 기록 삭제
-        const addW = document.getElementById('seAddW');
-        if (addW) addW.onclick = () => openWorkoutSheet(null, async item => {
-            await addWorkoutToSession(draft.id, item);
-            paintList(); render(); toast('운동을 추가했어요');
-        });
-
-        const delBtn = document.getElementById('seDel');
-        if (delBtn) delBtn.onclick = async () => {
-            if (!confirm('이 운동 기록을 삭제할까요?\n안에 담긴 운동도 함께 삭제됩니다.')) return;
-            delBtn.disabled = true;
-            try {
-                await delSessionRec(draft.id);
-                closeSheet(); render(); toast('운동 기록을 삭제했어요');
-            } catch (err) { delBtn.disabled = false; toast(errMsg(err, '삭제에 실패했어요')); }
-        };
-    }
-
-    // 화면의 메타 입력값을 draft 로 회수
-    function syncMeta() {
-        draft.date = document.getElementById('seDate').value;
-        draft.startTime = document.getElementById('seStart').value || '';
-        draft.endTime = document.getElementById('seEnd').value || '';
-        const d = document.getElementById('seDur').value;
-        draft.durationMin = d === '' ? null : Math.max(0, parseInt(d, 10) || 0);
-        draft.condition = Number(document.getElementById('seCond').value);
-        draft.bodyParts = BODY_PARTS.filter(p => selectedParts.has(p));
-        draft.title = document.getElementById('seTitle').value.trim();
-        draft.memo = document.getElementById('seMemo').value.trim();
-    }
 }
+// [E] edit by smsong
 
 // ============================================================
 //  2차 시트 : 운동 입력 폼 (종목 / 맨몸 / 무게 / 횟수 / 세트 / 메모)
@@ -1782,13 +1891,20 @@ function openBodySheet() {
         <div class="field"><label>날짜</label><input class="input" id="bDate" type="date" value="${todayStr()}"></div>
         <button class="btn grad block" id="bSave" style="margin-top:6px">저장</button>
     `, { title: '체중 기록', desc: '오늘 체중을 남기면 변화 그래프에 반영돼요.', snap: 'half' });
-    document.getElementById('bSave').onclick = () => {
+    document.getElementById('bSave').onclick = async () => {
         const weight = parseFloat(document.getElementById('bWeight').value);
         const dt = document.getElementById('bDate').value;
         if (!weight) return toast('체중을 입력하세요');
         const exist = state.bodyLogs.find(b => b.date === dt);
         if (exist) exist.weight = weight; else state.bodyLogs.push({ id: uid(), date: dt, weight });
-        persistExtras(); closeSheet(); render(); toast('체중을 기록했어요');
+        persistExtras();
+        // [B] edit by smsong : 가장 최근 날짜의 기록이면 '현재 체중'으로도 DB 에 반영
+        const latest = state.bodyLogs.slice().sort((a, b) => a.date < b.date ? 1 : -1)[0];
+        if (latest && latest.date === dt) {
+            try { await saveBodyInfo({ weight }); } catch (_) { /* 그래프 기록은 유지, 동기화만 실패 */ }
+        }
+        // [E] edit by smsong
+        closeSheet(); render(); toast('체중을 기록했어요');
     };
 }
 
@@ -1798,21 +1914,37 @@ function openProfileSheet() {
     openSheet(`
         <div class="field"><label>이름</label><input class="input" id="pName" value="${esc(p.name || '')}" placeholder="이름"></div>
         <div class="field-row">
-            <div class="field"><label>키 (cm)</label><input class="input" id="pHeight" type="number" inputmode="numeric" value="${p.height || ''}" placeholder="178"></div>
-            <div class="field"><label>목표 체중 (kg)</label><input class="input" id="pTarget" type="number" inputmode="decimal" value="${p.targetWeight || ''}" placeholder="74"></div>
+            <div class="field"><label>키 (cm)</label><input class="input" id="pHeight" type="number" inputmode="decimal" value="${p.height != null ? p.height : ''}" placeholder="178"></div>
+            <div class="field"><label>현재 체중 (kg)</label><input class="input" id="pWeight" type="number" inputmode="decimal" value="${currentWeight() != null ? currentWeight() : ''}" placeholder="77.6"></div>
+            <div class="field"><label>목표 체중 (kg)</label><input class="input" id="pTarget" type="number" inputmode="decimal" value="${p.targetWeight != null ? p.targetWeight : ''}" placeholder="74"></div>
         </div>
         <button class="btn grad block" id="pSave" style="margin-top:6px">저장</button>
-    `, { title: '프로필 설정', desc: '표시 이름과 신체 정보를 설정하세요.', snap: 'half' });
-    document.getElementById('pSave').onclick = () => {
-        state.profile.name = document.getElementById('pName').value.trim();
-        state.profile.height = parseInt(document.getElementById('pHeight').value, 10) || null;
-        state.profile.targetWeight = parseFloat(document.getElementById('pTarget').value) || null;
+    `, { title: '프로필 설정', desc: '표시 이름과 신체 정보를 설정하세요. 신체 정보는 계정에 저장돼요.', snap: 'half' });
+    document.getElementById('pSave').onclick = async () => {
+        const name = document.getElementById('pName').value.trim();
+        const height = parseFloat(document.getElementById('pHeight').value);
+        const weight = parseFloat(document.getElementById('pWeight').value);
+        const target = parseFloat(document.getElementById('pTarget').value);
+        state.profile.name = name;
         // 표시 이름은 로그인 사용자 정보에도 반영(새로고침 후에도 유지)
         try {
             const cu = Auth.getUser() || {};
-            cu.name = state.profile.name; localStorage.setItem('currentUser', JSON.stringify(cu));
+            cu.name = name; localStorage.setItem('currentUser', JSON.stringify(cu));
         } catch (_) {}
-        persistExtras(); closeSheet(); render(); toast('프로필을 저장했어요');
+        const btn = document.getElementById('pSave'); btn.disabled = true;
+        try {
+            // [B] edit by smsong : 키/현재 체중/목표 체중을 DB 에 저장
+            await saveBodyInfo({
+                height: isNaN(height) ? null : height,
+                weight: isNaN(weight) ? null : weight,
+                targetWeight: isNaN(target) ? null : target
+            });
+            closeSheet(); render(); toast('프로필을 저장했어요');
+            // [E] edit by smsong
+        } catch (err) {
+            btn.disabled = false;
+            toast(errMsg(err, '프로필 저장에 실패했어요'));
+        }
     };
 }
 
@@ -1867,9 +1999,21 @@ function activateTab(tab, remember) {
     if (!valid.includes(tab)) tab = 'home';
     document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + tab));
-    const m = document.getElementById('appMain'); if (m) m.scrollTop = 0;
+    // [B] edit by smsong : 탭을 옮기면 항상 맨 위에서 시작하도록 스크롤 초기화.
+    //   실제 스크롤 컨테이너가 .app-main / 문서(body·html) 중 무엇이든 모두 리셋한다.
+    resetScrollTop();
+    // [E] edit by smsong
     if (remember) { try { sessionStorage.setItem(TAB_KEY, tab); } catch (_) {} }
 }
+// [B] edit by smsong : 스크롤 위치 초기화 유틸 (탭 전환 시 이전 탭의 스크롤 잔상 제거)
+function resetScrollTop() {
+    const m = document.getElementById('appMain'); if (m) m.scrollTop = 0;
+    try { window.scrollTo(0, 0); } catch (_) {}
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+}
+// [E] edit by smsong
 document.querySelectorAll('.nav-item').forEach(btn => btn.onclick = () => activateTab(btn.dataset.tab, true));
 
 // ============================================================

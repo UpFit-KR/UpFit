@@ -37,6 +37,13 @@ public class UserEntity implements UserDetails {
     private String agencyAddress;  // 공인중개사사무소 주소
     // [E] edit by smsong
 
+    // [B] edit by smsong - UpFit 신체 정보(키/현재 체중/목표 체중) DB 영속화
+    //   프론트 localStorage 에만 있던 값을 사용자 레코드로 옮겨 기기/재설치와 무관하게 유지.
+    private Double height;        // 키 (cm)
+    private Double weight;        // 현재 체중 (kg)
+    private Double targetWeight;  // 목표 체중 (kg)
+    // [E] edit by smsong
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         // 사용자 권한 설정, 필요에 따라 변경할 것
