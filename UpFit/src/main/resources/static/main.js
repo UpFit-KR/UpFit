@@ -46,6 +46,9 @@ const MEAL_TYPES = [
     { key: 'dinner',    label: '저녁' },
     { key: 'snack',     label: '간식' }
 ];
+// [B] edit by smsong : 운동 부위 타입(하루에 여러 개 체크 가능)
+const BODY_PARTS = ['가슴', '등중앙', '광배', '이두', '삼두', '하체', '복근'];
+// [E] edit by smsong
 
 // ============================================================
 //  백엔드 연동 (운동/식단/종목 — users.id 를 외래키로 사용)
@@ -84,8 +87,11 @@ const api = {
 };
 
 // DTO ↔ 화면 레코드 매핑 (서버의 workoutDate/mealDate ↔ 화면의 date)
-function fromWorkoutDTO(d) { return { id: d.id, date: d.workoutDate, exercise: d.exercise, weight: d.weight, reps: d.reps, sets: d.sets, memo: d.memo || '' }; }
-function toWorkoutDTO(r)   { return { workoutDate: r.date, exercise: r.exercise, weight: r.weight, reps: r.reps, sets: r.sets, memo: r.memo || '' }; }
+// [B] edit by smsong : bodyParts(부위, 콤마문자열↔배열) / bodyweight(맨몸) 필드 추가
+function partsToArr(s) { return (s ? String(s).split(',') : []).map(x => x.trim()).filter(Boolean); }
+function fromWorkoutDTO(d) { return { id: d.id, date: d.workoutDate, exercise: d.exercise, weight: d.weight, reps: d.reps, sets: d.sets, memo: d.memo || '', bodyParts: partsToArr(d.bodyParts), bodyweight: !!d.bodyweight }; }
+function toWorkoutDTO(r)   { return { workoutDate: r.date, exercise: r.exercise, weight: r.weight, reps: r.reps, sets: r.sets, memo: r.memo || '', bodyParts: (r.bodyParts || []).join(','), bodyweight: !!r.bodyweight }; }
+// [E] edit by smsong
 function fromMealDTO(d)    { return { id: d.id, date: d.mealDate, mealType: d.mealType, name: d.name, kcal: d.kcal, carb: d.carb, protein: d.protein, fat: d.fat }; }
 function toMealDTO(r)      { return { mealDate: r.date, mealType: r.mealType, name: r.name, kcal: r.kcal, carb: r.carb, protein: r.protein, fat: r.fat }; }
 let exIdByName = {};   // 종목명 → 서버 id (삭제용)
@@ -113,7 +119,7 @@ const ui = {
 };
 function firstOfThisMonth() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; }
 
-function blankState() { return { exercises: [], workouts: [], meals: [], bodyLogs: [], profile: {} }; }
+function blankState() { return { exercises: [], workouts: [], meals: [], bodyLogs: [], profile: {}, workoutOrder: {} }; }
 
 // [B] edit by smsong : 로그인 사용자 정보 반영 — 기본값 대체 없음(없으면 빈 값으로 둠)
 function applyCurrentUser() {
@@ -129,15 +135,17 @@ function loadLocalExtras() {
     try {
         const o = JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}');
         state.bodyLogs = o.bodyLogs || [];
+        state.workoutOrder = o.workoutOrder || {};   // [B][E] edit by smsong : 날짜별 수동 정렬 순서
         if (o.name) state.profile.name = state.profile.name || o.name;
         if (o.height != null) state.profile.height = o.height;
         if (o.targetWeight != null) state.profile.targetWeight = o.targetWeight;
-    } catch (_) { state.bodyLogs = []; }
+    } catch (_) { state.bodyLogs = []; state.workoutOrder = {}; }
 }
 function saveLocalExtras() {
     try {
         localStorage.setItem(LOCAL_KEY, JSON.stringify({
             bodyLogs: state.bodyLogs,
+            workoutOrder: state.workoutOrder,   // [B][E] edit by smsong
             name: state.profile.name,
             height: state.profile.height,
             targetWeight: state.profile.targetWeight
@@ -211,6 +219,20 @@ function prevSessionVolume(exercise, date) {
     return sessions.length ? sessions[sessions.length - 1].volume : null;
 }
 
+// [B] edit by smsong : 종목별 세션 상세 집계 (최고무게 / 총횟수 / 총세트 / 볼륨) — 변화 탭 성장 분석용
+function exerciseSessionStats(exercise) {
+    const byDate = {};
+    state.workouts.filter(w => w.exercise === exercise).forEach(w => {
+        const b = byDate[w.date] || (byDate[w.date] = { date: w.date, topWeight: 0, totalReps: 0, totalSets: 0, volume: 0 });
+        b.topWeight = Math.max(b.topWeight, w.weight || 0);
+        b.totalReps += (w.reps || 0) * (w.sets || 0);   // 총 반복수 = 횟수 × 세트
+        b.totalSets += (w.sets || 0);
+        b.volume += volumeOf(w);
+    });
+    return Object.values(byDate).sort((a, b) => a.date < b.date ? -1 : 1);
+}
+// [E] edit by smsong
+
 // 등락 칩 HTML (증가=빨강 ▲, 감소=파랑 ▼, 유지=–, 최초=NEW)
 function deltaChip(cur, prev, unit) {
     unit = unit || '';
@@ -222,6 +244,27 @@ function deltaChip(cur, prev, unit) {
 }
 
 function workoutsByDate(date) { return state.workouts.filter(w => w.date === date); }
+// [B] edit by smsong : 저장된 수동 순서대로 정렬 (순서 미지정 항목은 뒤쪽에 기본순으로)
+function orderedWorkoutsByDate(date) {
+    const recs = workoutsByDate(date);
+    const order = (state.workoutOrder && state.workoutOrder[date]) || [];
+    const pos = {};
+    order.forEach((id, i) => { pos[String(id)] = i; });
+    return recs.slice().sort((a, b) => {
+        const pa = pos[String(a.id)], pb = pos[String(b.id)];
+        if (pa == null && pb == null) return 0;
+        if (pa == null) return 1;
+        if (pb == null) return -1;
+        return pa - pb;
+    });
+}
+// 하루 운동의 부위 요약(중복 제거, BODY_PARTS 순서 유지)
+function dayBodyParts(date) {
+    const set = new Set();
+    workoutsByDate(date).forEach(w => (w.bodyParts || []).forEach(p => set.add(p)));
+    return BODY_PARTS.filter(p => set.has(p));
+}
+// [E] edit by smsong
 function mealsByDate(date) { return state.meals.filter(m => m.date === date); }
 function kcalOfDate(date) { return mealsByDate(date).reduce((s, m) => s + (m.kcal || 0), 0); }
 function volumeOfDate(date) { return workoutsByDate(date).reduce((s, w) => s + volumeOf(w), 0); }
@@ -356,7 +399,84 @@ function renderWorkout() {
     document.getElementById('addWorkoutBtn').onclick = () => openWorkoutSheet(ui.workoutView === 'calendar' ? ui.workoutSel : todayStr());
     document.querySelectorAll('#workoutSeg button').forEach(b => b.onclick = () => { ui.workoutView = b.dataset.v; renderWorkout(); });
     bindCalendar('workout');
+    wireReorder();   // [B][E] edit by smsong : 드래그 순서 변경 활성화
 }
+
+// [B] edit by smsong : 각 날짜 목록에 드래그 순서 변경 연결
+function wireReorder() {
+    document.querySelectorAll('#view-workout .reorder-list[data-reorder-date]').forEach(list => {
+        enableDragReorder(list, ids => {
+            state.workoutOrder[list.dataset.reorderDate] = ids;
+            persistExtras();   // 순서를 기기에 저장
+        });
+    });
+}
+
+// 포인터 기반 드래그 순서 변경 (모바일 터치 + 마우스 공통).
+// 대상 행을 position:fixed 로 띄우고, 같은 높이의 자리표시자로 슬롯을 유지하며 이동.
+function enableDragReorder(listEl, onCommit) {
+    listEl.querySelectorAll('.drag-handle').forEach(handle => {
+        handle.addEventListener('pointerdown', onDown);
+    });
+
+    function onDown(e) {
+        if (e.button != null && e.button > 0) return;   // 좌클릭/터치만
+        const row = e.target.closest('[data-reorder-id]');
+        if (!row) return;
+        e.preventDefault();
+
+        const handle = e.currentTarget;
+        const pointerId = e.pointerId;
+        const rect = row.getBoundingClientRect();
+        const grabOffset = e.clientY - rect.top;
+
+        // 슬롯 유지용 자리표시자
+        const ph = document.createElement('div');
+        ph.className = 'rec-placeholder';
+        ph.style.height = rect.height + 'px';
+        row.parentNode.insertBefore(ph, row.nextSibling);
+
+        // 대상 행을 화면에 고정
+        row.classList.add('dragging');
+        row.style.position = 'fixed';
+        row.style.left = rect.left + 'px';
+        row.style.top = rect.top + 'px';
+        row.style.width = rect.width + 'px';
+        row.style.margin = '0';
+
+        try { handle.setPointerCapture(pointerId); } catch (_) {}
+
+        function onMove(ev) {
+            row.style.top = (ev.clientY - grabOffset) + 'px';
+            const others = [].slice.call(listEl.querySelectorAll('[data-reorder-id]')).filter(x => x !== row);
+            let placed = false;
+            for (let i = 0; i < others.length; i++) {
+                const r = others[i].getBoundingClientRect();
+                if (ev.clientY < r.top + r.height / 2) { listEl.insertBefore(ph, others[i]); placed = true; break; }
+            }
+            if (!placed) listEl.appendChild(ph);
+        }
+
+        function onUp() {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
+            try { handle.releasePointerCapture(pointerId); } catch (_) {}
+            // 원상 복구 + 자리표시자 위치에 삽입
+            row.classList.remove('dragging');
+            row.style.position = ''; row.style.left = ''; row.style.top = ''; row.style.width = ''; row.style.margin = '';
+            listEl.insertBefore(row, ph);
+            ph.remove();
+            const ids = [].slice.call(listEl.querySelectorAll('[data-reorder-id]')).map(x => x.dataset.reorderId);
+            onCommit(ids);
+        }
+
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onUp);
+    }
+}
+// [E] edit by smsong
 
 function workoutCalendarHtml() {
     const cal = calendarGrid(ui.workoutCal, ui.workoutSel, date => {
@@ -367,9 +487,14 @@ function workoutCalendarHtml() {
     let detail = `<div class="cal-day-detail">
         <div class="day-head"><div class="d-date">${fmtKorean(ui.workoutSel)}</div>
         <div class="d-sum tabnum">볼륨 ${volumeOfDate(ui.workoutSel)} kg</div></div>`;
-    const recs = workoutsByDate(ui.workoutSel);
-    detail += recs.length ? recs.map(w => workoutRecHtml(w)).join('') :
-        emptyBlock('dumbbell', '이 날은 기록이 없어요', '＋ 기록 버튼으로 추가하세요');
+    // [B] edit by smsong : 부위 요약 + 순서 지정 목록(드래그 대상)
+    const parts = dayBodyParts(ui.workoutSel);
+    if (parts.length) detail += `<div class="day-parts">부위 · ${parts.join(' · ')}</div>`;
+    const recs = orderedWorkoutsByDate(ui.workoutSel);
+    detail += recs.length
+        ? `<div class="reorder-list" data-reorder-date="${ui.workoutSel}">${recs.map(w => workoutRecHtml(w)).join('')}</div>`
+        : emptyBlock('dumbbell', '이 날은 기록이 없어요', '＋ 기록 버튼으로 추가하세요');
+    // [E] edit by smsong
     detail += `</div>`;
 
     return `<div class="card">${cal}</div>${detail}`;
@@ -378,24 +503,38 @@ function workoutCalendarHtml() {
 function workoutListHtml() {
     const dates = [...new Set(state.workouts.map(w => w.date))].sort((a, b) => a < b ? 1 : -1);
     if (!dates.length) return emptyBlock('dumbbell', '아직 운동 기록이 없어요', '오른쪽 위 ＋ 기록으로 시작하세요');
-    return dates.map(date => `
+    // [B] edit by smsong : 부위 요약 + 날짜별 순서 지정 목록(드래그 대상)
+    return dates.map(date => {
+        const parts = dayBodyParts(date);
+        return `
         <div class="day-group">
             <div class="day-head">
                 <div class="d-date">${fmtKorean(date)}</div>
                 <div class="d-sum tabnum">볼륨 ${volumeOfDate(date)} kg</div>
             </div>
-            ${workoutsByDate(date).map(w => workoutRecHtml(w)).join('')}
-        </div>`).join('');
+            ${parts.length ? `<div class="day-parts">부위 · ${parts.join(' · ')}</div>` : ''}
+            <div class="reorder-list" data-reorder-date="${date}">
+                ${orderedWorkoutsByDate(date).map(w => workoutRecHtml(w)).join('')}
+            </div>
+        </div>`;
+    }).join('');
+    // [E] edit by smsong
 }
 
+// [B] edit by smsong : 드래그 핸들 + 부위/맨몸 태그 추가
 function workoutRecHtml(w) {
     const vol = volumeOf(w);
     const prev = prevSessionVolume(w.exercise, w.date);
+    const weightTxt = w.bodyweight ? '맨몸' : `${w.weight}kg`;
+    const tags = (w.bodyParts || []).map(p => `<span class="bp">${esc(p)}</span>`);
+    if (w.bodyweight) tags.push(`<span class="bw">맨몸</span>`);
     return `
-    <div class="rec">
+    <div class="rec" data-reorder-id="${w.id}">
+        <div class="drag-handle" title="드래그하여 순서 변경">${icon('grip')}</div>
         <div class="rec-main">
             <div class="rec-title">${esc(w.exercise)} ${deltaChip(vol, prev, 'kg')}</div>
-            <div class="rec-detail tabnum">${w.weight}kg × ${w.reps}회 × ${w.sets}세트${w.memo ? ' · ' + esc(w.memo) : ''}</div>
+            <div class="rec-detail tabnum">${weightTxt} × ${w.reps}회 × ${w.sets}세트${w.memo ? ' · ' + esc(w.memo) : ''}</div>
+            ${tags.length ? `<div class="rec-tags">${tags.join('')}</div>` : ''}
         </div>
         <div class="rec-right">
             <div class="rec-vol tabnum">${vol}<span class="u"> kg</span></div>
@@ -403,6 +542,7 @@ function workoutRecHtml(w) {
         </div>
     </div>`;
 }
+// [E] edit by smsong
 
 // ---------- 식단 ----------
 function renderDiet() {
@@ -490,21 +630,40 @@ function renderChange() {
     <div class="view-title">변화</div>
     <div class="view-desc">기록이 쌓일수록 그래프가 선명해져요.</div>`;
 
-    // 1) 종목별 볼륨 추이
+    // 1) 종목별 성장 분석 : 직전 세션 대비 무게·횟수·세트·볼륨 등락(상승=빨강/하락=파랑) + 추이 그래프
+    // [B] edit by smsong
     html += `<div class="section">
-        <div class="section-head"><h2>종목별 볼륨 추이</h2></div>
+        <div class="section-head"><h2>종목별 성장 분석</h2></div>
         <div class="card">`;
     if (exsWithData.length) {
-        html += `<select class="select-pill" id="changeExSelect" style="margin-bottom:14px">
+        html += `<select class="select-pill" id="changeExSelect" style="margin-bottom:14px;width:100%">
             ${exsWithData.map(ex => `<option value="${esc(ex)}" ${ex === ui.changeExercise ? 'selected' : ''}>${esc(ex)}</option>`).join('')}
         </select>`;
-        const ss = exerciseSessions(ui.changeExercise);
-        html += lineChart(ss.map(s => ({ label: labelMd(s.date), value: s.volume })), { color: C_VOL, unit: 'kg' });
-        html += chartLegend([[C_VOL, '볼륨 (kg)']]);
+
+        const stats = exerciseSessionStats(ui.changeExercise);
+        const last = stats[stats.length - 1];
+        const prev = stats.length > 1 ? stats[stats.length - 2] : null;
+
+        html += `<div class="cmp-meta">최근 ${fmtKorean(last.date)}${prev ? ` · 직전(${fmtKorean(prev.date)}) 대비` : ' · 첫 기록'}</div>`;
+        html += `<div class="cmp-list">
+            <div class="cmp-row"><span class="cmp-k">최고 무게</span><div class="cmp-right"><span class="cmp-v tabnum">${last.topWeight}kg</span>${deltaChip(last.topWeight, prev ? prev.topWeight : null, 'kg')}</div></div>
+            <div class="cmp-row"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}</div></div>
+            <div class="cmp-row"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}</div></div>
+            <div class="cmp-row"><span class="cmp-k">총 볼륨</span><div class="cmp-right"><span class="cmp-v tabnum">${last.volume}kg</span>${deltaChip(last.volume, prev ? prev.volume : null, 'kg')}</div></div>
+        </div>`;
+
+        // 최고 무게 추이
+        html += `<div class="chart-sub-title" style="margin-top:18px">최고 무게 추이</div>`;
+        html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.topWeight })), { color: C_WEIGHT, unit: 'kg' });
+        // 볼륨 추이
+        html += `<div class="chart-sub-title" style="margin-top:18px">볼륨 추이</div>`;
+        html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.volume })), { color: C_VOL, unit: 'kg' });
+        html += chartLegend([[C_WEIGHT, '최고 무게 (kg)'], [C_VOL, '볼륨 (kg)']]);
     } else {
-        html += emptyBlock('chart', '표시할 운동 데이터가 없어요', '운동을 2회 이상 기록하면 추이가 그려져요');
+        html += emptyBlock('chart', '표시할 운동 데이터가 없어요', '운동을 기록하면 성장 분석이 표시돼요');
     }
     html += `</div></div>`;
+    // [E] edit by smsong
 
     // 2) 체중 변화
     html += `<div class="section">
@@ -768,6 +927,9 @@ function openWorkoutSheet(date) {
         ? state.exercises.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('')
         : `<option value="" disabled selected>종목을 추가하세요</option>`;
 
+    // [B] edit by smsong : 부위 다중 선택 칩
+    const partChips = BODY_PARTS.map(p => `<button class="chip sm" data-bp="${esc(p)}" type="button">${esc(p)}</button>`).join('');
+
     openSheet(`
         <h3>운동 기록</h3>
         <div class="sheet-desc">종목을 고르고 무게·횟수·세트를 입력하세요.</div>
@@ -776,15 +938,26 @@ function openWorkoutSheet(date) {
             <label>운동 종목</label>
             <div class="exercise-picker">
                 <select class="select" id="wExercise">${exOptions}</select>
-                <button class="btn sm" id="wAddEx" type="button">＋ 종목</button>
+                <button class="btn sm ex-btn toggle" id="wAddEx" type="button">＋ 종목</button>
             </div>
-            <div id="wNewExWrap" style="display:none;margin-top:8px">
+            <div class="ex-new-wrap" id="wNewExWrap">
                 <div class="exercise-picker">
                     <input class="input" id="wNewEx" placeholder="새 종목 이름 (예: 인클라인 벤치)">
-                    <button class="btn sm grad" id="wNewExSave" type="button">추가</button>
+                    <button class="btn sm grad ex-btn" id="wNewExSave" type="button">추가</button>
                 </div>
             </div>
         </div>
+
+        <div class="field">
+            <label>운동 부위 (여러 개 선택 가능)</label>
+            <div class="chip-row" id="wParts">${partChips}</div>
+        </div>
+
+        <label class="check-row" id="wBodyweightRow">
+            <input type="checkbox" id="wBodyweight">
+            <span class="box">${icon('check')}</span>
+            <span>맨몸 운동 (무게 0kg 고정)</span>
+        </label>
 
         <div class="field-row">
             <div class="field"><label>무게 (kg)</label><input class="input" id="wWeight" type="number" inputmode="decimal" placeholder="100"></div>
@@ -797,11 +970,17 @@ function openWorkoutSheet(date) {
         <button class="btn grad block" id="wSave" style="margin-top:6px">기록 저장</button>
     `);
 
+    // 종목 추가 토글: 부드러운 펼침/접힘 + '＋ 종목' ↔ '－ 종목' + 빨간 테두리
     const newWrap = document.getElementById('wNewExWrap');
-    document.getElementById('wAddEx').onclick = () => {
-        newWrap.style.display = newWrap.style.display === 'none' ? 'block' : 'none';
-        if (newWrap.style.display === 'block') document.getElementById('wNewEx').focus();
+    const addExBtn = document.getElementById('wAddEx');
+    addExBtn.onclick = () => {
+        const opening = !newWrap.classList.contains('open');
+        newWrap.classList.toggle('open', opening);
+        addExBtn.classList.toggle('open', opening);
+        addExBtn.textContent = opening ? '－ 종목' : '＋ 종목';
+        if (opening) document.getElementById('wNewEx').focus();
     };
+
     document.getElementById('wNewExSave').onclick = async () => {
         const name = document.getElementById('wNewEx').value.trim();
         if (!name) return toast('종목 이름을 입력하세요');
@@ -812,26 +991,60 @@ function openWorkoutSheet(date) {
             const sel = document.getElementById('wExercise');
             sel.innerHTML = state.exercises.map(e => `<option value="${esc(e)}" ${e === name ? 'selected' : ''}>${esc(e)}</option>`).join('');
             document.getElementById('wNewEx').value = '';
-            newWrap.style.display = 'none';
+            newWrap.classList.remove('open');
+            addExBtn.classList.remove('open');
+            addExBtn.textContent = '＋ 종목';
             toast(`'${name}' 종목을 추가했어요`);
         } catch (err) { toast(errMsg(err, '종목 추가에 실패했어요')); }
         finally { btn.disabled = false; }
     };
+
+    // 부위 다중 선택
+    const selectedParts = new Set();
+    document.querySelectorAll('#wParts .chip').forEach(c => c.onclick = () => {
+        const p = c.dataset.bp;
+        if (selectedParts.has(p)) { selectedParts.delete(p); c.classList.remove('active'); }
+        else { selectedParts.add(p); c.classList.add('active'); }
+    });
+
+    // 맨몸 체크 → 무게 0 고정 + 무게 입력 잠금(체크 유지되는 동안 수정 불가)
+    const bwChk = document.getElementById('wBodyweight');
+    const wWeight = document.getElementById('wWeight');
+    let prevWeight = '';
+    bwChk.onchange = () => {
+        if (bwChk.checked) {
+            prevWeight = wWeight.value;
+            wWeight.value = '0';
+            wWeight.disabled = true;
+        } else {
+            wWeight.disabled = false;
+            wWeight.value = prevWeight;
+        }
+    };
+
     document.getElementById('wSave').onclick = async () => {
         const exercise = document.getElementById('wExercise').value;
-        const weight = parseFloat(document.getElementById('wWeight').value);
+        const bodyweight = bwChk.checked;
+        const weight = bodyweight ? 0 : parseFloat(wWeight.value);
         const reps = parseInt(document.getElementById('wReps').value, 10);
         const sets = parseInt(document.getElementById('wSets').value, 10);
         const dt = document.getElementById('wDate').value;
         if (!exercise) return toast('종목을 선택하세요');
-        if (!weight || !reps || !sets) return toast('무게·횟수·세트를 입력하세요');
+        if (!reps || !sets) return toast('횟수·세트를 입력하세요');
+        if (!bodyweight && !weight) return toast('무게를 입력하세요 (맨몸이면 체크)');
         const btn = document.getElementById('wSave'); btn.disabled = true;
         try {
-            await addWorkoutRec({ date: dt, exercise, weight, reps, sets, memo: document.getElementById('wMemo').value.trim() });
+            await addWorkoutRec({
+                date: dt, exercise, weight, reps, sets,
+                memo: document.getElementById('wMemo').value.trim(),
+                bodyParts: BODY_PARTS.filter(p => selectedParts.has(p)),
+                bodyweight
+            });
             closeSheet(); render(); toast('운동 기록을 저장했어요');
         } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
     };
 }
+// [E] edit by smsong
 
 // 식단 입력
 function openMealSheet(date) {
@@ -998,7 +1211,11 @@ function icon(name) {
         chevR: `<svg viewBox="0 0 24 24" ${s}><path d="m9 18 6-6-6-6"/></svg>`,
         user: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>`,
         gear: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg>`,
-        dot: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="12" r="3.5"/></svg>`
+        dot: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="12" r="3.5"/></svg>`,
+        // [B] edit by smsong : 드래그 핸들(점 6개) + 체크 아이콘
+        grip: `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`,
+        check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 6.5"/></svg>`
+        // [E] edit by smsong
     };
     return map[name] || '';
 }

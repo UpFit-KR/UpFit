@@ -352,12 +352,14 @@ button { font-family: var(--font); cursor: pointer; }
 .cal-nav button svg { width: 16px; height: 16px; }
 
 /* minmax(0,1fr): 7칸이 컨테이너 폭을 정확히 7등분하며 넘치지 않도록 강제(달력 잘림 방지) */
+/* [B] edit by smsong : 날짜 타일이 서로 떨어져 보이던 문제 수정 → gap 축소 + 셀 배경 제거로 하나의 붙은 달력처럼 표시 */
 .cal-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 4px;
+    gap: 2px;
     width: 100%;
 }
+/* [E] edit by smsong */
 .cal-dow {
     text-align: center; font-size: 11px; font-weight: 700; color: var(--text-mute);
     padding: 4px 0; min-width: 0; overflow: hidden;
@@ -366,7 +368,9 @@ button { font-family: var(--font); cursor: pointer; }
 .cal-dow.sat { color: var(--down); }
 .cal-cell {
     aspect-ratio: 1 / 1; border-radius: 10px;
-    background: var(--ink-850); border: 1px solid transparent;
+    /* [B] edit by smsong : 셀별 배경 제거(투명) → 날짜가 분리된 타일처럼 보이지 않고 하나의 달력으로 붙어 보임 */
+    background: transparent; border: 1px solid transparent;
+    /* [E] edit by smsong */
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     position: relative; font-variant-numeric: tabular-nums;
     min-width: 0; overflow: hidden;   /* 트랙이 콘텐츠보다 좁아질 수 있게 하여 오버플로 차단 */
@@ -544,14 +548,104 @@ button { font-family: var(--font); cursor: pointer; }
 
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; min-width: 0; }   /* [B][E] edit by smsong : 3분할 시 입력이 넘치지 않도록 */
-.exercise-picker { display: flex; gap: 8px; }
-.exercise-picker .select { flex: 1; }
+/* [B] edit by smsong
+   운동 종목 줄 정렬:
+   · 콤보박스/텍스트박스는 동일하게 flex:1 로 늘어남 (두 줄의 입력 폭 일치)
+   · '＋ 종목' / '추가' 버튼은 고정 폭(.ex-btn)으로 통일 → 두 버튼 가로 길이 동일 */
+.exercise-picker { display: flex; gap: 8px; align-items: stretch; }
+.exercise-picker .select,
+.exercise-picker .input { flex: 1 1 auto; min-width: 0; }
+.exercise-picker .ex-btn {
+    flex: 0 0 84px; width: 84px; white-space: nowrap;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+/* '＋ 종목' 토글이 열린 상태 → '－ 종목' + 빨간 테두리 */
+.exercise-picker .ex-btn.toggle.open {
+    border: 1px solid var(--up); color: var(--up); background: var(--up-bg);
+    transition: border-color .18s, color .18s, background .18s;
+}
+/* 새 종목 입력 줄: 열림/닫힘 모두 부드럽게 (max-height + opacity) */
+.ex-new-wrap {
+    overflow: hidden;
+    max-height: 0; opacity: 0; margin-top: 0;
+    transition: max-height .32s cubic-bezier(.4,0,.2,1), opacity .24s ease, margin-top .32s ease;
+}
+.ex-new-wrap.open { max-height: 96px; opacity: 1; margin-top: 8px; }
+/* [E] edit by smsong */
 .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip {
     padding: 9px 14px; border-radius: 11px; font-size: 14px; font-weight: 700;
     background: var(--ink-800); border: 1px solid var(--line); color: var(--text-dim);
 }
 .chip.active { background: var(--grad); color: var(--on-grad); border: 0; }
+/* [B] edit by smsong : 운동 부위 다중 선택용 소형 칩 */
+.chip.sm { padding: 7px 12px; font-size: 13px; }
+
+/* ---------- 맨몸 체크박스 (#6) ---------- */
+.check-row {
+    display: flex; align-items: center; gap: 9px;
+    margin: -4px 0 12px; cursor: pointer; user-select: none;
+    font-size: 13.5px; font-weight: 700; color: var(--text-dim);
+}
+.check-row input { position: absolute; opacity: 0; width: 0; height: 0; }
+.check-row .box {
+    width: 22px; height: 22px; border-radius: 7px; flex: 0 0 22px;
+    border: 1.5px solid var(--line); background: var(--ink-800);
+    display: flex; align-items: center; justify-content: center;
+    color: transparent; transition: background .15s, border-color .15s, color .15s;
+}
+.check-row .box svg { width: 14px; height: 14px; }
+.check-row input:checked + .box { background: var(--grad); border-color: transparent; color: var(--on-grad); }
+.input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---------- 운동 기록 부위/맨몸 태그 (#4 #6) ---------- */
+.rec .rec-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.rec .rec-tags .bp {
+    font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px;
+    background: var(--grad-soft); color: var(--accent);
+}
+.rec .rec-tags .bw {
+    font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 6px;
+    background: var(--flat-bg); color: var(--flat);
+}
+/* 날짜 헤더의 부위 요약 */
+.day-parts { font-size: 11px; font-weight: 700; color: var(--accent); margin: -2px 2px 8px; }
+
+/* ---------- 드래그 순서 변경 (#5) ---------- */
+.reorder-list { display: flex; flex-direction: column; gap: 8px; }
+.reorder-list .rec + .rec { margin-top: 0; }   /* gap 이 간격을 담당 → 중복 마진 제거 */
+.rec .drag-handle {
+    flex: 0 0 26px; width: 26px; align-self: stretch;
+    display: flex; align-items: center; justify-content: center;
+    margin: -13px 4px -13px -8px;
+    color: var(--text-mute); cursor: grab; touch-action: none;
+    border-radius: 8px; transition: background .15s, color .15s;
+}
+.rec .drag-handle:active,
+.rec.dragging .drag-handle { cursor: grabbing; background: var(--grad-soft); color: var(--accent); }
+.rec .drag-handle svg { width: 18px; height: 18px; pointer-events: none; }
+.rec.dragging {
+    box-shadow: var(--shadow-lg); border-color: var(--accent);
+    opacity: 0.98; z-index: 100;
+}
+.rec-placeholder {
+    border: 1.5px dashed var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--grad-soft);
+}
+
+/* ---------- 변화 탭: 직전 세션 대비 비교 (#7) ---------- */
+.cmp-meta { font-size: 12px; color: var(--text-mute); margin: 2px 0 14px; }
+.cmp-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 2px; border-bottom: 1px solid var(--line-soft);
+}
+.cmp-row:last-child { border-bottom: 0; }
+.cmp-row .cmp-k { font-size: 13px; font-weight: 700; color: var(--text-dim); }
+.cmp-row .cmp-right { display: flex; align-items: center; gap: 10px; }
+.cmp-row .cmp-v { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 68px; text-align: right; }
+.chart-sub-title { font-size: 13px; font-weight: 800; color: var(--text-dim); margin: 2px 0 10px; }
+/* [E] edit by smsong */
 
 /* ---------- 토스트 ---------- */
 #toast {

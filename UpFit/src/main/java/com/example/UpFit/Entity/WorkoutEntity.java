@@ -25,5 +25,12 @@ public class WorkoutEntity {
     private int reps;            // 회
     private int sets;            // 세트
     private String memo;
+
+    // 운동 부위(콤마 구분, 예: "가슴,삼두"). 하루에 여러 부위 체크 가능.
+    @Column(length = 120)
+    private String bodyParts;
+
+    // 맨몸 운동 여부. 체크 시 weight = 0. 기존 행 호환을 위해 래퍼(Boolean)로 둠(null 허용).
+    private Boolean bodyweight;
 }
 // [E] edit by smsong
