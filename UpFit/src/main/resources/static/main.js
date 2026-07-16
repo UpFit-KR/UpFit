@@ -481,6 +481,18 @@ function totalWorkoutCount() { return state.sessions.reduce((a, s) => a + (s.wor
 
 // [B] edit by smsong : 종목별 "세션" 상세 집계 (최고무게 / 총횟수 / 총세트 / 볼륨)
 //   날짜가 아닌 실제 운동 기록(세션) 단위로 비교 → 하루 2회 운동해도 각각 비교된다.
+// [B] edit by smsong : kg <-> lbs 변환 (저장은 항상 kg 기준). 소수 1자리 반올림.
+const LB_PER_KG = 2.2046226218;
+function lbsToKg(lbs) { return Math.round((lbs / LB_PER_KG) * 10) / 10; }
+function kgToLbs(kg) { return Math.round((kg * LB_PER_KG) * 10) / 10; }
+// 맨몸 종목 판정: 해당 종목의 모든 운동이 맨몸이면 true → 횟수 그래프로 전환
+function exerciseIsBodyweight(exercise) {
+    const ws = [];
+    orderedSessions().forEach(s => (s.workouts || []).forEach(w => { if (w.exercise === exercise) ws.push(w); }));
+    return ws.length > 0 && ws.every(w => w.bodyweight);
+}
+// [E] edit by smsong
+
 function exerciseSessionStats(exercise) {
     const out = [];
     orderedSessions().forEach(s => {
@@ -985,22 +997,34 @@ function renderChange() {
         const stats = exerciseSessionStats(ui.changeExercise);
         const last = stats[stats.length - 1];
         const prev = stats.length > 1 ? stats[stats.length - 2] : null;
+        const isBw = exerciseIsBodyweight(ui.changeExercise);   // [B][E] edit by smsong : 맨몸이면 횟수 중심
 
-        html += `<div class="cmp-meta">최근 ${fmtKorean(last.date)}${last.startTime ? ' ' + last.startTime : ''}${prev ? ` · 직전(${fmtKorean(prev.date)}${prev.startTime ? ' ' + prev.startTime : ''}) 대비` : ' · 첫 기록'}</div>`;
-        html += `<div class="cmp-list">
-            <div class="cmp-row"><span class="cmp-k">최고 무게</span><div class="cmp-right"><span class="cmp-v tabnum">${last.topWeight}kg</span>${deltaChip(last.topWeight, prev ? prev.topWeight : null, 'kg')}</div></div>
-            <div class="cmp-row"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}</div></div>
-            <div class="cmp-row"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}</div></div>
-            <div class="cmp-row"><span class="cmp-k">총 볼륨</span><div class="cmp-right"><span class="cmp-v tabnum">${last.volume}kg</span>${deltaChip(last.volume, prev ? prev.volume : null, 'kg')}</div></div>
-        </div>`;
-
-        // 최고 무게 추이
-        html += `<div class="chart-sub-title" style="margin-top:18px">최고 무게 추이</div>`;
-        html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.topWeight })), { color: C_WEIGHT, unit: 'kg' });
-        // 볼륨 추이
-        html += `<div class="chart-sub-title" style="margin-top:18px">볼륨 추이</div>`;
-        html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.volume })), { color: C_VOL, unit: 'kg' });
-        html += chartLegend([[C_WEIGHT, '최고 무게 (kg)'], [C_VOL, '볼륨 (kg)']]);
+        html += `<div class="cmp-meta">최근 ${fmtKorean(last.date)}${last.startTime ? ' ' + last.startTime : ''}${prev ? ` · 직전(${fmtKorean(prev.date)}${prev.startTime ? ' ' + prev.startTime : ''}) 대비` : ' · 첫 기록'}${isBw ? ' · 맨몸' : ''}</div>`;
+        // [B] edit by smsong : 맨몸 종목은 무게/볼륨이 항상 0 → 횟수·세트만 비교/추이로 보여준다
+        if (isBw) {
+            html += `<div class="cmp-list">
+                <div class="cmp-row"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}</div></div>
+                <div class="cmp-row"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}</div></div>
+            </div>`;
+            html += `<div class="chart-sub-title" style="margin-top:18px">총 횟수 추이</div>`;
+            html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.totalReps })), { color: C_WEIGHT, unit: '회' });
+            html += `<div class="chart-sub-title" style="margin-top:18px">총 세트 추이</div>`;
+            html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.totalSets })), { color: C_VOL, unit: '세트' });
+            html += chartLegend([[C_WEIGHT, '총 횟수 (회)'], [C_VOL, '총 세트']]);
+        } else {
+            html += `<div class="cmp-list">
+                <div class="cmp-row"><span class="cmp-k">최고 무게</span><div class="cmp-right"><span class="cmp-v tabnum">${last.topWeight}kg</span>${deltaChip(last.topWeight, prev ? prev.topWeight : null, 'kg')}</div></div>
+                <div class="cmp-row"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}</div></div>
+                <div class="cmp-row"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}</div></div>
+                <div class="cmp-row"><span class="cmp-k">총 볼륨</span><div class="cmp-right"><span class="cmp-v tabnum">${last.volume}kg</span>${deltaChip(last.volume, prev ? prev.volume : null, 'kg')}</div></div>
+            </div>`;
+            html += `<div class="chart-sub-title" style="margin-top:18px">최고 무게 추이</div>`;
+            html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.topWeight })), { color: C_WEIGHT, unit: 'kg' });
+            html += `<div class="chart-sub-title" style="margin-top:18px">볼륨 추이</div>`;
+            html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.volume })), { color: C_VOL, unit: 'kg' });
+            html += chartLegend([[C_WEIGHT, '최고 무게 (kg)'], [C_VOL, '볼륨 (kg)']]);
+        }
+        // [E] edit by smsong
     } else {
         html += emptyBlock('chart', '표시할 운동 데이터가 없어요', '운동을 기록하면 성장 분석이 표시돼요');
     }
@@ -1059,6 +1083,7 @@ function renderChange() {
     html += `</div></div>`;
 
     document.getElementById('view-change').innerHTML = html;
+    wireCharts(document.getElementById('view-change'));   // [B][E] edit by smsong : 그래프 점 탭 활성화
 
     const sel = document.getElementById('changeExSelect');
     if (sel) sel.onchange = () => { ui.changeExercise = sel.value; renderChange(); };
@@ -1242,14 +1267,18 @@ function lineChart(points, opts) {
         targetLine = `<line x1="${padL}" y1="${ty}" x2="${W - padR}" y2="${ty}" stroke="${tc}" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.7"/>`;
     }
 
-    // 점 + 값
+    // 점 + 값  [B] edit by smsong : 각 점에 큰 투명 히트영역(.cpt) + 데이터 → 탭하면 수치 표시
     let dots = '';
     points.forEach((p, i) => {
         dots += `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3.2" fill="${color}"/>`;
+        dots += `<circle class="cpt" cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="13" fill="transparent" style="cursor:pointer" data-cx="${x(i).toFixed(1)}" data-cy="${y(p.value).toFixed(1)}" data-v="${p.value}" data-lab="${esc(String(p.label))}"/>`;
     });
     // 마지막 값 라벨
     const li = points.length - 1;
     dots += `<text x="${x(li).toFixed(1)}" y="${(y(points[li].value) - 8).toFixed(1)}" text-anchor="end" fill="${color}" font-size="11" font-weight="700">${points[li].value}${opts.unit || ''}</text>`;
+    // 탭 시 채워지는 툴팁 레이어
+    dots += `<g class="chart-tip" style="display:none"></g>`;
+    // [E] edit by smsong
 
     // x축 라벨 — [B] edit by smsong : 테마 변수 사용(style 로 지정해야 var() 가 안전하게 적용됨)
     const every = opts.everyLabel || Math.ceil(points.length / 6);
@@ -1261,7 +1290,7 @@ function lineChart(points, opts) {
     });
     // [E] edit by smsong
 
-    return `<div class="chart-wrap"><svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+    return `<div class="chart-wrap"><svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" data-unit="${opts.unit || ''}" data-color="${color}" data-h="${H}">
         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="${color}" stop-opacity="0.28"/>
             <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
@@ -1272,6 +1301,36 @@ function lineChart(points, opts) {
         ${dots}${labels}
     </svg></div>`;
 }
+
+// [B] edit by smsong : 그래프 점 탭 → 해당 날짜 수치 툴팁 표시
+function wireCharts(root) {
+    (root || document).querySelectorAll('.chart-svg').forEach(svg => {
+        if (svg.dataset.wired) return;
+        svg.dataset.wired = '1';
+        const tip = svg.querySelector('.chart-tip');
+        if (!tip) return;
+        const unit = svg.dataset.unit || '';
+        const color = svg.dataset.color || 'currentColor';
+        const H = parseFloat(svg.dataset.h) || 170;
+        svg.addEventListener('click', e => {
+            const t = e.target.closest('.cpt');
+            if (!t) { tip.style.display = 'none'; tip.innerHTML = ''; return; }
+            const cx = parseFloat(t.dataset.cx), cy = parseFloat(t.dataset.cy);
+            const v = t.dataset.v, lab = t.dataset.lab;
+            const tx = Math.min(Math.max(cx, 28), 292);
+            const bubbleY = Math.max(cy - 12, 16);
+            tip.innerHTML =
+                `<line x1="${cx}" y1="14" x2="${cx}" y2="${H - 22}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.45"/>` +
+                `<circle cx="${cx}" cy="${cy}" r="5" fill="${color}" stroke="var(--ink-900)" stroke-width="2"/>` +
+                `<g transform="translate(${tx}, ${bubbleY})">` +
+                `<rect x="-28" y="-15" width="56" height="19" rx="6" fill="${color}"/>` +
+                `<text x="0" y="-1.5" text-anchor="middle" fill="#fff" font-size="10.5" font-weight="800">${v}${unit}</text></g>` +
+                `<text x="${tx}" y="${H - 22}" text-anchor="middle" fill="${color}" font-size="9.5" font-weight="800">${lab}</text>`;
+            tip.style.display = '';
+        });
+    });
+}
+// [E] edit by smsong
 
 function chartLegend(items) {
     return `<div class="chart-legend">${items.map(([c, l]) => `<span class="lg"><i style="background:${c}"></i>${l}</span>`).join('')}</div>`;
@@ -1308,15 +1367,20 @@ function unlockBgScroll() {
 function createSheet(sheetId, backdropId) {
     const sheet = document.getElementById(sheetId);
     const backdrop = document.getElementById(backdropId);
+    const lv2 = sheet.classList.contains('lv2');
     let isOpen = false;
+    let present = 'center';
     let closeTimer = null;
 
     function body() { return sheet.querySelector('.sheet-body'); }
 
     function open(html, opts) {
         opts = opts || {};
+        present = opts.present === 'sheet' ? 'sheet' : 'center';   // 상세=sheet(슬라이드), 생성/수정=center(모달)
         clearTimeout(closeTimer);
+        sheet.className = 'sheet' + (lv2 ? ' lv2' : '') + (present === 'sheet' ? ' as-sheet' : ' as-center');
         sheet.innerHTML = `
+            ${present === 'sheet' ? '<div class="sheet-grip-wrap" id="' + sheetId + 'Grip"><div class="sheet-grip"></div></div>' : ''}
             ${(opts.title || opts.desc) ? `<div class="sheet-head">
                 ${opts.title ? `<h3>${esc(opts.title)}</h3>` : ''}
                 ${opts.desc ? `<div class="sheet-desc">${esc(opts.desc)}</div>` : ''}
@@ -1325,21 +1389,49 @@ function createSheet(sheetId, backdropId) {
         const bd = body(); if (bd) bd.scrollTop = 0;
         if (!isOpen) { lockBgScroll(); isOpen = true; }
         backdrop.classList.add('open');
-        // 다음 프레임에 .open 을 붙여 페이드+스케일 인 애니메이션
         requestAnimationFrame(() => sheet.classList.add('open'));
+        if (present === 'sheet') wireSheetDrag();
     }
     function close() {
         if (!isOpen) return;
         isOpen = false;
         sheet.classList.remove('open');
         backdrop.classList.remove('open');
+        sheet.style.transform = '';
         unlockBgScroll();
         clearTimeout(closeTimer);
-        closeTimer = setTimeout(() => { if (!isOpen) sheet.innerHTML = ''; }, 240);
+        closeTimer = setTimeout(() => { if (!isOpen) sheet.innerHTML = ''; }, 300);
+    }
+
+    // 바텀시트에서만: 그립을 아래로 끌면 닫힘(간단한 드래그-투-디스미스)
+    function wireSheetDrag() {
+        const grip = sheet.querySelector('.sheet-grip-wrap');
+        if (!grip) return;
+        grip.addEventListener('pointerdown', e => {
+            if (e.button != null && e.button > 0) return;
+            const startY = e.clientY;
+            sheet.style.transition = 'none';
+            const onMove = ev => {
+                const dy = Math.max(0, ev.clientY - startY);
+                sheet.style.transform = `translateX(-50%) translateY(${dy}px)`;
+                ev.preventDefault();
+            };
+            const onUp = ev => {
+                document.removeEventListener('pointermove', onMove);
+                document.removeEventListener('pointerup', onUp);
+                document.removeEventListener('pointercancel', onUp);
+                sheet.style.transition = '';
+                const dy = ev.clientY - startY;
+                if (dy > 110) close();
+                else sheet.style.transform = '';   // 원위치(.open 의 translateY(0))
+            };
+            document.addEventListener('pointermove', onMove, { passive: false });
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onUp);
+        });
     }
 
     backdrop.onclick = close;
-    // ESC 로 닫기(데스크톱)
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen) close(); });
 
     return { open, close, isOpen: () => isOpen };
@@ -1414,7 +1506,7 @@ function openSessionEditor(sessionId, date, mode) {
                 <span class="se-head-sum tabnum" id="seVol"></span>
             </div>
             <div class="reorder-list se-list" id="seList"></div>
-        `);
+        `, { present: 'sheet' });
 
         document.getElementById('seEdit').onclick = () => { curMode = 'edit'; renderMode(); };
         document.getElementById('seDel').onclick = async () => {
@@ -1617,6 +1709,10 @@ function openWorkoutSheet(initial, onApply) {
 
         <div class="field-row">
             <div class="field"><label>무게 (kg)</label><input class="input" id="wWeight" type="number" inputmode="decimal" placeholder="100" value="${editing ? (initial.bodyweight ? 0 : initial.weight) : ''}" ${editing && initial.bodyweight ? 'disabled' : ''}></div>
+            <div class="field"><label>무게 (lbs)</label><input class="input" id="wWeightLbs" type="number" inputmode="decimal" placeholder="220" value="${editing && !initial.bodyweight && initial.weight ? kgToLbs(initial.weight) : ''}" ${editing && initial.bodyweight ? 'disabled' : ''}></div>
+        </div>
+        <div class="hint" id="wLbsHint" style="margin-top:-6px">lbs 를 입력하면 kg 으로 자동 변환돼 등록돼요.</div>
+        <div class="field-row">
             <div class="field"><label>횟수 (회)</label><input class="input" id="wReps" type="number" inputmode="numeric" placeholder="5" value="${editing ? initial.reps : ''}"></div>
             <div class="field"><label>세트</label><input class="input" id="wSets" type="number" inputmode="numeric" placeholder="1" value="${editing ? initial.sets : 1}"></div>
         </div>
@@ -1662,13 +1758,37 @@ function openWorkoutSheet(initial, onApply) {
         finally { btn.disabled = false; }
     };
 
-    // 맨몸 → 무게 0 고정 + 입력 잠금
+    // 맨몸 → 무게 0 고정 + 입력 잠금 (kg/lbs 둘 다)
     const bwChk = document.getElementById('wBodyweight');
     const wWeight = document.getElementById('wWeight');
+    const wWeightLbs = document.getElementById('wWeightLbs');
+    // [B] edit by smsong : lbs 입력 → kg 자동 변환(양방향 동기화). 저장 값은 항상 kg.
+    let syncing = false;
+    wWeightLbs.addEventListener('input', () => {
+        if (syncing) return; syncing = true;
+        const lbs = parseFloat(wWeightLbs.value);
+        wWeight.value = isNaN(lbs) ? '' : lbsToKg(lbs);
+        syncing = false;
+    });
+    wWeight.addEventListener('input', () => {
+        if (syncing) return; syncing = true;
+        const kg = parseFloat(wWeight.value);
+        wWeightLbs.value = isNaN(kg) ? '' : kgToLbs(kg);
+        syncing = false;
+    });
+    // [E] edit by smsong
     let prevWeight = editing && !initial.bodyweight ? String(initial.weight) : '';
     bwChk.onchange = () => {
-        if (bwChk.checked) { prevWeight = wWeight.value; wWeight.value = '0'; wWeight.disabled = true; }
-        else { wWeight.disabled = false; wWeight.value = prevWeight; }
+        if (bwChk.checked) {
+            prevWeight = wWeight.value;
+            wWeight.value = '0'; wWeight.disabled = true;
+            wWeightLbs.value = ''; wWeightLbs.disabled = true;
+        } else {
+            wWeight.disabled = false; wWeight.value = prevWeight;
+            wWeightLbs.disabled = false;
+            const kg = parseFloat(prevWeight);
+            wWeightLbs.value = isNaN(kg) || !kg ? '' : kgToLbs(kg);
+        }
     };
 
     document.getElementById('wCancel').onclick = () => Sheet2.close();

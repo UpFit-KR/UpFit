@@ -29,13 +29,6 @@ public class UserEntity implements UserDetails {
     private String phone;
     private String profileURL;
     private String provider;
-    private int likeCount = 0;
-
-    // [B] edit by smsong - 공인중개사사무소 정보(이름/전화번호/주소)
-    private String agencyName;     // 공인중개사사무소 이름
-    private String agencyPhone;    // 공인중개사사무소 전화번호
-    private String agencyAddress;  // 공인중개사사무소 주소
-    // [E] edit by smsong
 
     // [B] edit by smsong - UpFit 신체 정보(키/현재 체중/목표 체중) DB 영속화
     //   프론트 localStorage 에만 있던 값을 사용자 레코드로 옮겨 기기/재설치와 무관하게 유지.

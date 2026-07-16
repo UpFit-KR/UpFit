@@ -146,11 +146,6 @@ public class UserService {
         if (userDTO.getPhone() != null) userEntity.setPhone(userDTO.getPhone());
         if (userDTO.getAddress() != null) userEntity.setAddress(userDTO.getAddress());
         if (userDTO.getGender() != null) userEntity.setGender(userDTO.getGender());
-        // [B] edit by smsong - 공인중개사사무소 정보 부분 업데이트(전달된 값만 갱신)
-        if (userDTO.getAgencyName() != null) userEntity.setAgencyName(userDTO.getAgencyName());
-        if (userDTO.getAgencyPhone() != null) userEntity.setAgencyPhone(userDTO.getAgencyPhone());
-        if (userDTO.getAgencyAddress() != null) userEntity.setAgencyAddress(userDTO.getAgencyAddress());
-        // [E] edit by smsong
         // [B] edit by smsong - UpFit 신체 정보(키/현재 체중/목표 체중) 부분 업데이트
         if (userDTO.getHeight() != null) userEntity.setHeight(userDTO.getHeight());
         if (userDTO.getWeight() != null) userEntity.setWeight(userDTO.getWeight());
@@ -230,11 +225,6 @@ public class UserService {
         card.put("nickname", userEntity.getNickname());
         card.put("profileURL", userEntity.getProfileURL());
         card.put("provider", userEntity.getProvider());
-        // [B] edit by smsong - 매물 상세에서 공인중개사사무소 정보 표시용으로 공개 프로필에 포함
-        card.put("agencyName", userEntity.getAgencyName());
-        card.put("agencyPhone", userEntity.getAgencyPhone());
-        card.put("agencyAddress", userEntity.getAgencyAddress());
-        // [E] edit by smsong
         return card;
     }
 

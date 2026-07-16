@@ -353,43 +353,37 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .cal-nav button svg { width: 16px; height: 16px; }
 
-/* minmax(0,1fr): 7칸이 컨테이너 폭을 정확히 7등분하며 넘치지 않도록 강제(달력 잘림 방지) */
-/* [B] edit by smsong : 날짜가 벌어지는 문제를 완전히 없애기 위해 gap 을 0 으로 두고 칸을 딱 붙인다.
-   칸 구분은 얇은 안쪽 선(inset box-shadow)으로만 주고, 바깥 모서리만 컨테이너에서 둥글게 처리.
-   → 어떤 구간에서도 셀 사이에 빈틈이 생기지 않는다. */
+/* [B] edit by smsong : 달력 전면 재작성.
+   칸마다 배경 타일을 두지 않는다(투명) → 타일이 서로 떨어져 보이는 문제 자체가 사라진다.
+   날짜 숫자만 격자로 배치하고, 오늘/선택/운동한 날만 "둥근 라운드 표시"로 강조한다.
+   · 오늘      = 파란 라운드 테두리
+   · 선택한 날 = 연한 그린 라운드 채움
+   · 운동한 날 = 초록 라운드 테두리 (점 없이 테두리만) */
 .cal-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 0;
+    gap: 2px;
     width: 100%;
-    border-radius: 12px;
-    overflow: hidden;
-    background: var(--line-soft);   /* 셀 사이 1px 라인이 이 바탕색으로 비쳐 격자처럼 붙어 보임 */
 }
 .cal-dow {
     text-align: center; font-size: 11px; font-weight: 700; color: var(--text-mute);
-    padding: 6px 0 8px; min-width: 0; overflow: hidden; background: var(--ink-900);
+    padding: 2px 0 8px; min-width: 0; overflow: hidden;
 }
 .cal-dow.sun { color: var(--up); }
 .cal-dow.sat { color: var(--down); }
 .cal-cell {
-    /* 채워진 칸을 간격 없이 붙임. 상태 강조는 안쪽 링(box-shadow inset)으로 → 레이아웃 밀림 없음 */
-    aspect-ratio: 1 / 0.95;
-    background: var(--ink-850); border: 0;
-    box-shadow: inset 0 0 0 0.5px var(--line-soft);
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    aspect-ratio: 1 / 0.86;
+    background: transparent; border: 2px solid transparent; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
     position: relative; font-variant-numeric: tabular-nums;
-    min-width: 0; overflow: hidden;
+    min-width: 0;
 }
-.cal-cell.empty { background: var(--ink-900); box-shadow: none; }
-/* 상태별 표시 (겹쳐도 구분)
-   · 운동한 날(.has)   = 초록 안쪽 테두리 + 초록 진한 숫자  (점 없이 테두리만)
-   · 선택한 날(.selected) = 연한 그린 채움
-   · 오늘(.today)      = 파란 숫자 */
+.cal-cell.empty { background: transparent; border: 0; }
 .cal-cell .dnum { font-size: 15px; font-weight: 800; color: var(--text-dim); letter-spacing: -0.2px; }
-.cal-cell.selected { background: var(--grad-soft); }
+.cal-cell.today { border-color: var(--accent); }                        /* 오늘 = 파란 라운드 테두리 */
 .cal-cell.today .dnum { color: var(--accent); }
-.cal-cell.has { box-shadow: inset 0 0 0 2px var(--accent-2); z-index: 1; }
+.cal-cell.selected { background: var(--grad-soft); }                    /* 선택 = 연한 그린 라운드 채움 */
+.cal-cell.has { border-color: var(--accent-2); }                        /* 운동한 날 = 초록 라운드 테두리 */
 .cal-cell.has .dnum { color: var(--accent-2); }
 /* [E] edit by smsong */
 .cal-cell .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--grad); }
@@ -400,6 +394,10 @@ button { font-family: var(--font); cursor: pointer; }
 /* ---------- 차트(변화 탭) ---------- */
 .chart-wrap { width: 100%; overflow: hidden; }
 .chart-svg { width: 100%; height: auto; display: block; }
+/* [B] edit by smsong : 그래프 점 탭 영역은 투명이라도 이벤트 받도록, 툴팁은 이벤트 통과 */
+.chart-svg .cpt { pointer-events: all; }
+.chart-svg .chart-tip { pointer-events: none; }
+/* [E] edit by smsong */
 .chart-legend { display: flex; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--text-dim); flex-wrap: wrap; }
 .chart-legend .lg { display: flex; align-items: center; gap: 5px; }
 .chart-legend .lg i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
@@ -484,26 +482,48 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .sheet-backdrop.open { opacity: 1; pointer-events: auto; }
 .sheet {
-    position: fixed; left: 50%; top: 50%;
-    transform: translate(-50%, -50%) scale(0.96);
-    width: calc(100% - 36px); max-width: 440px; z-index: 101;
-    max-height: 88vh; max-height: 88dvh;
+    position: fixed; z-index: 101;
     background: var(--ink-900);
-    border-radius: var(--radius-xl);
-    border: 1px solid var(--line);
     box-shadow: var(--shadow-lg);
     display: flex; flex-direction: column;
-    overflow: hidden;
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32,0.72,0,1);
+    pointer-events: none;
     overscroll-behavior: contain;
 }
-.sheet.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+/* 생성/수정 = 화면 중앙 모달 */
+.sheet.as-center {
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%) scale(0.96);
+    width: calc(100% - 36px); max-width: 440px;
+    max-height: 88vh; max-height: 88dvh;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32,0.72,0,1);
+}
+.sheet.as-center.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+/* 상세보기 = 아래에서 위로 올라오는 슬라이드 시트 */
+.sheet.as-sheet {
+    left: 50%; bottom: 0;
+    transform: translateX(-50%) translateY(100%);
+    width: 100%; max-width: 480px;
+    max-height: 90vh; max-height: 90dvh;
+    border: 1px solid var(--line); border-bottom: 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    transition: transform 0.32s cubic-bezier(0.32,0.72,0,1);
+}
+.sheet.as-sheet.open { pointer-events: auto; transform: translateX(-50%) translateY(0); }
 /* 2차 모달(운동 입력) — 1차 위에 겹침 */
 .sheet-backdrop.lv2 { z-index: 102; }
 .sheet.lv2 { z-index: 103; }
 
+/* 시트 상단 그립(아래로 끌어 닫기) */
+.sheet-grip-wrap { flex: 0 0 auto; padding: 10px 0 4px; cursor: grab; touch-action: none; user-select: none; }
+.sheet-grip-wrap:active { cursor: grabbing; }
+.sheet-grip { width: 40px; height: 4px; border-radius: 2px; background: var(--ink-700); margin: 0 auto; }
+
 .sheet-head { flex: 0 0 auto; padding: 18px 20px 0; }
+.sheet.as-sheet .sheet-head { padding-top: 8px; }
 .sheet h3 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
 .sheet .sheet-desc { font-size: 13px; color: var(--text-dim); }
 
@@ -514,8 +534,9 @@ button { font-family: var(--font); cursor: pointer; }
     overscroll-behavior: contain;
     padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
 }
+.sheet.as-sheet .sheet-body { padding-top: 12px; }
 
-/* 모달이 열려 있는 동안 뒤 페이지(문서/앱 메인) 스크롤 잠금 */
+/* 모달/시트가 열려 있는 동안 뒤 페이지(문서/앱 메인) 스크롤 잠금 */
 html.modal-open, body.modal-open { overflow: hidden !important; touch-action: none; }
 .app-main.modal-lock { overflow: hidden !important; }
 /* [E] edit by smsong */
