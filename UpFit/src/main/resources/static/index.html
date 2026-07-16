@@ -2,12 +2,14 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#eef2f8">
     <link rel="manifest" href="manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- [B][E] edit by smsong : black-translucent → default. viewport-fit=cover 제거와 한 쌍.
+         iOS 가 상단 상태바 영역을 직접 채우고(=여백은 위), 웹뷰는 하단까지 꽉 차게 된다. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="UpFit">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
@@ -63,7 +65,7 @@
            루트 배경을 캔버스로 전파시키는 방식은 iOS 스탠드얼론에서 통하지 않았다.
            (단색은 화면 전체를 채우지만 그라데이션 페인팅 영역은 루트 박스에 갇힘)
            → 배경을 전용 고정 레이어(.app-bg)로 분리하고 뷰포트보다 사방 120px 크게 잡아
-             세이프에어리어 바깥까지 덮는다. 여백은 상단(status bar)으로 이동. */
+             세이프에어리어 바깥까지 덮는다. 여백은 iOS 가 상단 상태바 영역에 배치한다. */
         html {
             height: 100%;
             background-color: #eef2f8;   /* 캔버스 폴백(단색) */
@@ -78,7 +80,6 @@
             overscroll-behavior: none;
             touch-action: none;
             background: transparent;
-            padding-top: env(safe-area-inset-top);   /* 하단은 꽉 채우고 여백은 위로 */
         }
         .app-bg {
             position: fixed; inset: -120px; z-index: -1; pointer-events: none;

@@ -75,10 +75,11 @@
 }
 
 /* [B] edit by smsong : 하단 흰 여백(홈 인디케이터 영역) 제거 — 2차 수정
-   루트 배경을 캔버스로 전파시키는 방식은 iOS 스탠드얼론에서 통하지 않았다.
-   (단색은 화면 전체를 채우지만 그라데이션 페인팅 영역은 루트 박스에 갇힘)
-   → 배경을 전용 고정 레이어(.app-bg)로 분리하고 뷰포트보다 사방 120px 크게 잡아
-     세이프에어리어 바깥까지 덮는다. 여백은 상단(status bar)으로 이동. */
+   핵심은 <meta viewport> 에서 viewport-fit=cover 를 뺀 것(+ status-bar-style=default).
+   cover 가 있으면 iOS 가 세이프에어리어까지 페이지에 떠넘기는데, 그 영역을 그라데이션이
+   덮지 못해 바탕색만 남아 흰 띠로 보였다. cover 를 빼면 iOS 가 상단 상태바 영역을
+   직접 채우고 웹뷰는 하단까지 꽉 찬다. .app-bg 는 그라데이션이 웹뷰 가장자리까지
+   닿도록 보장하는 배경 전용 레이어. 여백은 iOS 가 상단 상태바 영역에 배치한다. */
 html {
     height: 100%;
     background-color: #eef2f8;   /* 캔버스 폴백(단색) */
@@ -93,7 +94,6 @@ body {
     overscroll-behavior: none;
     touch-action: none;
     background: transparent;
-    padding-top: env(safe-area-inset-top);   /* 하단은 꽉 채우고 여백은 위로 */
 }
 .app-bg {
     position: fixed; inset: -120px; z-index: -1; pointer-events: none;

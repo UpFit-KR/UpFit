@@ -4,12 +4,14 @@
 <!-- [E] edit by smsong -->
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#eef2f8">
     <link rel="manifest" href="manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- [B][E] edit by smsong : black-translucent → default. viewport-fit=cover 제거와 한 쌍.
+         iOS 가 상단 상태바 영역을 직접 채우고(=여백은 위), 웹뷰는 하단까지 꽉 차게 된다. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="UpFit">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
@@ -20,7 +22,7 @@
     <script src="auth.js?v=1.0.3"></script>
     <!-- [E] edit by smsong -->
 
-    <link rel="stylesheet" href="main.css?v=1.4.0">
+    <link rel="stylesheet" href="main.css?v=1.5.0">
 </head>
 <body>
 <!-- 아이콘 그라데이션 정의 (활성 네비 아이콘용) -->
@@ -109,6 +111,6 @@
 <div id="toast"></div>
 
 <script src="config.js?v=1.0.1"></script>
-<script src="main.js?v=1.4.0"></script>
+<script src="main.js?v=1.5.0"></script>
 </body>
 </html>

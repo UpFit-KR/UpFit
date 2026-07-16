@@ -2369,7 +2369,7 @@ function openImportSheet(defaultDate) {
     openSheet(`
         <!-- [B] edit by smsong : 기준 연·월을 고르고 파일을 넣으면 한 번에 마이그레이션 -->
         <div class="field">
-            <label>기준 연·월 <span class="lbl-sub">파일에 연도가 없을 때 사용</span></label>
+            <label>기준 연·월</label>
             <div class="ym-row">
                 <select class="select" id="imYear">
                     ${years.map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}년</option>`).join('')}
@@ -2378,51 +2378,48 @@ function openImportSheet(defaultDate) {
                     ${Array.from({ length: 12 }, (_, i) => i + 1).map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${m}월</option>`).join('')}
                 </select>
             </div>
-            <label class="check-row" style="margin-top:10px">
+            <label class="check-row im-check">
                 <input type="checkbox" id="imForce">
                 <span class="box">${icon('check')}</span>
-                <span>파일의 연·월 헤더 무시하고 기준 연·월 사용</span>
+                <span>파일에 적힌 연·월 무시</span>
             </label>
-            <div class="hint">“2026년 6월 운동” 같은 헤더가 있으면 그 값이 우선이에요. 날짜 줄(6/1)의 월은 그대로 씁니다.</div>
         </div>
-        <!-- [E] edit by smsong -->
 
         <div class="field">
-            <label>단위 없는 숫자 해석 <span class="lbl-sub">예) 체스트 프레스 머신 4rep 2set (190)</span></label>
-            <div class="seg" id="imUnit">
+            <label>단위 없는 숫자 <span class="lbl-sub">예) (190)</span></label>
+            <div class="seg im-seg" id="imUnit">
                 <button data-u="lbs" class="${unit === 'lbs' ? 'active' : ''}" type="button">lbs · 머신</button>
                 <button data-u="kg" class="${unit === 'kg' ? 'active' : ''}" type="button">kg</button>
             </div>
-            <div class="hint">저장은 항상 kg 으로 변환돼요. (kg) 처럼 단위가 붙어 있으면 그대로 씁니다.</div>
         </div>
 
         <div class="field">
-            <label>파일 선택 <span class="lbl-sub">.txt 여러 개 한 번에</span></label>
+            <label>파일 <span class="lbl-sub">.txt 여러 개</span></label>
             <input class="input im-file" id="imFiles" type="file" accept=".txt,text/plain" multiple>
         </div>
 
         <div class="field">
-            <label>또는 기록 붙여넣기 <span class="lbl-sub">날짜 줄이 없으면 아래 기본 날짜로</span></label>
+            <label>또는 붙여넣기</label>
             <textarea class="input im-text" id="imText" placeholder="플랫 벤치프레스 3rep 1set (85kg)&#10;체스트 프레스 머신 4rep 2set (190)&#10;풀업 12rep 1set"></textarea>
-            <div class="hint">무게를 적지 않으면 맨몸 운동으로 저장돼요.</div>
         </div>
 
         <div class="field">
-            <label>기본 날짜 <span class="lbl-sub">날짜 줄이 전혀 없을 때만 사용</span></label>
+            <label>기본 날짜 <span class="lbl-sub">날짜 줄이 없을 때</span></label>
             <input class="input" id="imDate" type="date" value="${date0}">
         </div>
 
         <div class="field">
             <label>이미 기록이 있는 날짜</label>
-            <div class="seg" id="imDup">
+            <div class="seg im-seg" id="imDup">
                 <button data-d="skip" class="active" type="button">건너뛰기</button>
                 <button data-d="add" type="button">새 기록으로 추가</button>
             </div>
         </div>
+        <!-- [E] edit by smsong -->
 
         <div id="imPreview"></div>
         <button class="btn grad block" id="imGo" style="margin-top:6px">분석하기</button>
-    `, { title: '운동 기록 가져오기', desc: '기준 연·월을 고르고 파일을 넣으면 한 번에 마이그레이션돼요. 붙여넣기도 됩니다.' });
+    `, { title: '운동 기록 가져오기' });
 
     const $ = id => document.getElementById(id);
     const taEl = $('imText'), fileEl = $('imFiles'), goEl = $('imGo'), pvEl = $('imPreview');

@@ -2,12 +2,14 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#eef2f8">
     <link rel="manifest" href="manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- [B][E] edit by smsong : black-translucent → default. viewport-fit=cover 제거와 한 쌍.
+         iOS 가 상단 상태바 영역을 직접 채우고(=여백은 위), 웹뷰는 하단까지 꽉 차게 된다. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="UpFit">
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
@@ -75,7 +77,6 @@
             background: transparent;
             display: flex; align-items: center; justify-content: center;
             padding: 24px;
-            padding-top: max(24px, env(safe-area-inset-top));   /* 하단은 꽉 채우고 여백은 위로 */
         }
         .app-bg {
             position: fixed; inset: -120px; z-index: -1; pointer-events: none;

@@ -988,14 +988,27 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .head-btns { display: flex; align-items: center; gap: 6px; }
 .ym-row { display: flex; gap: 8px; }
 .ym-row .select { flex: 1 1 0; min-width: 0; }
+
+/* .field label { display:block } 이 .check-row 의 flex 배치를 덮어써(specificity 0-1-1 > 0-1-0)
+   체크박스와 문구가 세로로 쪼개지던 문제 수정 */
+.field label.check-row { display: flex; align-items: center; margin-bottom: 0; }
+.im-check { margin: 12px 0 0; font-size: 12.5px; }
+
+/* 시트 안 세그먼트는 폭을 꽉 채워 좌우 정렬을 맞춘다 */
+.seg.im-seg { display: flex; width: 100%; }
+.seg.im-seg button { flex: 1; text-align: center; }
+
 .lbl-sub { font-weight: 600; color: var(--text-mute); font-size: 11px; margin-left: 4px; }
 textarea.input.im-text {
-    min-height: 150px; resize: vertical; line-height: 1.55;
+    min-height: 132px; resize: vertical; line-height: 1.55;
     font-size: 13px; font-family: var(--num); white-space: pre; overflow-wrap: normal; overflow-x: auto;
 }
-.input.im-file { padding: 10px 12px; font-size: 13px; }
+.input.im-file {
+    padding: 9px 12px; font-size: 12.5px; color: var(--text-dim);
+    display: flex; align-items: center;
+}
 .input.im-file::file-selector-button {
-    margin-right: 10px; padding: 6px 12px; border-radius: 8px;
+    margin-right: 10px; padding: 7px 12px; border-radius: 8px;
     border: 1px solid var(--line); background: var(--ink-750); color: var(--text);
     font-family: var(--font); font-size: 12px; font-weight: 700;
 }
