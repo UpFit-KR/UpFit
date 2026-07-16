@@ -483,10 +483,12 @@ function totalWorkoutCount() { return state.sessions.reduce((a, s) => a + (s.wor
 
 // [B] edit by smsong : 종목별 "세션" 상세 집계 (최고무게 / 총횟수 / 총세트 / 볼륨)
 //   날짜가 아닌 실제 운동 기록(세션) 단위로 비교 → 하루 2회 운동해도 각각 비교된다.
-// [B] edit by smsong : kg <-> lbs 변환 (저장은 항상 kg 기준). 소수 1자리 반올림.
+// [B] edit by smsong : kg <-> lbs 변환 (저장은 항상 kg 기준).
+//   소수점은 쓰지 않는다 → 양쪽 모두 정수로 반올림.
+//   예) 190lbs → 86kg, 85kg → 187lbs
 const LB_PER_KG = 2.2046226218;
-function lbsToKg(lbs) { return Math.round((lbs / LB_PER_KG) * 10) / 10; }
-function kgToLbs(kg) { return Math.round((kg * LB_PER_KG) * 10) / 10; }
+function lbsToKg(lbs) { return Math.round(lbs / LB_PER_KG); }
+function kgToLbs(kg) { return Math.round(kg * LB_PER_KG); }
 // 맨몸 종목 판정: 해당 종목의 모든 운동이 맨몸이면 true → 횟수 그래프로 전환
 function exerciseIsBodyweight(exercise) {
     const ws = [];
@@ -1239,7 +1241,12 @@ function bindCalendar(kind) {
 // ============================================================
 function lineChart(points, opts) {
     opts = opts || {};
-    const W = 320, H = 170, padL = 8, padR = 8, padT = 14, padB = 26;
+    // [B] edit by smsong : 그래프 잘림 개선
+    //   · padT 14 → 34 : 최고점의 값 라벨/툴팁 말풍선이 위로 잘리던 문제
+    //   · padL/padR 8 → 24 : 첫/마지막 x축 라벨이 좌우로 잘리던 문제
+    //   · H 170 → 196 : 세로를 키워 추이가 더 잘 보이게
+    const W = 320, H = 196, padL = 24, padR = 24, padT = 34, padB = 30;
+    // [E] edit by smsong
     if (!points || points.length === 0) return emptyBlock('chart', '데이터가 없어요', '');
     if (points.length === 1) {
         return `<div style="text-align:center;padding:26px 0;color:var(--text-dim)">
@@ -1280,9 +1287,18 @@ function lineChart(points, opts) {
 
     // 점 + 값  [B] edit by smsong : 각 점에 큰 투명 히트영역(.cpt) + 데이터 → 탭하면 수치 표시
     let dots = '';
+    // [B] edit by smsong : 히트영역을 "점 주변 원(r=13)" → "그 점이 속한 세로 컬럼 전체"로 확장.
+    //   점을 정확히 누르지 않고 그래프의 위/아래 아무 곳이나 눌러도 해당 값이 뜬다.
+    let hits = '';
+    points.forEach((p, i) => {
+        const cx = x(i);
+        const left  = i === 0 ? 0 : (x(i - 1) + cx) / 2;
+        const right = i === points.length - 1 ? W : (cx + x(i + 1)) / 2;
+        hits += `<rect class="cpt" x="${left.toFixed(1)}" y="0" width="${(right - left).toFixed(1)}" height="${H}" fill="transparent" style="cursor:pointer" data-cx="${cx.toFixed(1)}" data-cy="${y(p.value).toFixed(1)}" data-v="${p.value}" data-lab="${esc(String(p.label))}"/>`;
+    });
+    // [E] edit by smsong
     points.forEach((p, i) => {
         dots += `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3.2" fill="${color}"/>`;
-        dots += `<circle class="cpt" cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="13" fill="transparent" style="cursor:pointer" data-cx="${x(i).toFixed(1)}" data-cy="${y(p.value).toFixed(1)}" data-v="${p.value}" data-lab="${esc(String(p.label))}"/>`;
     });
     // 마지막 값 라벨
     const li = points.length - 1;
@@ -1296,7 +1312,10 @@ function lineChart(points, opts) {
     let labels = '';
     points.forEach((p, i) => {
         if (i % every === 0 || i === points.length - 1) {
-            labels += `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" style="fill:var(--text-mute)" font-size="9.5">${p.label}</text>`;
+            // [B][E] edit by smsong : 양 끝 라벨은 anchor 를 안쪽으로 → 좌우 잘림 방지
+            const anchor = i === 0 ? 'start' : (i === points.length - 1 ? 'end' : 'middle');
+            const lx = i === 0 ? Math.max(x(i) - 10, 2) : (i === points.length - 1 ? Math.min(x(i) + 10, W - 2) : x(i));
+            labels += `<text x="${lx.toFixed(1)}" y="${H - 9}" text-anchor="${anchor}" style="fill:var(--text-mute)" font-size="9.5">${p.label}</text>`;
         }
     });
     // [E] edit by smsong
@@ -1309,7 +1328,7 @@ function lineChart(points, opts) {
         ${targetLine}
         <path d="${area}" fill="url(#${gid})"/>
         <path d="${path}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-        ${dots}${labels}
+        ${dots}${labels}${hits}
     </svg></div>`;
 }
 
@@ -1328,10 +1347,11 @@ function wireCharts(root) {
             if (!t) { tip.style.display = 'none'; tip.innerHTML = ''; return; }
             const cx = parseFloat(t.dataset.cx), cy = parseFloat(t.dataset.cy);
             const v = t.dataset.v, lab = t.dataset.lab;
-            const tx = Math.min(Math.max(cx, 28), 292);
-            const bubbleY = Math.max(cy - 12, 16);
+            // [B][E] edit by smsong : 넓어진 패딩에 맞춰 말풍선이 화면 밖으로 나가지 않게 보정
+            const tx = Math.min(Math.max(cx, 30), 290);
+            const bubbleY = Math.max(cy - 12, 20);
             tip.innerHTML =
-                `<line x1="${cx}" y1="14" x2="${cx}" y2="${H - 22}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.45"/>` +
+                `<line x1="${cx}" y1="18" x2="${cx}" y2="${H - 24}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.45"/>` +
                 `<circle cx="${cx}" cy="${cy}" r="5" fill="${color}" stroke="var(--ink-900)" stroke-width="2"/>` +
                 `<g transform="translate(${tx}, ${bubbleY})">` +
                 `<rect x="-28" y="-15" width="56" height="19" rx="6" fill="${color}"/>` +
@@ -1384,30 +1404,73 @@ function createSheet(sheetId, backdropId) {
     let closeTimer = null;
     // [B] edit by smsong : 전체보기(화면 꽉 채움) 상태. 정중앙 모달에서만 의미가 있다.
     let full = false;
+    // [B] edit by smsong : 작성 중 이탈 방지.
+    //   opts.isDirty 가 없으면 본문의 입력요소/칩 상태를 열 때 스냅샷 떠두고 비교해 자동 판정한다.
+    let dirtyFn = null;
+    let baseSnap = '';
     // [E] edit by smsong
 
     function body() { return sheet.querySelector('.sheet-body'); }
 
+    // 본문 입력 상태 스냅샷 (input/textarea/select + 칩 선택)
+    function snapshotBody() {
+        const b = body();
+        if (!b) return '';
+        const fields = Array.prototype.map.call(b.querySelectorAll('input, textarea, select'), el =>
+            (el.type === 'checkbox' || el.type === 'radio') ? (el.checked ? '1' : '0') : el.value);
+        const chips = Array.prototype.map.call(b.querySelectorAll('.chip'), c =>
+            c.classList.contains('active') ? '1' : '0');
+        return fields.join('\u0001') + '\u0002' + chips.join('\u0001');
+    }
+    function isDirty() {
+        if (!isOpen) return false;
+        if (dirtyFn) { try { return !!dirtyFn(); } catch (_) { return false; } }
+        return snapshotBody() !== baseSnap;
+    }
+    // 작성한 내용이 있으면 확인 후 닫기. 아무것도 안 썼으면 그냥 닫힌다.
+    function requestClose() {
+        if (!isOpen) return;
+        if (isDirty() && !confirm('작성 중인 내용이 있어요.\n닫으면 지금까지 입력한 내용은 저장되지 않고 사라집니다.\n\n정말 닫을까요?')) return;
+        close();
+    }
+    // [E] edit by smsong
+
     function open(html, opts) {
         opts = opts || {};
-        present = opts.present === 'sheet' ? 'sheet' : 'center';   // 상세 포함 전부 center(정중앙 모달)
+        present = 'center';                                       // 모든 폼 = 정중앙 모달
         // [B] edit by smsong : 재렌더(조회↔수정) 시에도 전체보기 상태를 유지하도록 opts.full 로 전달받는다.
-        full = present === 'center' && !!opts.full;
+        full = !!opts.full;
         // [E] edit by smsong
         clearTimeout(closeTimer);
-        sheet.className = 'sheet' + (lv2 ? ' lv2' : '') + (present === 'sheet' ? ' as-sheet' : ' as-center') + (full ? ' as-full' : '');
+        sheet.className = 'sheet' + (lv2 ? ' lv2' : '') + ' as-center' + (full ? ' as-full' : '');
+        // [B] edit by smsong : 모든 폼 헤더 = 제목 + [크게 보기][닫기]. 설명(desc)은 두지 않는다.
         sheet.innerHTML = `
-            ${present === 'sheet' ? '<div class="sheet-grip-wrap" id="' + sheetId + 'Grip"><div class="sheet-grip"></div></div>' : ''}
-            ${(opts.title || opts.desc) ? `<div class="sheet-head">
-                ${opts.title ? `<h3>${esc(opts.title)}</h3>` : ''}
-                ${opts.desc ? `<div class="sheet-desc">${esc(opts.desc)}</div>` : ''}
+            ${opts.title ? `<div class="sheet-head">
+                <h3>${esc(opts.title)}</h3>
+                <div class="sheet-head-acts">
+                    <button class="ibtn sm" data-sheet-full type="button" title="${full ? '작게 보기' : '크게 보기'}" aria-label="크게 보기">${icon(full ? 'collapse' : 'expand')}</button>
+                    <button class="ibtn sm" data-sheet-x type="button" title="닫기" aria-label="닫기">${icon('x')}</button>
+                </div>
             </div>` : ''}
             <div class="sheet-body">${html}</div>`;
+        // [E] edit by smsong
         const bd = body(); if (bd) bd.scrollTop = 0;
         if (!isOpen) { lockBgScroll(); isOpen = true; }
+        // [B] edit by smsong : 이탈 방지 기준 스냅샷은 본문을 그린 직후에 뜬다
+        dirtyFn = opts.isDirty || null;
+        baseSnap = snapshotBody();
+        const fb = sheet.querySelector('[data-sheet-full]');
+        if (fb) fb.onclick = () => {
+            setFull(!full);
+            fb.innerHTML = icon(full ? 'collapse' : 'expand');
+            fb.title = fb.ariaLabel = full ? '작게 보기' : '크게 보기';
+            if (opts.onFull) opts.onFull(full);
+        };
+        const xb = sheet.querySelector('[data-sheet-x]');
+        if (xb) xb.onclick = requestClose;
+        // [E] edit by smsong
         backdrop.classList.add('open');
         requestAnimationFrame(() => sheet.classList.add('open'));
-        if (present === 'sheet') wireSheetDrag();
     }
     function close() {
         if (!isOpen) return;
@@ -1420,46 +1483,19 @@ function createSheet(sheetId, backdropId) {
         closeTimer = setTimeout(() => { if (!isOpen) sheet.innerHTML = ''; }, 300);
     }
 
-    // 바텀시트에서만: 그립을 아래로 끌면 닫힘(간단한 드래그-투-디스미스)
-    function wireSheetDrag() {
-        const grip = sheet.querySelector('.sheet-grip-wrap');
-        if (!grip) return;
-        grip.addEventListener('pointerdown', e => {
-            if (e.button != null && e.button > 0) return;
-            const startY = e.clientY;
-            sheet.style.transition = 'none';
-            const onMove = ev => {
-                const dy = Math.max(0, ev.clientY - startY);
-                sheet.style.transform = `translateX(-50%) translateY(${dy}px)`;
-                ev.preventDefault();
-            };
-            const onUp = ev => {
-                document.removeEventListener('pointermove', onMove);
-                document.removeEventListener('pointerup', onUp);
-                document.removeEventListener('pointercancel', onUp);
-                sheet.style.transition = '';
-                const dy = ev.clientY - startY;
-                if (dy > 110) close();
-                else sheet.style.transform = '';   // 원위치(.open 의 translateY(0))
-            };
-            document.addEventListener('pointermove', onMove, { passive: false });
-            document.addEventListener('pointerup', onUp);
-            document.addEventListener('pointercancel', onUp);
-        });
-    }
-
     // [B] edit by smsong : 전체보기 토글 — 정중앙 모달을 화면 꽉 차게 확대/복귀
     function setFull(v) {
-        full = present === 'center' && !!v;
+        full = !!v;
         sheet.classList.toggle('as-full', full);
     }
     function isFull() { return full; }
     // [E] edit by smsong
 
-    backdrop.onclick = close;
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen) close(); });
+    // [B][E] edit by smsong : 배경 탭 / ESC 도 "작성 중" 확인을 거친다
+    backdrop.onclick = requestClose;
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen) requestClose(); });
 
-    return { open, close, isOpen: () => isOpen, setFull, isFull };
+    return { open, close, requestClose, isOpen: () => isOpen, setFull, isFull, isDirty };
 }
 // [E] edit by smsong
 
@@ -1470,6 +1506,7 @@ function openSheet(html, opts) { Sheet1.open(html, opts); }
 function closeSheet() { Sheet1.close(); }
 // [B] edit by smsong : 1차 모달 전체보기 토글 헬퍼
 function setSheetFull(v) { Sheet1.setFull(v); }
+function requestCloseSheet() { Sheet1.requestClose(); }
 // [E] edit by smsong
 // [E] edit by smsong
 
@@ -1517,8 +1554,7 @@ function openSessionEditor(sessionId, date, mode) {
         const c = s.condition;
         const timeStr = fmtTimeRange(s);
         openSheet(`
-            <!-- [B] edit by smsong : 상세는 정중앙 모달 유지 + 작은 전체보기 아이콘(⤢)으로 화면 꽉 채우기.
-                 전체보기 중에는 배경(backdrop)이 가려지므로 닫기(✕)를 항상 노출한다. -->
+            <!-- [B][E] edit by smsong : 크게 보기/닫기는 시트 헤더가 담당 → 툴바에는 기록 조작만 남긴다 -->
             <div class="se-toolbar">
                 <div class="se-tb-left">
                     <button class="ibtn sm" id="seEdit" type="button" title="수정" aria-label="수정">${icon('pencil')}</button>
@@ -1526,11 +1562,8 @@ function openSessionEditor(sessionId, date, mode) {
                 </div>
                 <div class="se-tb-right">
                     <button class="ibtn sm grad" id="seAddW" type="button" title="운동 추가" aria-label="운동 추가">${icon('plus')}</button>
-                    <button class="ibtn sm" id="seFull" type="button" title="전체보기" aria-label="전체보기">${icon(fullView ? 'collapse' : 'expand')}</button>
-                    <button class="ibtn sm" id="seClose" type="button" title="닫기" aria-label="닫기">${icon('x')}</button>
                 </div>
             </div>
-            <!-- [E] edit by smsong -->
 
             <div class="se-meta">
                 <span class="se-meta-date">${fmtKorean(s.date)}</span>
@@ -1545,18 +1578,13 @@ function openSessionEditor(sessionId, date, mode) {
                 <span class="se-head-sum tabnum" id="seVol"></span>
             </div>
             <div class="reorder-list se-list" id="seList"></div>
-        `, { full: fullView });   // [B][E] edit by smsong : 슬라이드 시트(present:'sheet') → 정중앙 모달 + 전체보기 상태 유지
-
-        // [B] edit by smsong : 전체보기 토글 / 닫기
-        const fullBtn = document.getElementById('seFull');
-        fullBtn.onclick = () => {
-            fullView = !fullView;
-            setSheetFull(fullView);
-            fullBtn.innerHTML = icon(fullView ? 'collapse' : 'expand');
-            fullBtn.title = fullBtn.ariaLabel = fullView ? '작게 보기' : '전체보기';
-        };
-        document.getElementById('seClose').onclick = closeSheet;
-        // [E] edit by smsong
+        `, {
+            // [B][E] edit by smsong : 제목 + 헤더의 크게보기/닫기. 조회는 읽기 전용이라 이탈 확인 없음.
+            title: '운동 기록',
+            full: fullView,
+            onFull: v => { fullView = v; },
+            isDirty: () => false
+        });
 
         document.getElementById('seEdit').onclick = () => { curMode = 'edit'; renderMode(); };
         document.getElementById('seDel').onclick = async () => {
@@ -1621,7 +1649,12 @@ function openSessionEditor(sessionId, date, mode) {
                 <button class="btn grad block" id="seSave">${curMode === 'new' ? '운동 기록 만들기' : '변경사항 저장'}</button>
                 ${curMode === 'edit' ? `<button class="btn block" id="seCancel" style="margin-top:8px">취소</button>` : ''}
             </div>
-        `, { full: fullView });   // [B][E] edit by smsong : 조회에서 켠 전체보기를 수정 폼에서도 유지
+        `, {
+            // [B][E] edit by smsong : + 버튼으로 여는 세션 폼에도 제목을 붙인다. 입력 중 닫으면 확인.
+            title: curMode === 'new' ? '운동 기록 만들기' : '운동 기록 수정',
+            full: fullView,
+            onFull: v => { fullView = v; }
+        });
 
         // 컨디션 슬라이더
         const condEl = document.getElementById('seCond');
@@ -1771,9 +1804,7 @@ function openWorkoutSheet(initial, onApply) {
         <button class="btn grad block" id="wApply" style="margin-top:6px">${editing ? '수정 저장' : '운동 추가'}</button>
         <button class="btn block" id="wCancel" style="margin-top:8px">취소</button>
     `, {
-        title: editing ? '운동 수정' : '운동 추가',
-        desc: '종목을 고르고 무게·횟수·세트를 입력하세요. 부위는 운동 기록(날짜)에서 선택해요.',
-        snap: 'half'
+        title: editing ? '운동 수정' : '운동 추가'   // [B][E] edit by smsong : 설명(desc) 제거 → 제목만
     });
 
     function exOptions(selectedName) {
@@ -1885,7 +1916,7 @@ function openMealSheet(date) {
         </div>
         <div class="field"><label>날짜</label><input class="input" id="mDate" type="date" value="${date}"></div>
         <button class="btn grad block" id="mSave" style="margin-top:6px">기록 저장</button>
-    `, { title: '식단 기록', desc: '끼니와 음식, 칼로리를 입력하세요.', snap: 'half' });
+    `, { title: '식단 기록' });   // [B][E] edit by smsong : 설명(desc) 제거 → 제목만
 
     let mealType = 'breakfast';
     document.querySelectorAll('#mealChips .chip').forEach(c => c.onclick = () => {
@@ -1915,7 +1946,7 @@ function openBodySheet() {
         <div class="field"><label>체중 (kg)</label><input class="input" id="bWeight" type="number" inputmode="decimal" placeholder="77.6"></div>
         <div class="field"><label>날짜</label><input class="input" id="bDate" type="date" value="${todayStr()}"></div>
         <button class="btn grad block" id="bSave" style="margin-top:6px">저장</button>
-    `, { title: '체중 기록', desc: '오늘 체중을 남기면 변화 그래프에 반영돼요.', snap: 'half' });
+    `, { title: '체중 기록' });   // [B][E] edit by smsong : 설명(desc) 제거 → 제목만
     document.getElementById('bSave').onclick = async () => {
         const weight = parseFloat(document.getElementById('bWeight').value);
         const dt = document.getElementById('bDate').value;
@@ -1944,7 +1975,7 @@ function openProfileSheet() {
             <div class="field"><label>목표 체중 (kg)</label><input class="input" id="pTarget" type="number" inputmode="decimal" value="${p.targetWeight != null ? p.targetWeight : ''}" placeholder="74"></div>
         </div>
         <button class="btn grad block" id="pSave" style="margin-top:6px">저장</button>
-    `, { title: '프로필 설정', desc: '표시 이름과 신체 정보를 설정하세요. 신체 정보는 계정에 저장돼요.', snap: 'half' });
+    `, { title: '프로필 설정' });   // [B][E] edit by smsong : 설명(desc) 제거 → 제목만
     document.getElementById('pSave').onclick = async () => {
         const name = document.getElementById('pName').value.trim();
         const height = parseFloat(document.getElementById('pHeight').value);
@@ -1993,7 +2024,7 @@ function openSettingsSheet() {
         </div>
         <!-- [E] edit by smsong -->
         <button class="btn block" id="setDone" style="margin-top:6px">완료</button>
-    `, { title: '설정', desc: '화면 테마를 선택하세요. 선택한 테마는 이 기기에 계속 유지돼요.', snap: 'half' });
+    `, { title: '설정' });   // [B][E] edit by smsong : 설명(desc) 제거 → 제목만
     document.querySelectorAll('#themeSeg button').forEach(b => b.onclick = () => {
         window.UpFitTheme.apply(b.dataset.theme, true);   // persist = true
         document.querySelectorAll('#themeSeg button').forEach(x => x.classList.toggle('active', x === b));
@@ -2419,7 +2450,16 @@ function openImportSheet(defaultDate) {
 
         <div id="imPreview"></div>
         <button class="btn grad block" id="imGo" style="margin-top:6px">분석하기</button>
-    `, { title: '운동 기록 가져오기' });
+    `, {
+        title: '운동 기록 가져오기',
+        // [B][E] edit by smsong : 연·월/단위 같은 설정 변경은 이탈 확인 대상이 아니다.
+        //   실제로 "적은 기록"(붙여넣은 텍스트 / 고른 파일)이 있을 때만 확인한다.
+        isDirty: () => {
+            const t = document.getElementById('imText');
+            const f = document.getElementById('imFiles');
+            return !!(t && t.value.trim()) || !!(f && f.files && f.files.length);
+        }
+    });
 
     const $ = id => document.getElementById(id);
     const taEl = $('imText'), fileEl = $('imFiles'), goEl = $('imGo'), pvEl = $('imPreview');

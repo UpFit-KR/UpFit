@@ -169,16 +169,24 @@ body {
    해결 — 배경을 전용 고정 레이어(.app-bg)로 분리하고, 박스를 뷰포트보다
           사방 120px 크게 잡아 세이프에어리어 바깥까지 확실히 덮는다.
           여백(세이프에어리어)은 헤더의 상단 패딩이 담당 → 아래는 꽉 참. */
+/* [B] edit by smsong : 위아래 끝에서 화면이 딸려 올라오는(러버밴딩) 현상 차단.
+   문서 자체를 스크롤 불가로 고정하고, 스크롤은 .app-main 안에서만 일어나게 한다.
+   .app-main 에도 overscroll-behavior:none → 끝에 닿아도 더 이상 끌리지 않는다. */
 html {
-    min-height: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
     background-color: var(--body-bg);   /* 캔버스 폴백(단색) */
     transition: background-color 0.25s;
 }
 body {
-    min-height: 100dvh;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
     background-image: none;
     background-color: transparent;
 }
+/* [E] edit by smsong */
 .app-bg {
     position: fixed;
     inset: -120px;                      /* 뷰포트 밖까지 넘겨 덮는다 */
@@ -203,7 +211,7 @@ button { font-family: var(--font); cursor: pointer; }
 /* ---------- 앱 셸 ---------- */
 .app {
     max-width: 480px; margin: 0 auto;
-    min-height: 100vh; min-height: 100dvh;
+    height: 100%;                       /* [B][E] edit by smsong : min-height → height (문서 스크롤 제거) */
     display: flex; flex-direction: column;
     position: relative;
 }
@@ -229,10 +237,12 @@ button { font-family: var(--font); cursor: pointer; }
 
 /* ---------- 메인 스크롤 영역 ---------- */
 .app-main {
-    flex: 1;
+    flex: 1; min-height: 0;
     padding: 16px 16px calc(var(--nav-h) + env(safe-area-inset-bottom) + 20px);
     overflow-y: auto;
     overflow-x: hidden;
+    overscroll-behavior: none;          /* [B][E] edit by smsong : 위아래 끝 러버밴딩 차단 */
+    -webkit-overflow-scrolling: touch;
 }
 .view { display: none; animation: fadeUp 0.28s ease; }
 .view.active { display: block; }
@@ -559,66 +569,59 @@ button { font-family: var(--font); cursor: pointer; }
     pointer-events: none;
     overscroll-behavior: contain;
 }
-/* 생성/수정 = 화면 중앙 모달 */
+/* [B] edit by smsong — 정중앙 모달 + 부드러운 확대/축소
+   좌표(left/top/transform)는 고정한 채 "크기"만 트랜지션한다.
+   → 중앙을 기준으로 쭉 늘어나고 쭉 줄어드는 스트레치 애니메이션.
+   height:auto 는 애니메이션이 안 되므로 min-height 를 함께 움직여 실제로 화면을 채운다. */
 .sheet.as-center {
     left: 50%; top: 50%;
     transform: translate(-50%, -50%) scale(0.96);
     width: calc(100% - 36px); max-width: 440px;
+    min-height: 0;
     max-height: 88vh; max-height: 88dvh;
     border: 1px solid var(--line);
     border-radius: var(--radius-xl);
     overflow: hidden;
     opacity: 0;
-    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32,0.72,0,1);
+    transition: opacity 0.2s ease,
+                transform 0.2s cubic-bezier(0.32,0.72,0,1),
+                width 0.38s cubic-bezier(0.32,0.72,0,1),
+                max-width 0.38s cubic-bezier(0.32,0.72,0,1),
+                min-height 0.38s cubic-bezier(0.32,0.72,0,1),
+                max-height 0.38s cubic-bezier(0.32,0.72,0,1),
+                border-radius 0.38s ease;
 }
 .sheet.as-center.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
 
-/* [B] edit by smsong : 전체보기 — 정중앙 모달을 화면 꽉 차게 확대.
-   상단은 세이프에어리어만큼 띄우고 하단은 화면 끝까지 채운다. */
+/* 크게 보기 = 화면 꽉 채움. 크기만 바뀌므로 위 트랜지션을 그대로 탄다. */
 .sheet.as-center.as-full {
-    left: 0; top: 0;
-    transform: scale(0.98);
-    width: 100%; max-width: none;
-    height: 100vh; height: 100dvh; max-height: none;
-    border: 0; border-radius: 0;
-    padding-top: env(safe-area-inset-top);
+    width: 100%; max-width: 100%;
+    min-height: 100vh; min-height: 100dvh;
+    max-height: 100vh; max-height: 100dvh;
+    border-radius: 0; border-color: transparent;
 }
-.sheet.as-center.as-full.open { transform: scale(1); }
-.sheet.as-center.as-full .sheet-body { padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
-/* [E] edit by smsong */
-/* 상세보기 = 아래에서 위로 올라오는 슬라이드 시트 */
-.sheet.as-sheet {
-    left: 50%; bottom: 0;
-    transform: translateX(-50%) translateY(100%);
-    width: 100%; max-width: 480px;
-    max-height: 90vh; max-height: 90dvh;
-    border: 1px solid var(--line); border-bottom: 0;
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    transition: transform 0.32s cubic-bezier(0.32,0.72,0,1);
-}
-.sheet.as-sheet.open { pointer-events: auto; transform: translateX(-50%) translateY(0); }
+.sheet.as-center.as-full .sheet-body { padding-bottom: 28px; }
+
 /* 2차 모달(운동 입력) — 1차 위에 겹침 */
 .sheet-backdrop.lv2 { z-index: 102; }
 .sheet.lv2 { z-index: 103; }
 
-/* 시트 상단 그립(아래로 끌어 닫기) */
-.sheet-grip-wrap { flex: 0 0 auto; padding: 10px 0 4px; cursor: grab; touch-action: none; user-select: none; }
-.sheet-grip-wrap:active { cursor: grabbing; }
-.sheet-grip { width: 40px; height: 4px; border-radius: 2px; background: var(--ink-700); margin: 0 auto; }
-
-.sheet-head { flex: 0 0 auto; padding: 18px 20px 0; }
-.sheet.as-sheet .sheet-head { padding-top: 8px; }
-.sheet h3 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
-.sheet .sheet-desc { font-size: 13px; color: var(--text-dim); }
+/* 헤더 = 제목 + [크게 보기][닫기] */
+.sheet-head {
+    flex: 0 0 auto; padding: 16px 16px 0 20px;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+}
+.sheet h3 { font-size: 18px; font-weight: 800; margin: 0; padding-top: 5px; flex: 1; min-width: 0; }
+.sheet-head-acts { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 
 /* 본문: 남는 높이만큼만 차지하고 그 안에서만 스크롤 */
 .sheet-body {
     flex: 1 1 auto; min-height: 0;
     overflow-y: auto; -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
+    padding: 16px 20px 20px;
 }
-.sheet.as-sheet .sheet-body { padding-top: 12px; }
+/* [E] edit by smsong */
 
 /* 모달/시트가 열려 있는 동안 뒤 페이지(문서/앱 메인) 스크롤 잠금 */
 html.modal-open, body.modal-open { overflow: hidden !important; touch-action: none; }
