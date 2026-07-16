@@ -258,7 +258,8 @@ const ui = {
     workoutSel: todayStr(),
     dietSel: todayStr(),
     changeExercise: null,
-    changePeriod: '1m'   // [B][E] edit by smsong : 변화 탭 그래프 기간(1d/1w/1m/6m/1y)
+    changePeriod: '1m',  // [B][E] edit by smsong : 변화 탭 그래프 기간(1d/1w/1m/6m/1y)
+    changeGrowthOffset: 1   // [B][E] edit by smsong : 종목별 성장 분석에서 최근 세션과 비교할 이전 세션 오프셋(1=직전 … 최대 5)
 };
 function firstOfThisMonth() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; }
 
@@ -1000,8 +1001,13 @@ function renderChange() {
 
     let html = '';
 
-    // [B] edit by smsong : 기간 탭 — 스크롤해도 상단에 고정되어 언제든 기간 전환 가능
-    html += `<div class="period-sticky">${periodTabsHtml('changePeriodTabs', ui.changePeriod)}</div>`;
+    // [B] edit by smsong : 기간 탭 + 종목 선택을 함께 상단 고정 → 스크롤해도 언제든 전환 가능
+    html += `<div class="period-sticky">`;
+    if (exsWithData.length) {
+        html += `<div class="sticky-ex">${comboBoxHtml('changeEx', ui.changeExercise, '종목 검색 (예: 플, ㅍㅂ)')}</div>`;
+    }
+    html += periodTabsHtml('changePeriodTabs', ui.changePeriod);
+    html += `</div>`;
     // [E] edit by smsong
 
     // 1) 종목별 성장 분석 : 직전 세션 대비 무게·횟수·세트·볼륨 등락(상승=빨강/하락=파랑) + 추이 그래프
@@ -1009,17 +1015,36 @@ function renderChange() {
         <div class="section-head"><h2>종목별 성장 분석</h2></div>
         <div class="card">`;
     if (exsWithData.length) {
-        // [B][E] edit by smsong : <select> → 검색되는 콤보박스 (연관 검색어 표시)
-        html += `<div style="margin-bottom:14px">${comboBoxHtml('changeEx', ui.changeExercise, '종목 검색 (예: 플, ㅍㅂ)')}</div>`;
+        // [B] edit by smsong : 종목 선택 콤보박스는 기간 탭과 함께 상단(period-sticky)으로 이동했다.
+        // [E] edit by smsong
 
         // [B][E] edit by smsong : 기간으로 필터링 (그래프에 반영. 최신값 비교 카드는 전체 최신 기준 유지)
         const statsAll = exerciseSessionStats(ui.changeExercise);
         const stats = filterByPeriod(statsAll, s => s.date, ui.changePeriod);
-        const last = statsAll[statsAll.length - 1];
-        const prev = statsAll.length > 1 ? statsAll[statsAll.length - 2] : null;
+        const n = statsAll.length;
+        const last = statsAll[n - 1];
         const isBw = exerciseIsBodyweight(ui.changeExercise);   // [B][E] edit by smsong : 맨몸이면 횟수 중심
 
-        html += `<div class="cmp-meta">최근 ${fmtKorean(last.date)}${last.startTime ? ' ' + last.startTime : ''}${prev ? ` · 직전(${fmtKorean(prev.date)}${prev.startTime ? ' ' + prev.startTime : ''}) 대비` : ' · 첫 기록'}${isBw ? ' · 맨몸' : ''}</div>`;
+        // [B] edit by smsong : 비교 대상(이전 세션) 선택 탭.
+        //   기존엔 "직전 세션" 한 개와만 비교했지만, 최근 세션을 기준으로 최대 5개 이전 기록까지
+        //   날짜 탭으로 골라 비교할 수 있게 한다. off=1 이 직전, off 가 커질수록 더 과거.
+        const maxOffset = Math.min(5, n - 1);
+        if (!ui.changeGrowthOffset || ui.changeGrowthOffset > maxOffset) ui.changeGrowthOffset = 1;
+        const prev = maxOffset >= 1 ? statsAll[n - 1 - ui.changeGrowthOffset] : null;
+
+        if (maxOffset >= 1) {
+            html += `<div class="growth-cmp-cap">최근 기록과 비교할 날짜</div>
+                <div class="seg growth-cmp-seg" id="growthCmpTabs">${
+                    Array.from({ length: maxOffset }, (_, i) => {
+                        const off = i + 1;
+                        const cand = statsAll[n - 1 - off];
+                        return `<button data-off="${off}" class="${off === ui.changeGrowthOffset ? 'active' : ''}" type="button">${labelMd(cand.date)}</button>`;
+                    }).join('')
+                }</div>`;
+        }
+        // [E] edit by smsong
+
+        html += `<div class="cmp-meta">최근 ${fmtKorean(last.date)}${last.startTime ? ' ' + last.startTime : ''}${prev ? ` · ${fmtKorean(prev.date)}${prev.startTime ? ' ' + prev.startTime : ''} 대비` : ' · 첫 기록'}${isBw ? ' · 맨몸' : ''}</div>`;
         // [B] edit by smsong : 맨몸 종목은 무게/볼륨이 항상 0 → 횟수·세트만 비교/추이로 보여준다
         if (isBw) {
             html += `<div class="cmp-list">
@@ -1112,8 +1137,13 @@ function renderChange() {
     document.querySelectorAll('#changePeriodTabs button').forEach(b => b.onclick = () => {
         ui.changePeriod = b.dataset.period; renderChange();
     });
-    // [B][E] edit by smsong : 종목 콤보박스(검색) — 고르면 그래프 갱신
-    wireCombo('changeEx', () => exsWithData, v => { ui.changeExercise = v; renderChange(); });
+    // [B] edit by smsong : 종목별 성장 분석 — 비교할 이전 기록(날짜) 탭 전환
+    document.querySelectorAll('#growthCmpTabs button').forEach(b => b.onclick = () => {
+        ui.changeGrowthOffset = Number(b.dataset.off); renderChange();
+    });
+    // [E] edit by smsong
+    // [B][E] edit by smsong : 종목 콤보박스(검색) — 고르면 그래프 갱신(비교 탭은 직전으로 초기화)
+    wireCombo('changeEx', () => exsWithData, v => { ui.changeExercise = v; ui.changeGrowthOffset = 1; renderChange(); });
     const bb = document.getElementById('addBodyBtn');
     if (bb) bb.onclick = openBodySheet;
 }

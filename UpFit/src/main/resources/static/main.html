@@ -73,11 +73,9 @@
     </main>
 
     <!-- 하단 네비 -->
+    <!-- [B] edit by smsong : 홈을 중앙 원형(우주선 콕핏)으로 띄우고 좌(운동·식단)/우(변화·내정보)로 배치.
+         data-tab 값은 그대로라 activateTab 로직은 순서와 무관하게 동작한다. -->
     <nav class="bottom-nav">
-        <button class="nav-item active" data-tab="home">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></svg>
-            <span>홈</span>
-        </button>
         <button class="nav-item" data-tab="workout">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5 17.5 17.5"/><path d="M4 8l-1 1a1.4 1.4 0 0 0 0 2l1 1"/><path d="M8 4 7 5a1.4 1.4 0 0 0 0 2l1 1"/><path d="M20 16l1-1a1.4 1.4 0 0 0 0-2l-1-1"/><path d="M16 20l1-1a1.4 1.4 0 0 0 0-2l-1-1"/></svg>
             <span>운동</span>
@@ -85,6 +83,12 @@
         <button class="nav-item" data-tab="diet">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3v18M8 3v6a3 3 0 0 0 3 3"/><path d="M17 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4 2.5-1 2.5-4-1-5-2.5-5Z"/><path d="M17 12v9"/></svg>
             <span>식단</span>
+        </button>
+        <button class="nav-item nav-center active" data-tab="home">
+            <span class="nav-orb">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></svg>
+            </span>
+            <span class="nav-lbl">홈</span>
         </button>
         <button class="nav-item" data-tab="change">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 5-7"/></svg>
@@ -95,6 +99,7 @@
             <span>내 정보</span>
         </button>
     </nav>
+    <!-- [E] edit by smsong -->
 </div>
 
 <!-- 바텀시트 1차 (운동 기록/식단/체중/프로필/설정) -->

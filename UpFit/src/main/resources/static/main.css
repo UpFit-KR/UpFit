@@ -64,6 +64,8 @@
     --body-glow: rgba(56,189,248,0.16);
     --header-bg: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(238,242,248,0.6));
     --nav-bg: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0.98));
+    --nav-ring: #ffffff;                 /* [B][E] edit by smsong : 중앙 홈 원형을 바에서 떼어내는 링 색(바 표면색과 일치) */
+    --home-glow: rgba(14,165,233,0.40);  /* [B][E] edit by smsong : 홈 원형 글로우 */
     --toast-bg: #ffffff;
     --backdrop: rgba(23,49,84,0.35);
     --logo-shadow: 0 4px 12px rgba(23,49,84,0.18);
@@ -123,6 +125,8 @@
     --body-glow: rgba(56,189,248,0.10);
     --header-bg: linear-gradient(180deg, rgba(7,17,32,0.92), rgba(7,17,32,0.6));
     --nav-bg: linear-gradient(180deg, rgba(10,22,38,0.85), rgba(7,17,32,0.98));
+    --nav-ring: #0b1a2e;                 /* [B][E] edit by smsong : 다크 바 표면색과 일치 */
+    --home-glow: rgba(56,189,248,0.45);  /* [B][E] edit by smsong : 홈 원형 글로우(다크) */
     --toast-bg: #0d1e34;
     --backdrop: rgba(4,10,20,0.6);
     --logo-shadow: 0 4px 12px rgba(0,0,0,0.4);
@@ -238,7 +242,7 @@ button { font-family: var(--font); cursor: pointer; }
 /* ---------- 메인 스크롤 영역 ---------- */
 .app-main {
     flex: 1; min-height: 0;
-    padding: 16px 16px calc(var(--nav-h) + env(safe-area-inset-bottom) + 20px);
+    padding: 16px 16px calc(var(--nav-h) + env(safe-area-inset-bottom) + 30px);  /* [B][E] edit by smsong : +20 → +30, 떠 있는 홈 원형 여유 */
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: none;          /* [B][E] edit by smsong : 위아래 끝 러버밴딩 차단 */
@@ -541,15 +545,18 @@ button { font-family: var(--font); cursor: pointer; }
 .empty .e-sub { font-size: 13px; line-height: 1.5; }
 
 /* ---------- 하단 네비 ---------- */
+/* [B] edit by smsong : 하단 네비 — 홈을 중앙 원형(우주선 콕핏)으로 띄우고 좌우로 메뉴 배치 */
 .bottom-nav {
     position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
     width: 100%; max-width: 480px; z-index: 50;
     height: calc(var(--nav-h) + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
-    display: flex;
+    display: flex; align-items: stretch;
     background: var(--nav-bg);
-    backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     border-top: 1px solid var(--line);
+    border-radius: 20px 20px 0 0;       /* 위로 살짝 솟은 콕핏 느낌 */
+    overflow: visible;                  /* 중앙 원형이 바 위로 떠오르도록 */
 }
 .nav-item {
     flex: 1; background: transparent; border: 0;
@@ -560,6 +567,37 @@ button { font-family: var(--font); cursor: pointer; }
 .nav-item svg { width: 22px; height: 22px; }
 .nav-item.active { color: var(--accent); }
 .nav-item.active svg { stroke: url(#navgrad); }
+
+/* 중앙 홈 = 바 위로 떠 있는 원형 버튼 */
+.nav-item.nav-center {
+    flex: 0 0 auto; width: 74px; position: relative;
+    justify-content: flex-end; padding-bottom: 7px; gap: 0;
+    color: var(--text-dim);
+}
+.nav-center .nav-orb {
+    position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+    width: 58px; height: 58px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--grad);
+    border: 5px solid var(--nav-ring);
+    box-shadow: 0 8px 20px var(--home-glow), 0 2px 6px rgba(0,0,0,0.18);
+    transition: transform 0.18s cubic-bezier(.22,1,.36,1), box-shadow 0.2s;
+}
+.nav-center .nav-orb::after {           /* 상단 하이라이트 → 유리/금속 질감 */
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(120% 120% at 30% 22%, rgba(255,255,255,0.5), transparent 55%);
+    pointer-events: none;
+}
+.nav-center .nav-orb svg { width: 26px; height: 26px; stroke: var(--on-grad); }
+.nav-center .nav-lbl { margin-top: auto; line-height: 1; }
+.nav-center.active { color: var(--accent); }
+.nav-center.active .nav-orb {
+    transform: translateX(-50%) translateY(-3px);
+    box-shadow: 0 13px 28px var(--home-glow), 0 3px 8px rgba(0,0,0,0.22);
+}
+.nav-center.active .nav-orb svg { stroke: var(--on-grad); }   /* 원 안 아이콘은 항상 그라데이션 대비색 */
+.nav-center:active .nav-orb { transform: translateX(-50%) scale(0.94); }
+/* [E] edit by smsong */
 
 /* ---------- 중앙 모달 폼 ---------- */
 /* [B] edit by smsong : 아래→위 슬라이드 시트를 화면 중앙 모달로 교체.
@@ -577,7 +615,7 @@ button { font-family: var(--font); cursor: pointer; }
     box-shadow: var(--shadow-lg);
     display: flex; flex-direction: column;
     pointer-events: none;
-    overscroll-behavior: contain;
+    overscroll-behavior: none;   /* [B][E] edit by smsong : contain → none. 끝에서 러버밴딩(최대스크롤 튐)까지 차단 */
 }
 /* [B] edit by smsong — 정중앙 모달 + 부드러운 확대/축소
    좌표(left/top/transform)는 고정한 채 "크기"만 트랜지션한다.
@@ -627,7 +665,7 @@ button { font-family: var(--font); cursor: pointer; }
 .sheet-body {
     flex: 1 1 auto; min-height: 0;
     overflow-y: auto; -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
+    overscroll-behavior: none;   /* [B][E] edit by smsong : contain → none. 마이그레이션 등 긴 폼도 끝에서 튀지 않게 */
     padding: 16px 20px 20px;
 }
 /* [E] edit by smsong */
@@ -814,6 +852,17 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 }
 .seg.period-seg { display: flex; width: 100%; }
 .seg.period-seg button { flex: 1; text-align: center; padding: 9px 4px; font-size: 12.5px; }
+
+/* [B] edit by smsong : 상단 고정 영역 안의 종목 선택 콤보 (기간 탭 바로 위) */
+.period-sticky .sticky-ex { margin-bottom: 8px; }
+.period-sticky .sticky-ex .combo-input { padding: 10px 38px 10px 12px; font-size: 13px; }
+.period-sticky .sticky-ex .combo-caret { height: 100%; }
+
+/* [B] edit by smsong : 종목별 성장 분석 — 최근 세션과 비교할 이전 날짜 탭 (최대 5개) */
+.growth-cmp-cap { font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 7px; }
+.seg.growth-cmp-seg { display: flex; width: 100%; margin-bottom: 14px; }
+.seg.growth-cmp-seg button { flex: 1; text-align: center; padding: 8px 2px; font-size: 12.5px; }
+/* [E] edit by smsong */
 
 /* [B] edit by smsong : 검색되는 종목 콤보박스 */
 .combo { position: relative; }
@@ -1081,7 +1130,7 @@ textarea.input.im-text {
 .im-sum { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-dim); font-weight: 700; }
 .im-sum b { font-size: 17px; color: var(--accent); margin-right: 2px; }
 .im-note { font-size: 12px; color: var(--text-mute); margin-top: 8px; font-weight: 600; }
-.im-days { margin-top: 10px; max-height: 190px; overflow-y: auto; overscroll-behavior: contain; }
+.im-days { margin-top: 10px; max-height: 190px; overflow-y: auto; overscroll-behavior: none; }  /* [B][E] edit by smsong : 내부 목록도 끝에서 튐 차단 */
 .im-day {
     display: flex; align-items: center; gap: 8px;
     padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px;
