@@ -310,7 +310,7 @@ async function load() {
     const [ss, ms, exs] = await Promise.all([api.listSessions(), api.listMeals(), api.listExercises()]);
     state.sessions = (ss || []).map(fromSessionDTO);
     state.meals = (ms || []).map(fromMealDTO);
-    state.exercises = (exs || []).map(e => e.name);
+    state.exercises = (exs || []).map(e => e.name).sort(cmpKo);   // [B][E] edit by smsong : 콤보박스 가나다 순
     exIdByName = {};
     (exs || []).forEach(e => { exIdByName[e.name] = e.id; });
 
@@ -389,6 +389,7 @@ async function delMealRec(id) {
 async function addExerciseType(name) {
     const dto = await api.addExercise(name);
     state.exercises.push(dto.name); exIdByName[dto.name] = dto.id;
+    state.exercises.sort(cmpKo);   // [B][E] edit by smsong : 추가 후에도 가나다 순 유지
 }
 // 체중 변화 그래프(bodyLogs) 등 로컬 항목 저장
 function persistExtras() { saveLocalExtras(); }
@@ -999,8 +1000,8 @@ function renderChange() {
 
     let html = '';
 
-    // [B] edit by smsong : 기간 탭 — 아래 모든 그래프가 이 기준으로 필터링된다
-    html += `<div class="section"><div class="card period-card">${periodTabsHtml('changePeriodTabs', ui.changePeriod)}</div></div>`;
+    // [B] edit by smsong : 기간 탭 — 스크롤해도 상단에 고정되어 언제든 기간 전환 가능
+    html += `<div class="period-sticky">${periodTabsHtml('changePeriodTabs', ui.changePeriod)}</div>`;
     // [E] edit by smsong
 
     // 1) 종목별 성장 분석 : 직전 세션 대비 무게·횟수·세트·볼륨 등락(상승=빨강/하락=파랑) + 추이 그래프
@@ -1008,9 +1009,8 @@ function renderChange() {
         <div class="section-head"><h2>종목별 성장 분석</h2></div>
         <div class="card">`;
     if (exsWithData.length) {
-        html += `<select class="select-pill" id="changeExSelect" style="margin-bottom:14px;width:100%">
-            ${exsWithData.map(ex => `<option value="${esc(ex)}" ${ex === ui.changeExercise ? 'selected' : ''}>${esc(ex)}</option>`).join('')}
-        </select>`;
+        // [B][E] edit by smsong : <select> → 검색되는 콤보박스 (연관 검색어 표시)
+        html += `<div style="margin-bottom:14px">${comboBoxHtml('changeEx', ui.changeExercise, '종목 검색 (예: 플, ㅍㅂ)')}</div>`;
 
         // [B][E] edit by smsong : 기간으로 필터링 (그래프에 반영. 최신값 비교 카드는 전체 최신 기준 유지)
         const statsAll = exerciseSessionStats(ui.changeExercise);
@@ -1112,13 +1112,159 @@ function renderChange() {
     document.querySelectorAll('#changePeriodTabs button').forEach(b => b.onclick = () => {
         ui.changePeriod = b.dataset.period; renderChange();
     });
-    const sel = document.getElementById('changeExSelect');
-    if (sel) sel.onchange = () => { ui.changeExercise = sel.value; renderChange(); };
+    // [B][E] edit by smsong : 종목 콤보박스(검색) — 고르면 그래프 갱신
+    wireCombo('changeEx', () => exsWithData, v => { ui.changeExercise = v; renderChange(); });
     const bb = document.getElementById('addBodyBtn');
     if (bb) bb.onclick = openBodySheet;
 }
 
+// [B] edit by smsong — 한글 정렬 · 종목 검색 유틸
+// 가나다 순 정렬 (한글/영문/숫자 혼용 대응)
+function cmpKo(a, b) { return String(a).localeCompare(String(b), 'ko'); }
+
+// 한글 초성표 (가~힣 = 초성 19 × 중성 21 × 종성 28)
+const HANGUL_CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+// 문자열 → 초성만 뽑기. "플랫 벤치프레스" → "ㅍㄹㅂㅊㅍㄹㅅ"
+function toChosung(str) {
+    let out = '';
+    for (const ch of String(str)) {
+        const code = ch.charCodeAt(0);
+        if (code >= 0xAC00 && code <= 0xD7A3) out += HANGUL_CHO[Math.floor((code - 0xAC00) / 588)];
+        else if (/\s/.test(ch)) continue;                 // 공백은 무시
+        else out += ch.toLowerCase();
+    }
+    return out;
+}
+// 각 단어의 첫 글자 초성만. "플랫 벤치프레스" → "ㅍㅂ" (→ "ㅍㅂ" 로 검색 가능)
+function toWordChosung(str) {
+    return String(str).trim().split(/\s+/).filter(Boolean).map(w => toChosung(w.charAt(0))).join('');
+}
+function normalizeSearch(s) { return String(s).toLowerCase().replace(/\s+/g, ''); }
+// 자음만 입력했는가? ("ㅍㅂ" → true / "플랫" → false)
+//   완성된 음절("플")까지 초성 검색에 넣으면 "푸쉬업" 처럼 무관한 항목이 딸려와서 구분한다.
+function isChosungQuery(q) { return /^[ㄱ-ㅎ]+$/.test(String(q).replace(/\s+/g, '')); }
+
+/**
+ * 종목 검색 — 이름 일부만 쳐도(부분일치), 자음만 쳐도(ㅍㅂ → 플랫 벤치프레스) 찾아진다.
+ * 정렬 우선순위: 이름 시작 > 단어 시작 > 부분일치 > 초성일치, 동점이면 가나다.
+ * 예) "플" → 플랫 벤치프레스 / 플랫 덤벨 체스트 프레스 / 인클라인 체스트 플라이 머신
+ *     "ㅍㅂ" → 플랫 벤치프레스
+ */
+function searchExercises(list, query) {
+    const raw = String(query || '').trim();
+    const q = normalizeSearch(raw);
+    if (!q) return list.slice().sort(cmpKo);
+    const chosungMode = isChosungQuery(raw);
+    const qCho = chosungMode ? normalizeSearch(raw) : '';
+    const scored = [];
+    list.forEach(name => {
+        const nName = normalizeSearch(name);
+        let rank = -1;
+        if (!chosungMode) {
+            if (nName.startsWith(q)) rank = 0;                                                    // 이름 시작
+            else if (name.split(/\s+/).some(w => normalizeSearch(w).startsWith(q))) rank = 1;     // 단어 시작
+            else if (nName.includes(q)) rank = 2;                                                 // 부분일치
+        } else {
+            const nWordCho = toWordChosung(name);   // "ㅍㅂ"
+            const nCho = toChosung(name);           // "ㅍㄹㅂㅊㅍㄹㅅ"
+            if (nWordCho.startsWith(qCho)) rank = 0;        // 단어 첫 초성 시작 → "ㅍㅂ" = 플랫 벤치…
+            else if (nCho.startsWith(qCho)) rank = 1;       // 전체 초성 시작
+            else if (nWordCho.includes(qCho)) rank = 2;
+            else if (nCho.includes(qCho)) rank = 3;
+        }
+        if (rank >= 0) scored.push({ name, rank });
+    });
+    return scored.sort((a, b) => a.rank - b.rank || cmpKo(a.name, b.name)).map(x => x.name);
+}
+// [E] edit by smsong
+
 function labelMd(s) { const d = parseDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; }
+
+// [B] edit by smsong — 검색되는 종목 콤보박스
+//   <select> 는 목록이 길어지면 원하는 종목을 찾기 어려워 검색 입력 + 연관 목록으로 대체한다.
+//   value 는 hidden input 에 담아 기존 코드가 .value 로 그대로 읽을 수 있게 유지.
+function comboBoxHtml(id, value, placeholder) {
+    return `<div class="combo" id="${id}Combo">
+        <input type="hidden" id="${id}" value="${esc(value || '')}">
+        <input class="input combo-input" id="${id}Input" type="text" autocomplete="off"
+               placeholder="${esc(placeholder || '종목 검색')}" value="${esc(value || '')}">
+        <button class="combo-caret" id="${id}Caret" type="button" tabindex="-1" aria-label="목록 열기">${icon('chevD')}</button>
+        <div class="combo-list" id="${id}List" role="listbox"></div>
+    </div>`;
+}
+
+/**
+ * 콤보박스 활성화
+ * @param {string} id           comboBoxHtml 에 넘긴 id
+ * @param {function} getList    () => string[]  (호출 시점의 최신 목록)
+ * @param {function} [onSelect] (value) => void
+ */
+function wireCombo(id, getList, onSelect) {
+    const wrap = document.getElementById(id + 'Combo');
+    const hidden = document.getElementById(id);
+    const input = document.getElementById(id + 'Input');
+    const caret = document.getElementById(id + 'Caret');
+    const list = document.getElementById(id + 'List');
+    if (!wrap || !input || !list) return null;
+    let active = -1;
+    let items = [];
+
+    function paint(query) {
+        items = searchExercises(getList(), query);
+        if (!items.length) {
+            list.innerHTML = `<div class="combo-empty">${getList().length ? '검색 결과가 없어요' : '등록된 종목이 없어요'}</div>`;
+        } else {
+            list.innerHTML = items.map((n, i) =>
+                `<button class="combo-opt ${n === hidden.value ? 'sel' : ''} ${i === active ? 'on' : ''}" type="button" data-v="${esc(n)}" role="option">${highlight(n, query)}</button>`
+            ).join('');
+            list.querySelectorAll('.combo-opt').forEach(b => {
+                b.onmousedown = e => e.preventDefault();   // blur 로 목록이 닫히기 전에 선택되도록
+                b.onclick = () => choose(b.dataset.v);
+            });
+        }
+    }
+    // 검색어와 일치하는 부분을 굵게 (자음만 친 경우엔 원문 그대로)
+    function highlight(name, query) {
+        const raw = String(query || '').trim();
+        if (!raw || isChosungQuery(raw)) return esc(name);
+        const i = name.toLowerCase().indexOf(raw.toLowerCase());
+        if (i < 0) return esc(name);
+        return esc(name.slice(0, i)) + '<b>' + esc(name.slice(i, i + raw.length)) + '</b>' + esc(name.slice(i + raw.length));
+    }
+    function openList() { paint(input.value === hidden.value ? '' : input.value); wrap.classList.add('open'); }
+    function closeList() { wrap.classList.remove('open'); active = -1; }
+    function choose(v) {
+        hidden.value = v;
+        input.value = v;
+        closeList();
+        if (onSelect) onSelect(v);
+    }
+    function setValue(v) { hidden.value = v || ''; input.value = v || ''; }
+
+    input.onfocus = openList;
+    input.oninput = () => { active = -1; paint(input.value); wrap.classList.add('open'); };
+    input.onblur = () => setTimeout(() => {
+        closeList();
+        input.value = hidden.value;   // 고르지 않고 나가면 원래 값으로 되돌린다
+    }, 120);
+    caret.onmousedown = e => e.preventDefault();
+    caret.onclick = () => { if (wrap.classList.contains('open')) closeList(); else { input.focus(); openList(); } };
+    input.onkeydown = e => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!wrap.classList.contains('open')) { openList(); return; }
+            active = Math.max(0, Math.min(items.length - 1, active + (e.key === 'ArrowDown' ? 1 : -1)));
+            paint(input.value === hidden.value ? '' : input.value);
+            const on = list.querySelector('.combo-opt.on');
+            if (on) on.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+            if (active >= 0 && items[active]) { e.preventDefault(); choose(items[active]); }
+            else if (items.length === 1) { e.preventDefault(); choose(items[0]); }
+        } else if (e.key === 'Escape') { closeList(); input.blur(); }
+    };
+    return { setValue, refresh: () => paint('') };
+}
+// [E] edit by smsong
 
 // [B] edit by smsong — 변화 탭 기간 탭(1일/1주/1개월/6개월/1년)
 //   모든 그래프(종목 추이/컨디션·시간/체중/칼로리)가 같은 기준으로 필터링된다.
@@ -1889,7 +2035,7 @@ function openWorkoutSheet(initial, onApply) {
         <div class="field">
             <label>운동 종목</label>
             <div class="exercise-picker">
-                <select class="select" id="wExercise">${exOptions(editing ? initial.exercise : '')}</select>
+                <div class="ex-combo-slot">${comboBoxHtml('wExercise', editing ? initial.exercise : '', '종목 검색 (예: 플, ㅍㅂ)')}</div>
                 <button class="ibtn ex-btn toggle" id="wAddEx" type="button" title="종목 추가" aria-label="종목 추가">${icon('plus')}</button>
             </div>
             <div class="ex-new-wrap" id="wNewExWrap">
@@ -1923,10 +2069,8 @@ function openWorkoutSheet(initial, onApply) {
         title: editing ? '운동 수정' : '운동 추가'   // [B][E] edit by smsong : 설명(desc) 제거 → 제목만
     });
 
-    function exOptions(selectedName) {
-        if (!state.exercises.length) return `<option value="" disabled selected>종목을 추가하세요</option>`;
-        return state.exercises.map(e => `<option value="${esc(e)}" ${e === selectedName ? 'selected' : ''}>${esc(e)}</option>`).join('');
-    }
+    // [B][E] edit by smsong : <select> → 검색 콤보박스. 신규 종목 추가 후에도 같은 인스턴스를 재사용.
+    const exCombo = wireCombo('wExercise', () => state.exercises);
 
     // 종목 추가 토글
     const newWrap = document.getElementById('wNewExWrap');
@@ -1946,7 +2090,7 @@ function openWorkoutSheet(initial, onApply) {
         const btn = document.getElementById('wNewExSave'); btn.disabled = true;
         try {
             await addExerciseType(name);
-            document.getElementById('wExercise').innerHTML = exOptions(name);
+            if (exCombo) exCombo.setValue(name);   // [B][E] edit by smsong : 새로 만든 종목을 바로 선택
             document.getElementById('wNewEx').value = '';
             newWrap.classList.remove('open');
             addExBtn.classList.remove('open');
@@ -2762,6 +2906,7 @@ function icon(name) {
         trash: `<svg viewBox="0 0 24 24" ${s}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg>`,
         chevL: `<svg viewBox="0 0 24 24" ${s}><path d="m15 18-6-6 6-6"/></svg>`,
         chevR: `<svg viewBox="0 0 24 24" ${s}><path d="m9 18 6-6-6-6"/></svg>`,
+        chevD: `<svg viewBox="0 0 24 24" ${s}><path d="m6 9 6 6 6-6"/></svg>`,
         user: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>`,
         gear: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/></svg>`,
         dot: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="12" r="3.5"/></svg>`,

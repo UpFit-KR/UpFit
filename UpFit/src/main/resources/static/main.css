@@ -708,6 +708,8 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .exercise-picker { display: flex; gap: 8px; align-items: stretch; }
 .exercise-picker .select,
 .exercise-picker .input { flex: 1 1 auto; min-width: 0; }
+/* [B][E] edit by smsong : 콤보박스가 남는 폭을 채우도록 (드롭다운 기준점 유지) */
+.ex-combo-slot { flex: 1 1 auto; min-width: 0; }
 /* [B][E] edit by smsong : 이름 제거 → 아이콘 전용 정사각형(.ibtn). 두 줄 버튼 폭 동일 유지 */
 .exercise-picker .ex-btn { flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; }
 /* '＋ 종목' 토글이 열린 상태 → '－ 종목' + 빨간 테두리 */
@@ -796,10 +798,54 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .cmp-row .cmp-right { display: flex; align-items: center; gap: 10px; }
 .cmp-row .cmp-v { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 68px; text-align: right; }
 .chart-sub-title { font-size: 13px; font-weight: 800; color: var(--text-dim); margin: 2px 0 10px; }
-/* [B][E] edit by smsong : 변화 탭 상단 기간 탭(1일/1주/1개월/6개월/1년) */
-.period-card { padding: 6px; }
+/* [B] edit by smsong : 변화 탭 상단 기간 탭(1일/1주/1개월/6개월/1년)
+   스크롤해도 항상 보이도록 헤더처럼 상단 고정 → 어디서든 바로 기간을 바꿔 그래프를 확인. */
+.period-sticky {
+    /* sticky 오프셋은 스크롤 컨테이너(.app-main)의 padding 을 기준으로 잡힌다.
+       .app-main 의 padding-top(16px)만큼 음수로 상쇄해야 헤더 바로 아래에 딱 붙는다.
+       (top:0 이면 16px 아래에 걸려 그 틈으로 콘텐츠가 비쳐 보임) */
+    position: sticky; top: -16px; z-index: 30;
+    margin: -16px -16px 16px;          /* .app-main 좌우/상단 패딩을 상쇄 → 가장자리까지 꽉 */
+    padding: 10px 16px;
+    background: var(--header-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line-soft);
+}
 .seg.period-seg { display: flex; width: 100%; }
 .seg.period-seg button { flex: 1; text-align: center; padding: 9px 4px; font-size: 12.5px; }
+
+/* [B] edit by smsong : 검색되는 종목 콤보박스 */
+.combo { position: relative; }
+.combo .combo-input { padding-right: 38px; }
+.combo-caret {
+    position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+    width: 30px; height: 30px; padding: 0; border: 0; background: transparent;
+    color: var(--text-dim); display: flex; align-items: center; justify-content: center;
+    transition: transform .18s;
+}
+.combo-caret svg { width: 16px; height: 16px; }
+.combo.open .combo-caret { transform: translateY(-50%) rotate(180deg); }
+.combo-list {
+    display: none;
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 60;
+    max-height: 230px; overflow-y: auto; overscroll-behavior: contain;
+    background: var(--ink-900); border: 1px solid var(--line);
+    border-radius: 12px; box-shadow: var(--shadow-md);
+    padding: 5px;
+}
+.combo.open .combo-list { display: block; }
+.combo-opt {
+    display: block; width: 100%; text-align: left;
+    padding: 10px 11px; border: 0; border-radius: 8px;
+    background: transparent; color: var(--text);
+    font-size: 14px; font-weight: 600; font-family: var(--font);
+}
+.combo-opt b { color: var(--accent); font-weight: 800; }
+.combo-opt.on, .combo-opt:active { background: var(--ink-750); }
+.combo-opt.sel { color: var(--accent); font-weight: 800; }
+.combo-empty { padding: 16px 11px; text-align: center; font-size: 13px; color: var(--text-mute); }
+/* [E] edit by smsong */
 /* [E] edit by smsong */
 
 /* ============================================================
