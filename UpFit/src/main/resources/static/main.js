@@ -59,8 +59,10 @@ const MEAL_TYPES = [
     { key: 'snack',     label: '간식' }
 ];
 // [B] edit by smsong : 운동 부위 타입(하나의 운동에 여러 개 체크 가능)
-//   표시 순서 = 가슴/등중앙/광배/하체(한 줄), 이두/삼두/복근(한 줄). 4열 그리드로 자연스럽게 4+3 배치.
-const BODY_PARTS = ['가슴', '등중앙', '광배', '하체', '이두', '삼두', '복근'];
+//   표시 순서 = 가슴/등중앙/광배/어깨(한 줄), 하체/이두/삼두/복근(한 줄). 4열 그리드로 4+4 배치.
+//   [B] edit by smsong : '어깨' 종목 추가 (상체 밀기 계열 → 광배 다음, 하체 앞에 배치)
+const BODY_PARTS = ['가슴', '등중앙', '광배', '어깨', '하체', '이두', '삼두', '복근'];
+//   [E] edit by smsong
 // 컨디션 기본값(신규 세션)
 const DEFAULT_CONDITION = 70;
 // [E] edit by smsong
@@ -844,7 +846,7 @@ function workoutListHtml() {
     }).join('');
 }
 
-// 운동 기록(세션) 카드. 탭하면 상세 시트가 아래에서 위로 올라온다.
+// 운동 기록(세션) 카드. 탭하면 상세가 정중앙 모달로 열린다 (전체보기 아이콘으로 확대 가능).
 function sessionCardHtml(s, draggable) {
     const vol = sessionVolume(s);
     const dur = sessionDuration(s);
@@ -1371,14 +1373,20 @@ function createSheet(sheetId, backdropId) {
     let isOpen = false;
     let present = 'center';
     let closeTimer = null;
+    // [B] edit by smsong : 전체보기(화면 꽉 채움) 상태. 정중앙 모달에서만 의미가 있다.
+    let full = false;
+    // [E] edit by smsong
 
     function body() { return sheet.querySelector('.sheet-body'); }
 
     function open(html, opts) {
         opts = opts || {};
-        present = opts.present === 'sheet' ? 'sheet' : 'center';   // 상세=sheet(슬라이드), 생성/수정=center(모달)
+        present = opts.present === 'sheet' ? 'sheet' : 'center';   // 상세 포함 전부 center(정중앙 모달)
+        // [B] edit by smsong : 재렌더(조회↔수정) 시에도 전체보기 상태를 유지하도록 opts.full 로 전달받는다.
+        full = present === 'center' && !!opts.full;
+        // [E] edit by smsong
         clearTimeout(closeTimer);
-        sheet.className = 'sheet' + (lv2 ? ' lv2' : '') + (present === 'sheet' ? ' as-sheet' : ' as-center');
+        sheet.className = 'sheet' + (lv2 ? ' lv2' : '') + (present === 'sheet' ? ' as-sheet' : ' as-center') + (full ? ' as-full' : '');
         sheet.innerHTML = `
             ${present === 'sheet' ? '<div class="sheet-grip-wrap" id="' + sheetId + 'Grip"><div class="sheet-grip"></div></div>' : ''}
             ${(opts.title || opts.desc) ? `<div class="sheet-head">
@@ -1431,10 +1439,18 @@ function createSheet(sheetId, backdropId) {
         });
     }
 
+    // [B] edit by smsong : 전체보기 토글 — 정중앙 모달을 화면 꽉 차게 확대/복귀
+    function setFull(v) {
+        full = present === 'center' && !!v;
+        sheet.classList.toggle('as-full', full);
+    }
+    function isFull() { return full; }
+    // [E] edit by smsong
+
     backdrop.onclick = close;
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen) close(); });
 
-    return { open, close, isOpen: () => isOpen };
+    return { open, close, isOpen: () => isOpen, setFull, isFull };
 }
 // [E] edit by smsong
 
@@ -1443,6 +1459,9 @@ const Sheet2 = createSheet('sheet2', 'sheetBackdrop2');  // 운동 입력 전용
 
 function openSheet(html, opts) { Sheet1.open(html, opts); }
 function closeSheet() { Sheet1.close(); }
+// [B] edit by smsong : 1차 모달 전체보기 토글 헬퍼
+function setSheetFull(v) { Sheet1.setFull(v); }
+// [E] edit by smsong
 // [E] edit by smsong
 
 // ============================================================
@@ -1467,6 +1486,10 @@ function openSessionEditor(sessionId, date, mode) {
         condition: DEFAULT_CONDITION, bodyParts: [], memo: ''
     };
 
+    // [B] edit by smsong : 전체보기 상태. 조회↔수정 전환(재렌더) 사이에도 유지된다.
+    let fullView = false;
+    // [E] edit by smsong
+
     renderMode();
 
     function sess() { return sid ? sessionById(sid) : null; }
@@ -1485,13 +1508,20 @@ function openSessionEditor(sessionId, date, mode) {
         const c = s.condition;
         const timeStr = fmtTimeRange(s);
         openSheet(`
+            <!-- [B] edit by smsong : 상세는 정중앙 모달 유지 + 작은 전체보기 아이콘(⤢)으로 화면 꽉 채우기.
+                 전체보기 중에는 배경(backdrop)이 가려지므로 닫기(✕)를 항상 노출한다. -->
             <div class="se-toolbar">
                 <div class="se-tb-left">
                     <button class="btn sm" id="seEdit">${icon('pencil')} 수정</button>
                     <button class="btn sm danger" id="seDel">${icon('trash')} 삭제</button>
                 </div>
-                <button class="btn sm grad" id="seAddW" type="button">${icon('plus')} 운동 추가</button>
+                <div class="se-tb-right">
+                    <button class="btn sm grad" id="seAddW" type="button">${icon('plus')} 운동 추가</button>
+                    <button class="btn sm icon" id="seFull" type="button" title="전체보기" aria-label="전체보기">${icon(fullView ? 'collapse' : 'expand')}</button>
+                    <button class="btn sm icon" id="seClose" type="button" title="닫기" aria-label="닫기">${icon('x')}</button>
+                </div>
             </div>
+            <!-- [E] edit by smsong -->
 
             <div class="se-meta">
                 <span class="se-meta-date">${fmtKorean(s.date)}</span>
@@ -1506,7 +1536,18 @@ function openSessionEditor(sessionId, date, mode) {
                 <span class="se-head-sum tabnum" id="seVol"></span>
             </div>
             <div class="reorder-list se-list" id="seList"></div>
-        `, { present: 'sheet' });
+        `, { full: fullView });   // [B][E] edit by smsong : 슬라이드 시트(present:'sheet') → 정중앙 모달 + 전체보기 상태 유지
+
+        // [B] edit by smsong : 전체보기 토글 / 닫기
+        const fullBtn = document.getElementById('seFull');
+        fullBtn.onclick = () => {
+            fullView = !fullView;
+            setSheetFull(fullView);
+            fullBtn.innerHTML = icon(fullView ? 'collapse' : 'expand');
+            fullBtn.title = fullBtn.ariaLabel = fullView ? '작게 보기' : '전체보기';
+        };
+        document.getElementById('seClose').onclick = closeSheet;
+        // [E] edit by smsong
 
         document.getElementById('seEdit').onclick = () => { curMode = 'edit'; renderMode(); };
         document.getElementById('seDel').onclick = async () => {
@@ -1571,7 +1612,7 @@ function openSessionEditor(sessionId, date, mode) {
                 <button class="btn grad block" id="seSave">${curMode === 'new' ? '운동 기록 만들기' : '변경사항 저장'}</button>
                 ${curMode === 'edit' ? `<button class="btn block" id="seCancel" style="margin-top:8px">취소</button>` : ''}
             </div>
-        `);
+        `, { full: fullView });   // [B][E] edit by smsong : 조회에서 켠 전체보기를 수정 폼에서도 유지
 
         // 컨디션 슬라이더
         const condEl = document.getElementById('seCond');
@@ -2014,7 +2055,12 @@ function icon(name) {
         grip: `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>`,
         check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 6.5"/></svg>`,
         clock: `<svg viewBox="0 0 24 24" ${s}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>`,
-        pencil: `<svg viewBox="0 0 24 24" ${s}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`
+        pencil: `<svg viewBox="0 0 24 24" ${s}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`,
+        // [E] edit by smsong
+        // [B] edit by smsong : 전체보기(확대) / 작게 보기(축소) / 닫기
+        expand: `<svg viewBox="0 0 24 24" ${s}><path d="M9 3H3v6"/><path d="M3 3l7 7"/><path d="M15 21h6v-6"/><path d="M21 21l-7-7"/></svg>`,
+        collapse: `<svg viewBox="0 0 24 24" ${s}><path d="M3 10h6V4"/><path d="M10 10 3 3"/><path d="M21 14h-6v6"/><path d="m14 14 7 7"/></svg>`,
+        x: `<svg viewBox="0 0 24 24" ${s}><path d="M6 6l12 12M18 6 6 18"/></svg>`
         // [E] edit by smsong
     };
     return map[name] || '';

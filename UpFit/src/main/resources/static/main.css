@@ -160,6 +160,26 @@ body {
     transition: background-color 0.25s, color 0.25s;
 }
 /* [E] edit by smsong */
+
+/* [B] edit by smsong : 하단 흰 여백(홈 인디케이터 영역) 제거
+   body 배경만으로는 body 박스(100%) 바깥의 하단 세이프에어리어가 비어 흰 띠가 보인다.
+   → 배경(단색+글로우)을 루트(html)로 올려 "캔버스"에 전파시키면 화면 끝까지 채워진다.
+     body 는 배경을 비우고, 여백은 헤더의 상단 세이프에어리어 패딩이 담당한다. */
+html {
+    min-height: 100%;
+    background-image: radial-gradient(130% 60% at 50% -5%, var(--body-glow), transparent 55%);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-position: top center;
+    background-size: 100% 100%;
+    transition: background-color 0.25s;
+}
+body {
+    min-height: 100dvh;
+    background-image: none;
+    background-color: transparent;
+}
+/* [E] edit by smsong */
 button { font-family: var(--font); cursor: pointer; }
 .tabnum { font-variant-numeric: tabular-nums; }
 
@@ -359,11 +379,18 @@ button { font-family: var(--font); cursor: pointer; }
    · 오늘      = 파란 라운드 테두리
    · 선택한 날 = 연한 그린 라운드 채움
    · 운동한 날 = 초록 라운드 테두리 (점 없이 테두리만) */
+/* [B] edit by smsong : 날짜가 서로 띄어져 보이던 문제 개선.
+   · 원인 1 — 그리드 gap(2px) + 셀 전체를 감싸는 라운드 테두리 → 칸이 분리돼 보임
+   · 원인 2 — 그리드가 카드 폭(최대 480px)을 꽉 채워 숫자 사이가 벌어짐
+   → gap 을 0 으로, 그리드 폭을 날짜 크기에 맞게 제한(가운데 정렬)하고
+     강조(오늘/선택/운동한 날)는 셀이 아니라 "숫자를 감싸는 원형 배지"로 표시한다. */
 .cal-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 2px;
+    gap: 0;
     width: 100%;
+    max-width: 336px;      /* 7칸 × 48px → 날짜가 붙어서 보임 */
+    margin: 0 auto;
 }
 .cal-dow {
     text-align: center; font-size: 11px; font-weight: 700; color: var(--text-mute);
@@ -372,22 +399,27 @@ button { font-family: var(--font); cursor: pointer; }
 .cal-dow.sun { color: var(--up); }
 .cal-dow.sat { color: var(--down); }
 .cal-cell {
-    aspect-ratio: 1 / 0.86;
-    background: transparent; border: 2px solid transparent; border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
+    aspect-ratio: 1 / 1;
+    background: transparent; border: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
     position: relative; font-variant-numeric: tabular-nums;
     min-width: 0;
 }
 .cal-cell.empty { background: transparent; border: 0; }
-.cal-cell .dnum { font-size: 15px; font-weight: 800; color: var(--text-dim); letter-spacing: -0.2px; }
-.cal-cell.today { border-color: var(--accent); }                        /* 오늘 = 파란 라운드 테두리 */
-.cal-cell.today .dnum { color: var(--accent); }
-.cal-cell.selected { background: var(--grad-soft); }                    /* 선택 = 연한 그린 라운드 채움 */
-.cal-cell.has { border-color: var(--accent-2); }                        /* 운동한 날 = 초록 라운드 테두리 */
-.cal-cell.has .dnum { color: var(--accent-2); }
+/* 숫자 = 원형 배지. 셀 사이에 틈이 없어도 배지끼리는 서로 닿지 않는다. */
+.cal-cell .dnum {
+    width: 32px; height: 32px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid transparent; border-radius: 50%;
+    font-size: 14px; font-weight: 800; color: var(--text-dim); letter-spacing: -0.2px;
+}
+.cal-cell.today .dnum { border-color: var(--accent); color: var(--accent); }      /* 오늘 = 파란 원 테두리 */
+.cal-cell.selected .dnum { background: var(--grad-soft); }                        /* 선택 = 연한 그린 원 채움 */
+.cal-cell.has .dnum { border-color: var(--accent-2); color: var(--accent-2); }    /* 운동한 날 = 초록 원 테두리 */
+.cal-cell.today.has .dnum { border-color: var(--accent-2); color: var(--accent-2); }
 /* [E] edit by smsong */
 .cal-cell .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--grad); }
-.cal-cell .kcal-tag { font-size: 9px; font-weight: 700; color: var(--accent-2); }
+.cal-cell .kcal-tag { font-size: 9px; font-weight: 700; color: var(--accent-2); line-height: 1; }
 
 .cal-day-detail { margin-top: 16px; }
 
@@ -502,6 +534,20 @@ button { font-family: var(--font); cursor: pointer; }
     transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32,0.72,0,1);
 }
 .sheet.as-center.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+
+/* [B] edit by smsong : 전체보기 — 정중앙 모달을 화면 꽉 차게 확대.
+   상단은 세이프에어리어만큼 띄우고 하단은 화면 끝까지 채운다. */
+.sheet.as-center.as-full {
+    left: 0; top: 0;
+    transform: scale(0.98);
+    width: 100%; max-width: none;
+    height: 100vh; height: 100dvh; max-height: none;
+    border: 0; border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+}
+.sheet.as-center.as-full.open { transform: scale(1); }
+.sheet.as-center.as-full .sheet-body { padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+/* [E] edit by smsong */
 /* 상세보기 = 아래에서 위로 올라오는 슬라이드 시트 */
 .sheet.as-sheet {
     left: 50%; bottom: 0;
@@ -853,8 +899,17 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .se-toolbar {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
 }
 .se-tb-left { display: flex; gap: 8px; }
+/* [B] edit by smsong : 우측 그룹 = [운동 추가][전체보기 ⤢][닫기 ✕] */
+.se-tb-right { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.btn.sm.icon {
+    width: 32px; height: 32px; padding: 0; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.btn.sm.icon svg { width: 16px; height: 16px; }
+/* [E] edit by smsong */
 .se-toolbar .btn { display: inline-flex; align-items: center; gap: 5px; }
 .se-toolbar .btn svg { width: 15px; height: 15px; }
 
@@ -878,9 +933,10 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 }
 .se-head-sum { font-size: 12px; color: var(--text-mute); font-weight: 700; }
 
-/* 운동 부위: 가슴/등중앙/광배/하체 한 줄, 이두/삼두/복근 한 줄 (4열 그리드 → 4+3) */
+/* [B] edit by smsong : 부위에 '어깨' 추가 → 가슴/등중앙/광배/어깨 한 줄, 하체/이두/삼두/복근 한 줄 (4열 → 4+4) */
 .chip-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.chip-grid .chip { width: 100%; text-align: center; padding: 9px 6px; }
+.chip-grid .chip { width: 100%; text-align: center; padding: 9px 6px; font-size: 12.5px; }
+/* [E] edit by smsong */
 
 /* 상세 상단 간단 정보(날짜·시간·컨디션·부위·메모) — 툴바 바로 아래 */
 .se-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 8px; }

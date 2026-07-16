@@ -59,16 +59,29 @@
         }
         /* [E] edit by smsong */
 
-        /* Daylog 방식: 배경을 고정된 풀스크린(html+body)에 직접 → 세이프에어리어까지 빈틈없이 채워 하단 띠 제거 */
-        html, body {
+        /* [B] edit by smsong : 하단 흰 여백(홈 인디케이터 영역) 제거
+           원인 — 루트(html)에 position:fixed 를 주면 루트 배경이 "캔버스"로 전파되지 않아
+                  하단 세이프에어리어가 브라우저 기본색(흰색)으로 남는다.
+           해결 — html 은 고정하지 않고 배경만 담당(→ 캔버스 전파, 화면 끝까지 채움).
+                  스크롤 잠금은 body 에만. 여백은 상단(status bar)으로 이동. */
+        html {
+            height: 100%;
+            background: var(--page-bg);
+            background-attachment: fixed;
+            background-repeat: no-repeat;
+            overflow: hidden;
+        }
+        body {
             height: 100%;
             font-family: var(--font);
             position: fixed; inset: 0; width: 100%;
             overflow: hidden;
             overscroll-behavior: none;
             touch-action: none;
-            background: var(--page-bg);
+            background: transparent;
+            padding-top: env(safe-area-inset-top);   /* 하단은 꽉 채우고 여백은 위로 */
         }
+        /* [E] edit by smsong */
 
         .intro {
             height: 100%;
