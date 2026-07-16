@@ -2859,18 +2859,71 @@ const TAB_KEY = 'UF_TAB';
 //   · 이전 탭 → 새 탭으로 빛나는 코멧(streak)이 네비 위를 가로질러 날아가 어디로 왔는지 각인시킨다.
 const TAB_ORDER = ['workout', 'diet', 'home', 'change', 'profile'];   // 네비의 실제 좌→우 배치
 let curTab = null;
-// [B] edit by smsong : 코멧 궤적 전면 재작성 — "요리조리 곡예를 그리며" 날아가게.
-//   기존은 x 는 등속 + y 만 sin 물결이라 결국 직선 위에서 흔들리는 느낌이었다.
-//   변경 — 3차 베지어 곡선을 실제로 따라간다.
-//     · 출발점에서 네비 위로 크게 솟아올랐다가(제어점 1) 도착 직전에 아래로 파고들어(제어점 2)
-//       탭에 내려앉는 포물선. 거리에 비례해 호(arc)의 높이가 커진다.
-//     · 여기에 작은 sin 물결을 얹어 굽이를 하나 더 준다.
-//     · 회전은 "곡선의 접선 방향"으로 계산 → 코멧 꼬리가 진행 방향을 정확히 따라간다.
-//     · 도착하면 그 탭에서 링이 퍼지며(.nav-splash) 마무리.
+// [B] edit by smsong : 코멧 궤적을 "매번 다르게" — 곡선 하나로 정해두지 않고 그때그때 새로 만든다.
+//   구성 = ① 랜덤 베지어(뼈대) + ② 랜덤 물결 + ③ 확률적 회전 루프(원 그리기)
+//     ① 두 제어점의 높이를 각각 위/아래로 무작위 배정 → 포물선·S자·급강하·물수제비가 섞여 나온다.
+//     ② 굽이 수(1~3)와 진폭·위상을 무작위로 얹어 같은 뼈대라도 결이 달라진다.
+//     ③ 50% 확률로 경로 중간에서 360°(가끔 720°) 원을 그리며 한 바퀴 돈다.
+//        창(window)을 sin² 으로 부드럽게 열고 닫아, 루프 진입/이탈이 튀지 않는다.
+//   회전은 항상 "직전 프레임과의 이동 방향(접선)"으로 계산 → 꼬리가 실제 진행 방향을 따라간다.
 function bez(p0, p1, p2, p3, t) {          // 3차 베지어 위의 점
     const u = 1 - t;
     return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
 }
+function rnd(a, b) { return a + Math.random() * (b - a); }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+/**
+ * 이번 비행의 궤적 함수를 만들어 돌려준다.
+ * @returns {function(number): {x:number, y:number}}  t(0~1) → 좌표
+ */
+function makeCometPath(x0, y0, x1, y1) {
+    const dist = Math.abs(x1 - x0) || 1;
+    const span = Math.max(30, Math.min(80, dist * 0.6));   // 이번 비행의 "요동 스케일"
+
+    // ① 뼈대 — 제어점 높이를 무작위로. 음수 = 위로 솟음, 양수 = 아래로 처짐.
+    //    두 값의 부호가 엇갈리면 S자, 같으면 포물선이 된다.
+    const lift = [-1.15, -0.85, -0.5, 0.45];
+    const s1 = pick(lift), s2 = pick(lift);
+    const c1x = x0 + (x1 - x0) * rnd(0.12, 0.38);
+    const c2x = x0 + (x1 - x0) * rnd(0.62, 0.9);
+    const c1y = y0 + span * s1;
+    const c2y = y1 + span * s2 * rnd(0.4, 1);
+
+    // ② 물결 — 굽이 수/진폭/위상 모두 무작위
+    const waves = pick([1, 1.5, 2, 3]);
+    const amp = rnd(4, 11);
+    const phase = rnd(0, Math.PI * 2);
+
+    // ③ 루프 — 절반의 확률로 한 바퀴(가끔 두 바퀴) 돈다
+    const hasLoop = Math.random() < 0.5;
+    const loopAt = rnd(0.34, 0.62);          // 루프 중심 위치
+    const loopW = rnd(0.2, 0.3);             // 루프가 차지하는 구간 폭
+    const loopR = rnd(13, 26);               // 반지름
+    const turns = Math.random() < 0.22 ? 2 : 1;
+    const spin = Math.random() < 0.5 ? 1 : -1;
+
+    return function (t) {
+        let x = bez(x0, c1x, c2x, x1, t);
+        let y = bez(y0, c1y, c2y, y1, t);
+        // 물결 — 양 끝에서 0 이 되도록 창을 씌운다.
+        //   (안 그러면 t=0/1 에서 물결값이 남아 출발/착지 지점이 탭 중심에서 어긋난다)
+        y += Math.sin(t * Math.PI * waves + phase) * amp * Math.sin(t * Math.PI);
+
+        if (hasLoop) {
+            const d = (t - loopAt) / loopW;              // -1 ~ 1 구간이 루프
+            if (d > -1 && d < 1) {
+                const k = (d + 1) / 2;                   // 0 → 1
+                const win = Math.pow(Math.sin(k * Math.PI), 2);   // 가장자리 0, 가운데 1
+                const a = k * Math.PI * 2 * turns * spin;
+                x += Math.sin(a) * loopR * win;
+                y += (Math.cos(a) - 1) * loopR * win;    // 시작/끝에서 원점으로 수렴
+            }
+        }
+        return { x: x, y: y };
+    };
+}
+
 function navComet(fromTab, toTab) {
     const nav = document.querySelector('.bottom-nav');
     if (!nav) return;
@@ -2886,39 +2939,30 @@ function navComet(fromTab, toTab) {
     const y0 = ar.top + ar.height * 0.42 - nr.top;
     const y1 = br.top + br.height * 0.42 - nr.top;
 
-    const dist = Math.abs(x1 - x0);
-    const dir = x1 >= x0 ? 1 : -1;
-    const arc = Math.max(26, Math.min(64, dist * 0.55));   // 솟아오르는 높이 (거리에 비례)
-
-    // 제어점 — 초반엔 위로 크게, 후반엔 아래로 파고들었다가 착지
-    const c1x = x0 + (x1 - x0) * 0.22, c1y = y0 - arc;
-    const c2x = x0 + (x1 - x0) * 0.72, c2y = y1 - arc * 0.18;
-
     const c = document.createElement('span');
     c.className = 'nav-comet';
     nav.appendChild(c);
 
-    const steps = 24;
+    const path = makeCometPath(x0, y0, x1, y1);
+    const steps = 40;                       // 루프까지 매끄럽게 그리려면 촘촘히 샘플링
+    const dur = Math.round(rnd(560, 780));  // 비행 시간도 매번 조금씩 다르게
     const frames = [];
     let px = x0, py = y0;
     for (let i = 0; i <= steps; i++) {
         const t = i / steps;
-        // 베지어 위치 + 잔물결(도착에 가까울수록 잦아듦)
-        const wob = Math.sin(t * Math.PI * 2) * 6 * (1 - t);
-        const x = bez(x0, c1x, c2x, x1, t);
-        const y = bez(y0, c1y, c2y, y1, t) + wob;
+        const p = path(t);
         // 접선 방향 = 직전 프레임과의 차이 → 꼬리가 진행 방향을 향한다
-        const rot = i === 0 ? dir * -35 : Math.atan2(y - py, x - px) * 180 / Math.PI;
+        const rot = i === 0 ? 0 : Math.atan2(p.y - py, p.x - px) * 180 / Math.PI;
         const sc = 0.7 + Math.sin(t * Math.PI) * 0.5;      // 가운데서 가장 커졌다 작아짐
-        px = x; py = y;
+        px = p.x; py = p.y;
         frames.push({
-            transform: `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) rotate(${rot.toFixed(1)}deg) scale(${sc.toFixed(3)})`,
-            opacity: t === 0 ? 0 : t < 0.12 ? 0.9 : t > 0.9 ? 0 : 1,
+            transform: `translate(${p.x.toFixed(2)}px, ${p.y.toFixed(2)}px) rotate(${rot.toFixed(1)}deg) scale(${sc.toFixed(3)})`,
+            opacity: t === 0 ? 0 : t < 0.1 ? 0.9 : t > 0.9 ? 0 : 1,
             offset: t
         });
     }
     if (typeof c.animate === 'function') {
-        c.animate(frames, { duration: 620, easing: 'cubic-bezier(.35,.02,.2,1)', fill: 'both' });
+        c.animate(frames, { duration: dur, easing: 'cubic-bezier(.35,.02,.2,1)', fill: 'both' });
         // 착지 링
         const sp = document.createElement('span');
         sp.className = 'nav-splash';
@@ -2926,12 +2970,12 @@ function navComet(fromTab, toTab) {
         setTimeout(() => {
             nav.appendChild(sp);
             setTimeout(() => sp.remove(), 520);
-        }, 500);
+        }, dur - 120);
     } else {   // WAAPI 미지원 폴백 — 그냥 직선 이동
         c.style.transform = `translate(${x0}px, ${y0}px)`;
         requestAnimationFrame(() => { c.classList.add('fly'); c.style.transform = `translate(${x1}px, ${y1}px)`; c.style.opacity = '0'; });
     }
-    setTimeout(() => c.remove(), 680);
+    setTimeout(() => c.remove(), dur + 80);
 }
 // [E] edit by smsong
 function activateTab(tab, remember) {
