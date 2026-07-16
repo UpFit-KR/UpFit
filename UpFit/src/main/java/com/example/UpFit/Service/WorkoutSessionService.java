@@ -309,6 +309,8 @@ public class WorkoutSessionService {
         e.setSessionId(sessionId);      // 소속 세션 강제 지정
         e.setExercise(exercise);
         e.setBodyweight(bw);
+        // [B][E] edit by smsong : 보조 여부. null 이 오면 false 로 굳혀 저장한다(조회 시 분기 불필요)
+        e.setAssisted(Boolean.TRUE.equals(d.getAssisted()));
         e.setWeight(bw ? 0 : Math.max(0, d.getWeight()));
         e.setReps(d.getReps());
         e.setSets(d.getSets());

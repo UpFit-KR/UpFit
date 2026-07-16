@@ -203,11 +203,12 @@ async function apiUserUpdate(userDto) {
 function partsToArr(s) { return (s ? String(s).split(',') : []).map(x => x.trim()).filter(Boolean); }
 
 // [B] edit by smsong : 운동 부위(bodyParts)는 운동이 아니라 운동 기록(세션)이 보유한다.
+//   [B][E] edit by smsong : 보조(assisted) 추가 — 파트너가 밀어준 세트인지. 서버는 null 을 false 로 굳혀 준다.
 function fromWorkoutDTO(d) {
     return {
         id: d.id, sessionId: d.sessionId,
         exercise: d.exercise, weight: d.weight, reps: d.reps, sets: d.sets,
-        memo: d.memo || '', bodyweight: !!d.bodyweight,
+        memo: d.memo || '', bodyweight: !!d.bodyweight, assisted: !!d.assisted,
         sortOrder: d.sortOrder == null ? null : d.sortOrder
     };
 }
@@ -215,7 +216,7 @@ function toWorkoutDTO(w) {
     return {
         id: (w.id == null ? null : w.id),     // id 유지 → 서버가 수정/신규를 구분
         exercise: w.exercise, weight: w.weight, reps: w.reps, sets: w.sets,
-        memo: w.memo || '', bodyweight: !!w.bodyweight
+        memo: w.memo || '', bodyweight: !!w.bodyweight, assisted: !!w.assisted
     };
 }
 // [E] edit by smsong
@@ -342,7 +343,10 @@ const ui = {
     dietSel: todayStr(),
     changeExercise: null,
     changePeriod: '1m',  // [B][E] edit by smsong : 변화 탭 그래프 기간(1d/1w/1m/6m/1y)
-    changeGrowthCmpId: null   // [B][E] edit by smsong : 종목별 성장 분석에서 최근 세션과 비교할 "이전 세션"의 id (null=직전 자동)
+    changeGrowthCmpId: null,  // [B][E] edit by smsong : 종목별 성장 분석에서 최근 세션과 비교할 "이전 세션"의 id (null=직전 자동)
+    // [B][E] edit by smsong : 종목별 성장 분석 — 보조(파트너 스팟) 세트 포함 여부.
+    //   요구사항상 디폴트는 "체크 해제 = 보조 미포함" → 혼자 든 기록만 그린다.
+    changeAssist: false
 };
 function firstOfThisMonth() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; }
 
@@ -583,10 +587,20 @@ function exerciseIsBodyweight(exercise) {
 }
 // [E] edit by smsong
 
-function exerciseSessionStats(exercise) {
+/**
+ * 종목별 세션 상세 집계
+ * [B] edit by smsong : 보조(assisted) 필터 추가.
+ *   includeAssisted 를 false 로 주면 파트너가 밀어준 세트를 빼고 집계한다
+ *   → "혼자 든 기록"만의 성장 곡선을 볼 수 있다.
+ *   그 결과 해당 종목의 세트가 하나도 남지 않는 세션은 목록에서 통째로 빠진다.
+ * @param {string}  exercise
+ * @param {boolean} [includeAssisted=true]  기본값은 기존 동작(전부 포함) 유지
+ */
+function exerciseSessionStats(exercise, includeAssisted) {
+    const withAssist = includeAssisted !== false;
     const out = [];
     orderedSessions().forEach(s => {
-        const ws = (s.workouts || []).filter(w => w.exercise === exercise);
+        const ws = (s.workouts || []).filter(w => w.exercise === exercise && (withAssist || !w.assisted));
         if (!ws.length) return;
         let top = 0, reps = 0, sets = 0, vol = 0;
         ws.forEach(w => {
@@ -599,6 +613,7 @@ function exerciseSessionStats(exercise) {
     });
     return out;
 }
+// [E] edit by smsong
 // 특정 종목 · 특정 세션의 "직전 세션" 볼륨 (없으면 null)
 function prevExerciseVolume(exercise, sessionId) {
     const st = exerciseSessionStats(exercise);
@@ -714,8 +729,9 @@ function renderHome() {
         <div class="card">`;
 
     if (rows.length) {
+        // [B][E] edit by smsong : 종목을 누르면 최근 기록 ↔ 직전 기록의 값을 한눈에 비교하는 폼이 열린다
         html += rows.map(r => `
-            <div class="watch-row">
+            <div class="watch-row tap" data-cmp-ex="${esc(r.ex)}">
                 <div class="wr-mid">
                     <div class="wr-name">${esc(r.ex)}</div>
                     <div class="wr-sub">최근 ${fmtKorean(r.date)}</div>
@@ -724,6 +740,7 @@ function renderHome() {
                     <div class="v tabnum">${r.volume}<span class="u"> kg</span></div>
                     <div style="margin-top:4px">${deltaChip(r.volume, r.prev, 'kg')}</div>
                 </div>
+                <span class="wr-chev">${icon('chevR')}</span>
             </div>`).join('');
     } else {
         html += emptyBlock('dumbbell', '아직 운동 기록이 없어요', '운동 탭에서 첫 기록을 남겨보세요');
@@ -752,6 +769,16 @@ function renderHome() {
     html += `</div></div>`;
 
     document.getElementById('view-home').innerHTML = html;
+
+    // [B] edit by smsong : 최근 성장 → 종목 탭 시 "최근 vs 직전" 비교 폼
+    //   홈은 보조 필터를 두지 않으므로 기록 전체(보조 포함)를 기준으로 비교한다.
+    document.querySelectorAll('#view-home .watch-row.tap').forEach(el => el.onclick = () => {
+        const ex = el.dataset.cmpEx;
+        const ss = exerciseSessionStats(ex);
+        if (!ss.length) return;
+        openCompareSheet(ex, ss.length > 1 ? ss[ss.length - 2] : null, ss[ss.length - 1], { includeAssisted: true });
+    });
+    // [E] edit by smsong
 }
 
 // ---------- 운동 ----------
@@ -981,8 +1008,11 @@ function workoutRowHtml(w, sessionId) {
     const vol = volumeOf(w);
     const prev = prevExerciseVolume(w.exercise, sessionId);
     const weightTxt = w.bodyweight ? '맨몸' : `${w.weight}kg`;
-    // 부위 태그는 세션 카드/세션 폼에만 표시 → 운동 행에는 맨몸 표시만 남긴다
-    const tags = w.bodyweight ? [`<span class="bw">맨몸</span>`] : [];
+    // 부위 태그는 세션 카드/세션 폼에만 표시 → 운동 행에는 맨몸/보조 표시만 남긴다
+    const tags = [];
+    if (w.bodyweight) tags.push(`<span class="bw">맨몸</span>`);
+    // [B][E] edit by smsong : 보조 받은 세트는 한눈에 구분되도록 별도 태그
+    if (w.assisted) tags.push(`<span class="as">보조</span>`);
     return `
     <div class="rec" data-reorder-id="${w.id}">
         <div class="drag-handle" title="드래그하여 순서 변경">${icon('grip')}</div>
@@ -1080,7 +1110,8 @@ function renderChange() {
     // [E] edit by smsong
 
     // 종목 셀렉트 (볼륨 추이)
-    const exsWithData = state.exercises.filter(ex => exerciseSessionStats(ex).length);
+    // [B][E] edit by smsong : 보조 제외 상태에서 남는 기록이 없는 종목은 목록에서도 빠져야 그래프가 비지 않는다
+    const exsWithData = state.exercises.filter(ex => exerciseSessionStats(ex, ui.changeAssist).length);
     if (!ui.changeExercise || !exsWithData.includes(ui.changeExercise)) ui.changeExercise = exsWithData[0] || null;
 
     let html = '';
@@ -1098,12 +1129,24 @@ function renderChange() {
     html += `<div class="section">
         <div class="section-head"><h2>종목별 성장 분석</h2></div>
         <div class="card">`;
+
+    // [B] edit by smsong : 보조(파트너 스팟) 세트 포함 여부 토글.
+    //   디폴트는 해제 = 보조 미포함(혼자 든 기록만). 체크하면 보조 세트까지 합쳐 다시 그린다.
+    //   비교 카드·그래프·종목 목록이 모두 이 값을 함께 따른다.
+    html += `<label class="check-row growth-assist">
+        <input type="checkbox" id="growthAssist" ${ui.changeAssist ? 'checked' : ''}>
+        <span class="box">${icon('check')}</span>
+        <span>보조 보기 <span class="lbl-sub">${ui.changeAssist ? '보조 받은 세트까지 포함' : '혼자 든 세트만'}</span></span>
+    </label>`;
+    // [E] edit by smsong
+
     if (exsWithData.length) {
         // [B] edit by smsong : 종목 선택 콤보박스는 기간 탭과 함께 상단(period-sticky)으로 이동했다.
         // [E] edit by smsong
 
         // [B][E] edit by smsong : 기간으로 필터링 (그래프에 반영. 최신값 비교 카드는 전체 최신 기준 유지)
-        const statsAll = exerciseSessionStats(ui.changeExercise);
+        //   두 번째 인자 = 보조 포함 여부
+        const statsAll = exerciseSessionStats(ui.changeExercise, ui.changeAssist);
         const stats = filterByPeriod(statsAll, s => s.date, ui.changePeriod);
         // [B][E] edit by smsong : "1일" 기간에서는 묶지 않고 그날의 기록을 그대로 → 라벨은 시각으로
         const exRawLabel = s => s.startTime || labelMd(s.date);
@@ -1131,7 +1174,15 @@ function renderChange() {
             //   cands 는 최신순이므로 앞에서 5개를 뽑은 뒤 뒤집어야 제일 최근 기록이 오른쪽 끝에 온다.
             //   (시간이 왼→오로 흐르는 그래프의 x축 방향과 일치)
             const quick = cands.slice(0, 5).reverse();
-            html += `<div class="growth-cmp-cap">최근 기록과 비교할 날짜</div>`;
+            // [B] edit by smsong : 캡션 줄 오른쪽에 "그 날짜 운동 상세보기" 버튼(아이콘 전용).
+            //   날짜 탭을 고르면 대상이 함께 바뀐다 → 고른 날의 운동 기록을 바로 열어 확인할 수 있다.
+            //   프로젝트 공통 아이콘 버튼(.ibtn.sm)을 그대로 쓴다.
+            html += `<div class="growth-cmp-head">
+                <span class="growth-cmp-cap">최근 기록과 비교할 날짜</span>
+                <button class="ibtn sm" id="growthCmpOpen" type="button"
+                        title="선택한 날짜의 운동 상세보기" aria-label="선택한 날짜의 운동 상세보기">${icon('eye')}</button>
+            </div>`;
+            // [E] edit by smsong
             html += `<div class="seg growth-cmp-seg" id="growthCmpTabs">${
                 quick.map(c => `<button data-id="${c.id}" class="${String(c.id) === String(ui.changeGrowthCmpId) ? 'active' : ''}" type="button">${cmpTabLabel(c)}</button>`).join('')
             }</div>`;
@@ -1148,10 +1199,11 @@ function renderChange() {
 
         html += `<div class="cmp-meta">최근 ${fmtKorean(last.date)}${last.startTime ? ' ' + last.startTime : ''}${prev ? ` · ${fmtKorean(prev.date)}${prev.startTime ? ' ' + prev.startTime : ''} 대비` : ' · 첫 기록'}${isBw ? ' · 맨몸' : ''}</div>`;
         // [B] edit by smsong : 맨몸 종목은 무게/볼륨이 항상 0 → 횟수·세트만 비교/추이로 보여준다
+        // [B][E] edit by smsong : 각 지표 행을 누르면 두 기록의 운동 리스트를 나란히 비교하는 폼이 열린다(data-cmp-k)
         if (isBw) {
             html += `<div class="cmp-list">
-                <div class="cmp-row"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}</div></div>
-                <div class="cmp-row"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}</div></div>
+                <div class="cmp-row tap" data-cmp-k="totalReps"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
+                <div class="cmp-row tap" data-cmp-k="totalSets"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
             </div>`;
             // [B][E] edit by smsong : 기간 단위(일/주/월)로 묶어서 그린다. 횟수·세트는 구간 합계.
             html += `<div class="chart-sub-title" style="margin-top:18px">총 횟수 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
@@ -1161,10 +1213,10 @@ function renderChange() {
             html += chartLegend([[C_WEIGHT, '총 횟수 (회)'], [C_VOL, '총 세트']]);
         } else {
             html += `<div class="cmp-list">
-                <div class="cmp-row"><span class="cmp-k">최고 무게</span><div class="cmp-right"><span class="cmp-v tabnum">${last.topWeight}kg</span>${deltaChip(last.topWeight, prev ? prev.topWeight : null, 'kg')}</div></div>
-                <div class="cmp-row"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}</div></div>
-                <div class="cmp-row"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}</div></div>
-                <div class="cmp-row"><span class="cmp-k">총 볼륨</span><div class="cmp-right"><span class="cmp-v tabnum">${last.volume}kg</span>${deltaChip(last.volume, prev ? prev.volume : null, 'kg')}</div></div>
+                <div class="cmp-row tap" data-cmp-k="topWeight"><span class="cmp-k">최고 무게</span><div class="cmp-right"><span class="cmp-v tabnum">${last.topWeight}kg</span>${deltaChip(last.topWeight, prev ? prev.topWeight : null, 'kg')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
+                <div class="cmp-row tap" data-cmp-k="totalReps"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
+                <div class="cmp-row tap" data-cmp-k="totalSets"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
+                <div class="cmp-row tap" data-cmp-k="volume"><span class="cmp-k">총 볼륨</span><div class="cmp-right"><span class="cmp-v tabnum">${last.volume}kg</span>${deltaChip(last.volume, prev ? prev.volume : null, 'kg')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
             </div>`;
             // [B][E] edit by smsong : 기간 단위로 묶기 — 최고 무게는 구간 최댓값, 볼륨은 구간 합계
             html += `<div class="chart-sub-title" style="margin-top:18px">최고 무게 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
@@ -1257,6 +1309,34 @@ function renderChange() {
     });
     const gcSel = document.getElementById('growthCmpSelect');
     if (gcSel) gcSel.onchange = () => { ui.changeGrowthCmpId = gcSel.value; renderChange(); };
+
+    // [B] edit by smsong : 보조 보기 토글 — 켜고 끌 때마다 카드/그래프 전체를 다시 그린다
+    const gaChk = document.getElementById('growthAssist');
+    if (gaChk) gaChk.onchange = () => {
+        ui.changeAssist = gaChk.checked;
+        ui.changeGrowthCmpId = null;   // 대상 세션 구성이 달라지므로 비교 대상은 직전으로 초기화
+        renderChange();
+    };
+
+    // [B] edit by smsong : 선택한 비교 날짜의 운동 기록 상세 열기 (아이콘 전용 버튼)
+    const gcOpen = document.getElementById('growthCmpOpen');
+    if (gcOpen) gcOpen.onclick = () => {
+        const s = sessionById(ui.changeGrowthCmpId);
+        if (!s) return toast('기록을 찾을 수 없어요');
+        openSessionEditor(s.id, s.date, 'view');
+    };
+
+    // [B] edit by smsong : 지표 행 탭 → 두 기록의 운동 리스트를 한 폼에서 나란히 비교
+    document.querySelectorAll('#view-change .cmp-row.tap').forEach(r => r.onclick = () => {
+        const statsAll = exerciseSessionStats(ui.changeExercise, ui.changeAssist);
+        const lastStat = statsAll[statsAll.length - 1];
+        const prevStat = statsAll.find(s => String(s.id) === String(ui.changeGrowthCmpId)) || null;
+        if (!lastStat) return;
+        openCompareSheet(ui.changeExercise, prevStat, lastStat, {
+            focus: r.dataset.cmpK,
+            includeAssisted: ui.changeAssist
+        });
+    });
     // [E] edit by smsong
     // [B][E] edit by smsong : 종목 콤보박스(검색) — 고르면 그래프 갱신(비교 대상은 직전으로 초기화)
     wireCombo('changeEx', () => exsWithData, v => { ui.changeExercise = v; ui.changeGrowthCmpId = null; renderChange(); });
@@ -2393,6 +2473,15 @@ function openWorkoutSheet(initial, onApply) {
             <span>맨몸 운동 (무게 0kg 고정)</span>
         </label>
 
+        <!-- [B] edit by smsong : 파트너 보조(스팟) 여부.
+             보조를 받은 세트는 "혼자 든 기록"이 아니므로 변화 탭의 성장 분석에서 기본 제외된다. -->
+        <label class="check-row">
+            <input type="checkbox" id="wAssisted" ${editing && initial.assisted ? 'checked' : ''}>
+            <span class="box">${icon('check')}</span>
+            <span>보조 받음 (파트너가 밀어준 세트)</span>
+        </label>
+        <!-- [E] edit by smsong -->
+
         <div class="field-row">
             <div class="field"><label>무게 (kg)</label><input class="input" id="wWeight" type="number" inputmode="decimal" placeholder="100" value="${editing ? (initial.bodyweight ? 0 : initial.weight) : ''}" ${editing && initial.bodyweight ? 'disabled' : ''}></div>
             <div class="field"><label>무게 (lbs)</label><input class="input" id="wWeightLbs" type="number" inputmode="decimal" placeholder="220" value="${editing && !initial.bodyweight && initial.weight ? kgToLbs(initial.weight) : ''}" ${editing && initial.bodyweight ? 'disabled' : ''}></div>
@@ -2491,7 +2580,8 @@ function openWorkoutSheet(initial, onApply) {
             await onApply({
                 exercise, weight, reps, sets,
                 memo: document.getElementById('wMemo').value.trim(),
-                bodyweight
+                bodyweight,
+                assisted: document.getElementById('wAssisted').checked   // [B][E] edit by smsong
             });
             Sheet2.close();
         } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
@@ -2500,6 +2590,109 @@ function openWorkoutSheet(initial, onApply) {
 // [E] edit by smsong
 
 // 식단 입력
+// ============================================================
+//  [B] edit by smsong — 두 기록 비교 폼
+//    홈("최근 성장"의 종목 탭)과 변화("종목별 성장 분석"의 지표 행 탭)에서 함께 쓴다.
+//    · 위쪽   : 비교 기록 ↔ 최근 기록의 지표(최고 무게/총 횟수/총 세트/총 볼륨)를 좌우로 마주 보게 배치
+//               가운데에 지표 이름 + 등락 칩 → 두 값이 한눈에 대조된다.
+//    · 아래쪽 : 그 종목의 실제 세트 목록을 두 열로 나란히 → 무엇이 늘고 줄었는지까지 확인
+//    · 각 열 머리의 아이콘 버튼으로 그 날의 운동 기록 상세를 바로 열 수 있다.
+//    스타일은 프로젝트 공통 토큰(.card/.chip/.ibtn/.delta)을 그대로 따른다.
+// ============================================================
+function openCompareSheet(exercise, prevStat, lastStat, opts) {
+    opts = opts || {};
+    if (!lastStat) return toast('비교할 기록이 없어요');
+    const inc = opts.includeAssisted !== false;   // false = 보조 세트 제외 상태로 비교
+    const isBw = exerciseIsBodyweight(exercise);
+
+    // 맨몸 종목은 무게/볼륨이 항상 0 → 횟수·세트만 비교한다(그래프와 같은 규칙)
+    const metrics = isBw
+        ? [{ k: 'totalReps', label: '총 횟수', unit: '회' },
+           { k: 'totalSets', label: '총 세트', unit: '세트' }]
+        : [{ k: 'topWeight', label: '최고 무게', unit: 'kg' },
+           { k: 'totalReps', label: '총 횟수', unit: '회' },
+           { k: 'totalSets', label: '총 세트', unit: '세트' },
+           { k: 'volume',    label: '총 볼륨', unit: 'kg' }];
+
+    // 그 세션 안에서 이 종목의 세트 목록 (보조 필터를 비교 화면에도 동일 적용)
+    const setsOf = stat => {
+        if (!stat) return [];
+        const s = sessionById(stat.id);
+        return ((s && s.workouts) || []).filter(w => w.exercise === exercise && (inc || !w.assisted));
+    };
+    const dateCap = stat => stat ? `${fmtKoreanFull(stat.date)}${stat.startTime ? ' ' + stat.startTime : ''}` : '기록 없음';
+    const shortCap = stat => stat ? `${labelMd(stat.date)}${stat.startTime ? ' ' + stat.startTime : ''}` : '—';
+
+    const listHtml = stat => {
+        const ws = setsOf(stat);
+        if (!ws.length) return `<div class="cmpx-empty">기록 없음</div>`;
+        return ws.map(w => `
+            <div class="cmpx-set">
+                <div class="cmpx-set-main tabnum">${w.bodyweight ? '맨몸' : w.weight + 'kg'} × ${w.reps}회 × ${w.sets}세트</div>
+                <div class="cmpx-set-sub">
+                    <span class="tabnum">${volumeOf(w)} kg</span>
+                    ${w.assisted ? '<span class="as">보조</span>' : ''}
+                </div>
+            </div>`).join('');
+    };
+
+    const colHead = (cap, stat, cls) => `
+        <div class="cmpx-colhead ${cls}">
+            <div class="cmpx-colcap">${cap}</div>
+            <div class="cmpx-coldate tabnum">${shortCap(stat)}</div>
+            ${stat ? `<button class="ibtn sm cmpx-open" type="button" data-open-sess="${stat.id}"
+                        title="이 날 운동 상세보기" aria-label="이 날 운동 상세보기">${icon('eye')}</button>` : ''}
+        </div>`;
+
+    openSheet(`
+        <div class="cmpx-meta">
+            <div class="cmpx-ex">${esc(exercise)}</div>
+            <div class="cmpx-sub">${esc(dateCap(prevStat))} <b>→</b> ${esc(dateCap(lastStat))}${isBw ? ' · 맨몸' : ''}${inc ? '' : ' · 보조 제외'}</div>
+        </div>
+
+        <div class="cmpx-legend">
+            <span class="cmpx-lg prev">비교</span>
+            <span class="cmpx-lg last">최근</span>
+        </div>
+
+        <div class="cmpx-metrics">
+            ${metrics.map(m => {
+                const pv = prevStat ? prevStat[m.k] : null;
+                const lv = lastStat[m.k];
+                const on = opts.focus === m.k ? ' on' : '';
+                return `<div class="cmpx-m${on}">
+                    <div class="cmpx-mv prev tabnum">${pv == null ? '—' : pv + m.unit}</div>
+                    <div class="cmpx-mk">
+                        <span class="cmpx-mk-t">${m.label}</span>
+                        ${deltaChip(lv, pv, m.unit)}
+                    </div>
+                    <div class="cmpx-mv last tabnum">${lv}${m.unit}</div>
+                </div>`;
+            }).join('')}
+        </div>
+
+        <div class="se-head"><h4>세트 비교 <span class="cnt tabnum">${setsOf(prevStat).length + setsOf(lastStat).length}</span></h4></div>
+        <div class="cmpx-lists">
+            <div class="cmpx-col">
+                ${colHead('비교', prevStat, 'prev')}
+                ${listHtml(prevStat)}
+            </div>
+            <div class="cmpx-col">
+                ${colHead('최근', lastStat, 'last')}
+                ${listHtml(lastStat)}
+            </div>
+        </div>
+    `, { title: `${exercise} 비교` });
+
+    // 각 열의 아이콘 버튼 → 그 날의 운동 기록 상세(조회 모드)로 이동
+    document.querySelectorAll('#sheet [data-open-sess]').forEach(b => b.onclick = () => {
+        const s = sessionById(b.dataset.openSess);
+        if (!s) return toast('기록을 찾을 수 없어요');
+        openSessionEditor(s.id, s.date, 'view');
+    });
+}
+// [E] edit by smsong
+
 function openMealSheet(date) {
     openSheet(`
         <div class="field">
@@ -2823,6 +3016,11 @@ const IM_PCT_RE     = /^(\d{1,3})\s*%$/;
 const IM_TIME_RE    = /^(\d{1,2}:\d{2})\s*[~\-–—]\s*(\d{1,2}:\d{2})$/;
 const IM_WEIGHT_RE  = /^(\d+(?:\.\d+)?)\s*(kg|킬로(?:그램)?|lbs?|파운드)?$/i;
 const IM_FAIL_RE    = /(실패|fail(ed)?)/i;
+// [B] edit by smsong : 보조(파트너 스팟) 표기 인식.
+//   예) "플랫 벤치프레스 2rep 1set (100kg) (보조)" → assisted = true
+//   괄호 하나가 통째로 보조 표기일 때만 잡는다("보조 없이" 같은 문장은 메모로 남긴다).
+const IM_ASSIST_RE  = /^(보조|보조받음|보조\s*받음|스팟|어시스트|assist(ed)?|spot(ted)?)$/i;
+// [E] edit by smsong
 const IM_REPS_RE    = /(\d+)\s*(?:reps?|회|번)/i;
 const IM_SETS_RE    = /(\d+)\s*(?:sets?|세트|셋)/i;
 
@@ -2898,6 +3096,7 @@ function imMatchDate(rest, ctx) {
 // 운동 줄 → { exercise, weight, reps, sets, bodyweight, memo } | { failed:true, ... } | null
 function imParseItem(rest, groups, unit) {
     let weight = null, failed = false;
+    let assisted = false;   // [B][E] edit by smsong : "(보조)" 괄호가 있으면 true
     const memo = [];
 
     groups.forEach(g => {
@@ -2910,6 +3109,8 @@ function imParseItem(rest, groups, unit) {
             else weight = (unit === 'kg') ? v : lbsToKg(v);                            // 단위 없음 → 옵션
             return;
         }
+        // [B][E] edit by smsong : 보조 표기는 메모가 아니라 운동의 속성으로 승격
+        if (IM_ASSIST_RE.test(g)) { assisted = true; return; }
         if (IM_FAIL_RE.test(g)) { failed = true; memo.push(g); return; }
         memo.push(g);
     });
@@ -2940,6 +3141,7 @@ function imParseItem(rest, groups, unit) {
         reps: reps,
         sets: sets,
         bodyweight: bodyweight,
+        assisted: assisted,   // [B][E] edit by smsong : toWorkoutDTO 가 그대로 실어 보낸다
         memo: memo.join(' ')
     };
 }
@@ -3398,7 +3600,7 @@ function openImportSheet(defaultDate) {
                         <div class="im-day">
                             <span class="im-d">${esc(d.date)}</span>
                             <span class="im-p">${d.bodyParts.length ? esc(d.bodyParts.join(' · ')) : '<span class="muted">부위 없음</span>'}</span>
-                            <span class="im-c tabnum">${d.items.length}개${d.condition != null ? ' · 컨디션 ' + d.condition : ''}</span>
+                            <span class="im-c tabnum">${d.items.length}개${d.items.filter(i => i.assisted).length ? ' · 보조 ' + d.items.filter(i => i.assisted).length : ''}${d.condition != null ? ' · 컨디션 ' + d.condition : ''}</span>
                         </div>`).join('')}
                     ${target.length > 40 ? `<div class="im-note">외 ${target.length - 40}일…</div>` : ''}
                 </div>
@@ -3510,6 +3712,8 @@ function icon(name) {
         collapse: `<svg viewBox="0 0 24 24" ${s}><path d="M3 10h6V4"/><path d="M10 10 3 3"/><path d="M21 14h-6v6"/><path d="m14 14 7 7"/></svg>`,
         x: `<svg viewBox="0 0 24 24" ${s}><path d="M6 6l12 12M18 6 6 18"/></svg>`,
         minus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg>`,
+        // [B][E] edit by smsong : 상세보기(눈) — 아이콘 전용 버튼에서 사용
+        eye: `<svg viewBox="0 0 24 24" ${s}><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.8"/></svg>`,
         // [B][E] edit by smsong : 기록 가져오기(붙여넣기)
         paste: `<svg viewBox="0 0 24 24" ${s}><path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><rect x="9" y="2.5" width="6" height="3.5" rx="1"/><path d="M9 12h6M9 16h4"/></svg>`
         // [E] edit by smsong
