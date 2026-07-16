@@ -248,9 +248,16 @@ button { font-family: var(--font); cursor: pointer; }
     overscroll-behavior: none;          /* [B][E] edit by smsong : 위아래 끝 러버밴딩 차단 */
     -webkit-overflow-scrolling: touch;
 }
-.view { display: none; animation: fadeUp 0.28s ease; }
+.view { display: none; }
 .view.active { display: block; }
-@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+/* [B] edit by smsong : 탭 전환 시 이동 방향에 맞춰 옆에서 미끄러져 들어오는 전환 */
+.view.v-enter   { animation: vEnter  .30s cubic-bezier(.22,1,.36,1); }
+.view.v-enter-r { animation: vEnterR .34s cubic-bezier(.22,1,.36,1); }
+.view.v-enter-l { animation: vEnterL .34s cubic-bezier(.22,1,.36,1); }
+@keyframes vEnter  { from { opacity: 0; transform: translateY(8px); }            to { opacity: 1; transform: none; } }
+@keyframes vEnterR { from { opacity: 0; transform: translateX(46px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes vEnterL { from { opacity: 0; transform: translateX(-46px) scale(.985);} to { opacity: 1; transform: none; } }
+/* [E] edit by smsong */
 
 /* ---------- 섹션 ---------- */
 .section { margin-bottom: 22px; }
@@ -559,14 +566,20 @@ button { font-family: var(--font); cursor: pointer; }
     overflow: visible;                  /* 중앙 원형이 바 위로 떠오르도록 */
 }
 .nav-item {
-    flex: 1; background: transparent; border: 0;
+    flex: 1; background: transparent; border: 0; position: relative;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     color: var(--text-mute); font-size: 10.5px; font-weight: 700;
     transition: color 0.15s;
 }
-.nav-item svg { width: 22px; height: 22px; }
+.nav-item svg { width: 22px; height: 22px; transition: transform 0.18s cubic-bezier(.22,1,.36,1); }
 .nav-item.active { color: var(--accent); }
 .nav-item.active svg { stroke: url(#navgrad); }
+/* [B] edit by smsong : 활성 탭 상단에 그라데이션 인디케이터 바 → 지금 어느 메뉴인지 확실히 */
+.nav-item:not(.nav-center).active::after {
+    content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 26px; height: 3px; border-radius: 0 0 3px 3px; background: var(--grad);
+}
+/* [E] edit by smsong */
 
 /* 중앙 홈 = 바 위로 떠 있는 원형 버튼 */
 .nav-item.nav-center {
@@ -597,6 +610,23 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .nav-center.active .nav-orb svg { stroke: var(--on-grad); }   /* 원 안 아이콘은 항상 그라데이션 대비색 */
 .nav-center:active .nav-orb { transform: translateX(-50%) scale(0.94); }
+
+/* [B] edit by smsong : 탭 전환 시 이전 → 새 탭으로 날아가는 빛나는 코멧(우주선 궤적) */
+.nav-comet {
+    position: absolute; left: 0; z-index: 2; pointer-events: none;
+    width: 30px; height: 6px; margin-left: -15px; border-radius: 999px;
+    background: var(--grad); opacity: 0.95;
+    box-shadow: 0 0 14px 3px var(--home-glow);
+}
+.nav-comet.fly {
+    opacity: 0;
+    transition: transform 0.46s cubic-bezier(.3,.9,.25,1), opacity 0.46s ease-out;
+}
+/* 새로 활성화된 항목이 살짝 튀어오르는 팝 */
+.nav-item:not(.nav-center).nav-pop svg { animation: navPop 0.42s cubic-bezier(.22,1.4,.36,1); }
+.nav-center.nav-pop .nav-orb { animation: navPopOrb 0.46s cubic-bezier(.22,1.5,.36,1); }
+@keyframes navPop { 0% { transform: scale(1); } 45% { transform: scale(1.32) translateY(-2px); } 100% { transform: scale(1); } }
+@keyframes navPopOrb { 0% { transform: translateX(-50%) translateY(-3px) scale(1); } 45% { transform: translateX(-50%) translateY(-9px) scale(1.08); } 100% { transform: translateX(-50%) translateY(-3px) scale(1); } }
 /* [E] edit by smsong */
 
 /* ---------- 중앙 모달 폼 ---------- */
@@ -767,7 +797,9 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .chip {
     padding: 9px 14px; border-radius: 11px; font-size: 14px; font-weight: 700;
     background: var(--ink-800); border: 1px solid var(--line); color: var(--text-dim);
+    transition: background .2s, color .2s, border-color .2s, transform .12s cubic-bezier(.22,1.5,.36,1);
 }
+.chip:active { transform: scale(.94); }
 .chip.active { background: var(--grad); color: var(--on-grad); border: 0; }
 /* [B] edit by smsong : 운동 부위 다중 선택용 소형 칩 */
 .chip.sm { padding: 7px 12px; font-size: 13px; }
@@ -860,8 +892,12 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 
 /* [B] edit by smsong : 종목별 성장 분석 — 최근 세션과 비교할 이전 날짜 탭 (최대 5개) */
 .growth-cmp-cap { font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 7px; }
-.seg.growth-cmp-seg { display: flex; width: 100%; margin-bottom: 14px; }
+.seg.growth-cmp-seg { display: flex; width: 100%; margin-bottom: 10px; }
 .seg.growth-cmp-seg button { flex: 1; text-align: center; padding: 8px 2px; font-size: 12.5px; }
+/* 5개보다 과거 날짜는 셀렉트로 직접 선택 */
+.growth-cmp-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.growth-cmp-pick .gcp-lbl { font-size: 12px; font-weight: 700; color: var(--text-dim); flex: 0 0 auto; }
+.growth-cmp-pick .select { flex: 1; min-width: 0; padding: 9px 34px 9px 12px; font-size: 13px; }
 /* [E] edit by smsong */
 
 /* [B] edit by smsong : 검색되는 종목 콤보박스 */
@@ -988,17 +1024,24 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 }
 .cond-range::-webkit-slider-runnable-track {
     height: 8px; border-radius: 4px;
-    background: linear-gradient(90deg, var(--cond-color) 0 var(--cond-pct), var(--ink-750) var(--cond-pct) 100%);
+    /* [B][E] edit by smsong : 최악(빨강)→보통(주황)→최상(초록) 그라데이션을 값(--cond-pct)까지 채우고 나머지는 중립색 */
+    background:
+        linear-gradient(90deg, transparent 0 var(--cond-pct), var(--ink-750) var(--cond-pct) 100%),
+        linear-gradient(90deg, var(--up) 0%, var(--meal-breakfast) 50%, var(--accent-2) 100%);
 }
 .cond-range::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
     width: 26px; height: 26px; border-radius: 50%; margin-top: -9px;
     background: var(--ink-900); border: 3px solid var(--cond-color);
-    box-shadow: var(--shadow-md); cursor: grab;
+    box-shadow: var(--shadow-md), 0 0 8px var(--cond-color); cursor: grab;
+    transition: transform .1s, box-shadow .15s;
 }
 .cond-range::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.08); }
-.cond-range::-moz-range-track { height: 8px; border-radius: 4px; background: var(--ink-750); }
-.cond-range::-moz-range-progress { height: 8px; border-radius: 4px; background: var(--cond-color); }
+.cond-range::-moz-range-track {
+    height: 8px; border-radius: 4px;
+    background: linear-gradient(90deg, var(--up) 0%, var(--meal-breakfast) 50%, var(--accent-2) 100%);
+}
+.cond-range::-moz-range-progress { height: 8px; border-radius: 4px; background: transparent; }
 .cond-range::-moz-range-thumb {
     width: 20px; height: 20px; border-radius: 50%;
     background: var(--ink-900); border: 3px solid var(--cond-color); box-shadow: var(--shadow-md);
@@ -1161,4 +1204,8 @@ textarea.input.im-text {
 
 @media (prefers-reduced-motion: reduce) {
     .view, .sheet, .sheet-backdrop { animation: none !important; transition: none !important; }
+    /* [B][E] edit by smsong : 모션 최소화 설정 시 코멧/팝/슬라이드 비활성화 */
+    .nav-comet { display: none !important; }
+    .nav-item:not(.nav-center).nav-pop svg, .nav-center.nav-pop .nav-orb,
+    .view.v-enter, .view.v-enter-r, .view.v-enter-l { animation: none !important; }
 }

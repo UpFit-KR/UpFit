@@ -259,7 +259,7 @@ const ui = {
     dietSel: todayStr(),
     changeExercise: null,
     changePeriod: '1m',  // [B][E] edit by smsong : 변화 탭 그래프 기간(1d/1w/1m/6m/1y)
-    changeGrowthOffset: 1   // [B][E] edit by smsong : 종목별 성장 분석에서 최근 세션과 비교할 이전 세션 오프셋(1=직전 … 최대 5)
+    changeGrowthCmpId: null   // [B][E] edit by smsong : 종목별 성장 분석에서 최근 세션과 비교할 "이전 세션"의 id (null=직전 자동)
 };
 function firstOfThisMonth() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; }
 
@@ -879,7 +879,7 @@ function sessionCardHtml(s, draggable) {
             ${parts.length ? `<div class="sess-parts">${parts.map(p => `<span class="bp">${esc(p)}</span>`).join('')}</div>` : ''}
             <div class="cond-line">
                 <span class="cond-cap">컨디션</span>
-                <span class="cond-bar"><i style="width:${c == null ? 0 : c}%;background:${condColor(c)}"></i></span>
+                <span class="cond-bar"><i style="width:${c == null ? 0 : c}%;background:linear-gradient(90deg, var(--up), ${condColor(c)})"></i></span>
                 <span class="cond-num tabnum" style="color:${condColor(c)}">${c == null ? '—' : c}</span>
             </div>
         </div>
@@ -1025,22 +1025,34 @@ function renderChange() {
         const last = statsAll[n - 1];
         const isBw = exerciseIsBodyweight(ui.changeExercise);   // [B][E] edit by smsong : 맨몸이면 횟수 중심
 
-        // [B] edit by smsong : 비교 대상(이전 세션) 선택 탭.
-        //   기존엔 "직전 세션" 한 개와만 비교했지만, 최근 세션을 기준으로 최대 5개 이전 기록까지
-        //   날짜 탭으로 골라 비교할 수 있게 한다. off=1 이 직전, off 가 커질수록 더 과거.
-        const maxOffset = Math.min(5, n - 1);
-        if (!ui.changeGrowthOffset || ui.changeGrowthOffset > maxOffset) ui.changeGrowthOffset = 1;
-        const prev = maxOffset >= 1 ? statsAll[n - 1 - ui.changeGrowthOffset] : null;
+        // [B] edit by smsong : 비교 대상(이전 세션) 선택.
+        //   · 기본: 최근 세션을 기준으로 가장 가까운 5개 이전 기록을 날짜 탭으로 빠르게 비교.
+        //   · 추가: 5개보다 더 과거의 날짜는 "다른 날짜" 셀렉트로 직접 골라 비교.
+        //   선택 상태는 세션 id(ui.changeGrowthCmpId) 로 관리 → 탭/셀렉트가 같은 값을 공유한다.
+        const cands = statsAll.slice(0, n - 1).reverse();   // 최근 세션 제외, 최신 → 과거
+        const dateCount = {};
+        cands.forEach(c => { dateCount[c.date] = (dateCount[c.date] || 0) + 1; });
+        const cmpTabLabel = c => labelMd(c.date) + (dateCount[c.date] > 1 && c.startTime ? ` ${c.startTime}` : '');
+        const cmpFullLabel = c => `${fmtKorean(c.date)}${c.startTime ? ' ' + c.startTime : ''}`;
+        if (cands.length && !cands.some(c => String(c.id) === String(ui.changeGrowthCmpId))) {
+            ui.changeGrowthCmpId = cands[0].id;   // 직전 세션으로 기본 선택
+        }
+        const prev = cands.find(c => String(c.id) === String(ui.changeGrowthCmpId)) || null;
 
-        if (maxOffset >= 1) {
-            html += `<div class="growth-cmp-cap">최근 기록과 비교할 날짜</div>
-                <div class="seg growth-cmp-seg" id="growthCmpTabs">${
-                    Array.from({ length: maxOffset }, (_, i) => {
-                        const off = i + 1;
-                        const cand = statsAll[n - 1 - off];
-                        return `<button data-off="${off}" class="${off === ui.changeGrowthOffset ? 'active' : ''}" type="button">${labelMd(cand.date)}</button>`;
-                    }).join('')
-                }</div>`;
+        if (cands.length) {
+            const quick = cands.slice(0, 5);
+            html += `<div class="growth-cmp-cap">최근 기록과 비교할 날짜</div>`;
+            html += `<div class="seg growth-cmp-seg" id="growthCmpTabs">${
+                quick.map(c => `<button data-id="${c.id}" class="${String(c.id) === String(ui.changeGrowthCmpId) ? 'active' : ''}" type="button">${cmpTabLabel(c)}</button>`).join('')
+            }</div>`;
+            if (cands.length > 5) {
+                html += `<div class="growth-cmp-pick">
+                    <span class="gcp-lbl">다른 날짜</span>
+                    <select class="select" id="growthCmpSelect">${
+                        cands.map(c => `<option value="${c.id}" ${String(c.id) === String(ui.changeGrowthCmpId) ? 'selected' : ''}>${esc(cmpFullLabel(c))}</option>`).join('')
+                    }</select>
+                </div>`;
+            }
         }
         // [E] edit by smsong
 
@@ -1137,13 +1149,15 @@ function renderChange() {
     document.querySelectorAll('#changePeriodTabs button').forEach(b => b.onclick = () => {
         ui.changePeriod = b.dataset.period; renderChange();
     });
-    // [B] edit by smsong : 종목별 성장 분석 — 비교할 이전 기록(날짜) 탭 전환
+    // [B] edit by smsong : 종목별 성장 분석 — 비교할 이전 기록 선택(빠른 날짜 탭 + 다른 날짜 셀렉트)
     document.querySelectorAll('#growthCmpTabs button').forEach(b => b.onclick = () => {
-        ui.changeGrowthOffset = Number(b.dataset.off); renderChange();
+        ui.changeGrowthCmpId = b.dataset.id; renderChange();
     });
+    const gcSel = document.getElementById('growthCmpSelect');
+    if (gcSel) gcSel.onchange = () => { ui.changeGrowthCmpId = gcSel.value; renderChange(); };
     // [E] edit by smsong
-    // [B][E] edit by smsong : 종목 콤보박스(검색) — 고르면 그래프 갱신(비교 탭은 직전으로 초기화)
-    wireCombo('changeEx', () => exsWithData, v => { ui.changeExercise = v; ui.changeGrowthOffset = 1; renderChange(); });
+    // [B][E] edit by smsong : 종목 콤보박스(검색) — 고르면 그래프 갱신(비교 대상은 직전으로 초기화)
+    wireCombo('changeEx', () => exsWithData, v => { ui.changeExercise = v; ui.changeGrowthCmpId = null; renderChange(); });
     const bb = document.getElementById('addBodyBtn');
     if (bb) bb.onclick = openBodySheet;
 }
@@ -1382,8 +1396,10 @@ function renderProfile() {
     document.getElementById('editBodyBtn').onclick = openProfileSheet;
     document.getElementById('profileSetBtn').onclick = openProfileSheet;
     document.getElementById('settingsBtn').onclick = openSettingsSheet;
-    // [B] edit by smsong : 세션 정리는 auth.js 로 일원화
-    document.getElementById('logoutBtn').onclick = () => Auth.logout();
+    // [B] edit by smsong : 실수 방지 — 확인 후에만 로그아웃 (취소 시 아무 동작 안 함)
+    document.getElementById('logoutBtn').onclick = () => {
+        if (confirm('정말 로그아웃 할까요?')) Auth.logout();
+    };
     // [E] edit by smsong
 }
 
@@ -1745,6 +1761,11 @@ function createSheet(sheetId, backdropId) {
         // [B] edit by smsong : 이탈 방지 기준 스냅샷은 본문을 그린 직후에 뜬다
         dirtyFn = opts.isDirty || null;
         baseSnap = snapshotBody();
+        // [B] edit by smsong : 폼을 연 직후 호출측이 값을 채우는 경우가 있다(자동 시작시각·총시간 계산 등).
+        //   그 초기화까지 끝난 뒤 한 번 더 기준 스냅샷을 잡아, 사용자가 실제로 바꾼 게 없으면
+        //   확인창 없이 그냥 닫히도록 한다.
+        setTimeout(() => { if (isOpen) baseSnap = snapshotBody(); }, 0);
+        // [E] edit by smsong
         const fb = sheet.querySelector('[data-sheet-full]');
         if (fb) fb.onclick = () => {
             const next = !full;
@@ -2350,11 +2371,61 @@ document.getElementById('appMain').addEventListener('click', async e => {
 //  탭 전환 (현재 탭을 sessionStorage에 저장 → 새로고침해도 유지)
 // ============================================================
 const TAB_KEY = 'UF_TAB';
+// [B] edit by smsong : 탭 전환을 "슉" 하고 날아가듯 보이게 한다.
+//   · 들어오는 화면은 이동 방향(네비 좌우 순서)에 맞춰 옆에서 미끄러져 들어온다.
+//   · 이전 탭 → 새 탭으로 빛나는 코멧(streak)이 네비 위를 가로질러 날아가 어디로 왔는지 각인시킨다.
+const TAB_ORDER = ['workout', 'diet', 'home', 'change', 'profile'];   // 네비의 실제 좌→우 배치
+let curTab = null;
+function navComet(fromTab, toTab) {
+    const nav = document.querySelector('.bottom-nav');
+    if (!nav) return;
+    const a = nav.querySelector(`.nav-item[data-tab="${fromTab}"]`);
+    const b = nav.querySelector(`.nav-item[data-tab="${toTab}"]`);
+    if (!a || !b || a === b) return;
+    const nr = nav.getBoundingClientRect();
+    const ar = a.getBoundingClientRect();
+    const br = b.getBoundingClientRect();
+    const x0 = ar.left + ar.width / 2 - nr.left;
+    const x1 = br.left + br.width / 2 - nr.left;
+    const y = Math.min(ar.top + ar.height / 2, br.top + br.height / 2) - nr.top - 2;
+    const c = document.createElement('span');
+    c.className = 'nav-comet';
+    c.style.top = y + 'px';
+    c.style.transform = `translateX(${x0}px)`;
+    nav.appendChild(c);
+    requestAnimationFrame(() => {
+        c.classList.add('fly');
+        c.style.transform = `translateX(${x1}px)`;
+    });
+    setTimeout(() => c.remove(), 520);
+}
 function activateTab(tab, remember) {
     const valid = ['home', 'workout', 'diet', 'change', 'profile'];
     if (!valid.includes(tab)) tab = 'home';
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + tab));
+
+    const fromTab = curTab;
+    const dir = (fromTab == null) ? 0 : Math.sign(TAB_ORDER.indexOf(tab) - TAB_ORDER.indexOf(fromTab));
+
+    document.querySelectorAll('.nav-item').forEach(b => {
+        const on = b.dataset.tab === tab;
+        b.classList.toggle('active', on);
+        if (on && fromTab && fromTab !== tab) {   // 새로 활성화된 항목을 살짝 튕겨준다
+            b.classList.remove('nav-pop'); void b.offsetWidth; b.classList.add('nav-pop');
+        }
+    });
+    document.querySelectorAll('.view').forEach(v => {
+        const on = v.id === 'view-' + tab;
+        v.classList.toggle('active', on);
+        if (on) {
+            v.classList.remove('v-enter', 'v-enter-r', 'v-enter-l');
+            void v.offsetWidth;   // 리플로우 → 애니메이션 재시작
+            v.classList.add(dir > 0 ? 'v-enter-r' : dir < 0 ? 'v-enter-l' : 'v-enter');
+        }
+    });
+    // [B][E] edit by smsong : 이전 탭 → 새 탭으로 코멧이 날아가 이동을 각인
+    if (fromTab && fromTab !== tab) navComet(fromTab, tab);
+    curTab = tab;
+
     // [B] edit by smsong : 탭을 옮기면 항상 맨 위에서 시작하도록 스크롤 초기화.
     //   실제 스크롤 컨테이너가 .app-main / 문서(body·html) 중 무엇이든 모두 리셋한다.
     resetScrollTop();
