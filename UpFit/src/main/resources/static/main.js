@@ -2252,6 +2252,9 @@ function openSessionEditor(sessionId, date, mode) {
 
             <div class="se-head">
                 <h4>운동 <span class="cnt tabnum" id="seCount">0</span></h4>
+                <!-- [B][E] edit by smsong : 운동 개수와 총 볼륨 사이에 총 세트 수를 표시.
+                     .se-head 가 space-between 이라 세 번째 항목을 끼우면 자연스럽게 가운데로 온다. -->
+                <span class="se-head-sum tabnum" id="seSets"></span>
                 <span class="se-head-sum tabnum" id="seVol"></span>
             </div>
             <div class="reorder-list se-list" id="seList"></div>
@@ -2417,6 +2420,8 @@ function openSessionEditor(sessionId, date, mode) {
             ? list.map(w => workoutRowHtml(w, sid)).join('')
             : `<div class="se-empty">아직 운동이 없어요. 위 ＋ 버튼으로 추가하세요.</div>`;
         const cntEl = document.getElementById('seCount'); if (cntEl) cntEl.textContent = list.length;
+        // [B][E] edit by smsong : 총 세트 = 세션 안 모든 운동의 세트 합계 (sessionSets)
+        const setEl = document.getElementById('seSets'); if (setEl) setEl.textContent = list.length ? `세트 ${sessionSets(s)}` : '';
         const volEl = document.getElementById('seVol'); if (volEl) volEl.textContent = list.length ? `볼륨 ${sessionVolume(s)} kg` : '';
 
         enableDragReorder(el, async ids => {
@@ -2650,6 +2655,15 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
             <div class="cmpx-sub">${esc(dateCap(prevStat))} <b>→</b> ${esc(dateCap(lastStat))}${isBw ? ' · 맨몸' : ''}${inc ? '' : ' · 보조 제외'}</div>
         </div>
 
+        <!-- [B] edit by smsong : 비교 폼에서도 보조 포함/제외를 바로 전환.
+             켜고 끌 때마다 두 기록의 지표(최고 무게/횟수/세트/볼륨)와 세트 목록을 다시 계산해 그린다. -->
+        <label class="check-row cmpx-assist">
+            <input type="checkbox" id="cmpxAssist" ${inc ? 'checked' : ''}>
+            <span class="box">${icon('check')}</span>
+            <span>보조 보기 <span class="lbl-sub">${inc ? '보조 받은 세트까지 포함' : '혼자 든 세트만'}</span></span>
+        </label>
+        <!-- [E] edit by smsong -->
+
         <div class="cmpx-legend">
             <span class="cmpx-lg prev">비교</span>
             <span class="cmpx-lg last">최근</span>
@@ -2683,6 +2697,20 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
             </div>
         </div>
     `, { title: `${exercise} 비교` });
+
+    // [B] edit by smsong : 보조 보기 전환.
+    //   지표 값 자체가 보조 포함 여부에 따라 달라지므로, 같은 세션 id 를 기준으로 다시 집계해
+    //   폼을 새로 연다. 보조를 빼면 그 세션의 세트가 하나도 안 남을 수 있어 그 경우엔 되돌린다.
+    const caChk = document.getElementById('cmpxAssist');
+    if (caChk) caChk.onchange = () => {
+        const next = caChk.checked;
+        const ss = exerciseSessionStats(exercise, next);
+        const l = ss.find(s => String(s.id) === String(lastStat.id));
+        if (!l) { caChk.checked = inc; return toast('보조를 빼면 이 기록에 남는 세트가 없어요'); }
+        const p = prevStat ? (ss.find(s => String(s.id) === String(prevStat.id)) || null) : null;
+        openCompareSheet(exercise, p, l, Object.assign({}, opts, { includeAssisted: next }));
+    };
+    // [E] edit by smsong
 
     // 각 열의 아이콘 버튼 → 그 날의 운동 기록 상세(조회 모드)로 이동
     document.querySelectorAll('#sheet [data-open-sess]').forEach(b => b.onclick = () => {

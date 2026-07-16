@@ -1455,6 +1455,13 @@ textarea.input.im-text {
 }
 /* [E] edit by smsong */
 
+/* 비교 폼 안의 "보조 보기" 토글 — 제목 바로 아래라 위 여백만 정리 */
+.check-row.cmpx-assist { margin: 0 0 12px; }
+
+/* [B][E] edit by smsong : 운동 개수 / 총 세트 / 총 볼륨 세 항목이 한 줄에 균형 있게 놓이도록.
+   .se-head 는 space-between 이므로 가운데 항목(총 세트)이 자연스럽게 중앙에 온다. */
+.se-head #seSets { margin-left: auto; margin-right: auto; }
+
 /* ---------- 토스트 ---------- */
 #toast {
     position: fixed; bottom: calc(var(--nav-h) + 24px); left: 50%;
