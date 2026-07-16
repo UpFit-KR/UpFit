@@ -354,42 +354,43 @@ button { font-family: var(--font); cursor: pointer; }
 .cal-nav button svg { width: 16px; height: 16px; }
 
 /* minmax(0,1fr): 7칸이 컨테이너 폭을 정확히 7등분하며 넘치지 않도록 강제(달력 잘림 방지) */
-/* [B] edit by smsong : 첨부 이미지의 채워진 타일 달력 유지. 날짜가 벌어져 보이던 문제 →
-   실제 간격은 gap 값 하나로 결정된다. column/row gap 을 2px 로 좁혀 타일이 딱 붙어 보이게. */
+/* [B] edit by smsong : 날짜가 벌어지는 문제를 완전히 없애기 위해 gap 을 0 으로 두고 칸을 딱 붙인다.
+   칸 구분은 얇은 안쪽 선(inset box-shadow)으로만 주고, 바깥 모서리만 컨테이너에서 둥글게 처리.
+   → 어떤 구간에서도 셀 사이에 빈틈이 생기지 않는다. */
 .cal-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
-    column-gap: 2px;
-    row-gap: 2px;
+    gap: 0;
     width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--line-soft);   /* 셀 사이 1px 라인이 이 바탕색으로 비쳐 격자처럼 붙어 보임 */
 }
-/* [E] edit by smsong */
 .cal-dow {
     text-align: center; font-size: 11px; font-weight: 700; color: var(--text-mute);
-    padding: 2px 0 6px; min-width: 0; overflow: hidden;
+    padding: 6px 0 8px; min-width: 0; overflow: hidden; background: var(--ink-900);
 }
 .cal-dow.sun { color: var(--up); }
 .cal-dow.sat { color: var(--down); }
 .cal-cell {
-    /* [B] edit by smsong : 채워진 타일 유지. 테두리 2px 로 두어 상태(오늘/선택/운동한 날) 강조가 잘 보이게 */
-    aspect-ratio: 1 / 0.95; border-radius: 11px;
-    background: var(--ink-850); border: 2px solid transparent;
-    /* [E] edit by smsong */
+    /* 채워진 칸을 간격 없이 붙임. 상태 강조는 안쪽 링(box-shadow inset)으로 → 레이아웃 밀림 없음 */
+    aspect-ratio: 1 / 0.95;
+    background: var(--ink-850); border: 0;
+    box-shadow: inset 0 0 0 0.5px var(--line-soft);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     position: relative; font-variant-numeric: tabular-nums;
-    min-width: 0; overflow: hidden;   /* 트랙이 콘텐츠보다 좁아질 수 있게 하여 오버플로 차단 */
+    min-width: 0; overflow: hidden;
 }
-.cal-cell.empty { background: transparent; }
-/* [B] edit by smsong : 상태별 표시를 채널 분리로 겹쳐도 구분되게
-   · 운동한 날(.has) = 초록 테두리 + 초록 진한 숫자 + 초록 점  (가장 눈에 띄게)
+.cal-cell.empty { background: var(--ink-900); box-shadow: none; }
+/* 상태별 표시 (겹쳐도 구분)
+   · 운동한 날(.has)   = 초록 안쪽 테두리 + 초록 진한 숫자  (점 없이 테두리만)
    · 선택한 날(.selected) = 연한 그린 채움
-   · 오늘(.today) = 파란 숫자 */
+   · 오늘(.today)      = 파란 숫자 */
 .cal-cell .dnum { font-size: 15px; font-weight: 800; color: var(--text-dim); letter-spacing: -0.2px; }
 .cal-cell.selected { background: var(--grad-soft); }
 .cal-cell.today .dnum { color: var(--accent); }
-.cal-cell.has { border-color: var(--accent-2); }
+.cal-cell.has { box-shadow: inset 0 0 0 2px var(--accent-2); z-index: 1; }
 .cal-cell.has .dnum { color: var(--accent-2); }
-.cal-cell.has .dot, .cal-cell.has .dots .dot { background: var(--accent-2); }
 /* [E] edit by smsong */
 .cal-cell .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--grad); }
 .cal-cell .kcal-tag { font-size: 9px; font-weight: 700; color: var(--accent-2); }
@@ -472,71 +473,51 @@ button { font-family: var(--font); cursor: pointer; }
 .nav-item.active { color: var(--accent); }
 .nav-item.active svg { stroke: url(#navgrad); }
 
-/* ---------- 바텀시트 모달 ---------- */
-/* [B] edit by smsong
-   네이버 지도앱식 3단 스냅 시트로 전면 교체.
-     1차 full   : translateY(0)          → 전체 화면
-     2차 half   : translateY(34%)        → 화면의 2/3만 걸침 (열릴 때 기본)
-     3차 closed : translateY(100%)       → 완전히 내림
-   · 시트 자체를 뷰포트 높이로 두고 translateY(px) 로 단계를 표현 → 드래그 중 위치 계산이 단순.
-     translateY 값은 main.js 가 인라인 style 로 지정하므로 여기서 transform 을 덮어쓰지 않는다.
-   · 헤더(.sheet-drag)는 항상 드래그, 본문(.sheet-body)은 스크롤 최상단에서 아래로 당길 때만 드래그.
-   · .dragging = 손가락을 따라가는 중 → transition 제거(끌림 방지). */
+/* ---------- 중앙 모달 폼 ---------- */
+/* [B] edit by smsong : 아래→위 슬라이드 시트를 화면 중앙 모달로 교체.
+   · 폼이 길면 모달 본문(.sheet-body)만 내부 스크롤. 모달이 열리면 뒤 페이지 스크롤은 잠금.
+   · 겹치는 2차 모달(운동 입력)은 z-index 로 위에 표시. */
 .sheet-backdrop {
     position: fixed; inset: 0; z-index: 100;
     background: var(--backdrop); backdrop-filter: blur(2px);
-    opacity: 0; pointer-events: none; transition: opacity 0.25s;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
 }
 .sheet-backdrop.open { opacity: 1; pointer-events: auto; }
 .sheet {
-    position: fixed; left: 50%; bottom: 0;
-    transform: translateX(-50%) translateY(100%);
-    width: 100%; max-width: 480px; z-index: 101;
-    height: 100vh; height: 100dvh;          /* dvh 미지원 브라우저는 vh 로 폴백 */
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%) scale(0.96);
+    width: calc(100% - 36px); max-width: 440px; z-index: 101;
+    max-height: 88vh; max-height: 88dvh;
     background: var(--ink-900);
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    border: 1px solid var(--line); border-bottom: 0;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--line);
     box-shadow: var(--shadow-lg);
-    transition: transform 0.34s cubic-bezier(0.32,0.72,0,1);
     display: flex; flex-direction: column;
+    overflow: hidden;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32,0.72,0,1);
     overscroll-behavior: contain;
 }
-.sheet.dragging { transition: none; }
-/* 2차 시트(운동 입력) — 1차 시트 위에 겹침 */
+.sheet.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+/* 2차 모달(운동 입력) — 1차 위에 겹침 */
 .sheet-backdrop.lv2 { z-index: 102; }
 .sheet.lv2 { z-index: 103; }
 
-/* 드래그 손잡이 영역(그립 + 제목). touch-action:none → 브라우저 기본 스크롤 제스처와 충돌 방지 */
-.sheet-drag {
-    flex: 0 0 auto;
-    padding: 6px 18px 10px;
-    touch-action: none; cursor: grab; user-select: none;
-    border-bottom: 1px solid var(--line-soft);
-    transition: padding-top 0.2s;
-}
-.sheet-drag:active { cursor: grabbing; }
-/* 전체 화면 단계에서만 상태바 영역만큼 여백 확보 */
-.sheet.full .sheet-drag { padding-top: calc(6px + env(safe-area-inset-top)); }
-.sheet-grip { width: 40px; height: 4px; border-radius: 2px; background: var(--ink-700); margin: 4px auto 12px; }
+.sheet-head { flex: 0 0 auto; padding: 18px 20px 0; }
 .sheet h3 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
 .sheet .sheet-desc { font-size: 13px; color: var(--text-dim); }
 
-/* 본문: 남는 높이를 전부 차지하며 내부 스크롤
-   [B] edit by smsong — 모바일 스크롤 불가 버그 수정
-     시트 높이는 100dvh 인데 half 단계에서는 34% 만큼 아래로 내려가 있다.
-     → 스크롤 컨테이너의 아래쪽 34% 가 화면 밖에 위치해, 내용이 컨테이너보다 짧으면
-       스크롤이 아예 생기지 않아 하단 입력들이 영영 가려졌다.
-     → 현재 스냅 오프셋(--sheet-off, main.js 가 갱신)만큼 하단 패딩을 주어
-       화면 밖 영역까지 정확히 스크롤해서 도달할 수 있게 한다.
-   [E] edit by smsong */
+/* 본문: 남는 높이만큼만 차지하고 그 안에서만 스크롤 */
 .sheet-body {
     flex: 1 1 auto; min-height: 0;
     overflow-y: auto; -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    padding: 16px 18px calc(var(--sheet-off, 0px) + 28px + env(safe-area-inset-bottom));
+    padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
 }
-/* 시트를 끌어내리는 동안에는 본문 스크롤을 잠깐 잠근다 */
-.sheet-body.no-scroll { overflow-y: hidden; }
+
+/* 모달이 열려 있는 동안 뒤 페이지(문서/앱 메인) 스크롤 잠금 */
+html.modal-open, body.modal-open { overflow: hidden !important; touch-action: none; }
+.app-main.modal-lock { overflow: hidden !important; }
 /* [E] edit by smsong */
 
 /* ---------- 폼 ---------- */
@@ -880,11 +861,20 @@ button { font-family: var(--font); cursor: pointer; }
 .chip-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .chip-grid .chip { width: 100%; text-align: center; padding: 9px 6px; }
 
+/* 상세 상단 간단 정보(날짜·시간·컨디션·부위·메모) — 툴바 바로 아래 */
+.se-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 8px; }
+.se-meta-date { font-size: 15px; font-weight: 800; color: var(--text); }
+.se-meta-item { font-size: 13px; font-weight: 700; color: var(--text-dim); }
+.se-meta-cond { font-weight: 800; }
+.se-meta-parts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.se-meta-memo { font-size: 13px; color: var(--text-mute); margin-bottom: 12px; line-height: 1.5; }
+.chip.xs { padding: 4px 10px; font-size: 12px; }
+.chip.xs.view-chip { pointer-events: none; }
+
 /* 총 시간(분): 자동 계산 전용 — 입력 잠금 표시 */
 .input.readonly {
     background: var(--ink-850); color: var(--text-dim); cursor: default; caret-color: transparent;
 }
-/* [E] edit by smsong */
 /* [E] edit by smsong */
 
 /* ---------- 토스트 ---------- */

@@ -788,15 +788,10 @@ function enableDragReorder(listEl, onCommit) {
 
 // 달력 셀: 세션 수만큼 점(최대 3개) → 하루에 여러 번 운동한 날이 구분된다
 function workoutCalendarHtml() {
-    const cal = calendarGrid(ui.workoutCal, ui.workoutSel, date => {
-        const n = sessionsByDate(date).length;
-        if (!n) return '';
-        const dots = Math.min(n, 3);
-        let s = '<span class="dots">';
-        for (let i = 0; i < dots; i++) s += '<i class="dot"></i>';
-        s += '</span>';
-        return s;
-    }, date => sessionsByDate(date).length > 0);
+    // [B] edit by smsong : 운동한 날은 점 대신 셀 테두리로만 표시(cellExtra=null, hasFn 은 유지)
+    const cal = calendarGrid(ui.workoutCal, ui.workoutSel, null,
+        date => sessionsByDate(date).length > 0);
+    // [E] edit by smsong
 
     const sel = ui.workoutSel;
     const list = sessionsByDate(sel);
@@ -1283,178 +1278,73 @@ function chartLegend(items) {
 }
 
 // ============================================================
-//  [B] edit by smsong — 바텀시트 (네이버 지도앱식 3단 스냅)
-//    1차 full   : 전체 화면
-//    2차 half   : 화면의 2/3만 걸침 (열릴 때 기본 단계)
-//    3차 closed : 완전히 내림
-//  · .sheet 자체를 뷰포트 높이로 두고 translateY(px) 로 단계를 표현한다.
-//  · 그립/헤더 영역은 항상 드래그, 본문은 스크롤 최상단에서 아래로 당길 때만 드래그.
-//  · 놓았을 때 이동 속도(플링)가 빠르면 다음 단계로, 아니면 가장 가까운 단계로 스냅.
-//  · [스크롤 수정] half 단계에서는 시트 하단 34% 가 화면 밖에 있다.
-//    → 스냅 오프셋을 CSS 변수 --sheet-off 로 내려보내 .sheet-body 하단 패딩으로 보정
-//      (그래야 화면 밖으로 밀린 입력까지 스크롤해서 도달할 수 있다).
-//  · 시트를 2개 운용한다: 1차 = 운동 기록(세션)/식단/체중/프로필/설정,
-//    2차 = 운동 입력 전용(1차 위에 겹침) → 날짜(세션) 폼과 운동 폼 완전 분리.
+//  [B] edit by smsong — 중앙 모달 폼 (아래→위 슬라이드 시트에서 교체)
+//    · 화면 중앙에 뜨는 모달. 폼이 길면 모달 본문만 내부 스크롤.
+//    · 모달이 열린 동안 뒤 페이지(문서/앱 메인) 스크롤은 잠근다.
+//    · 모달을 2개 운용: 1차 = 운동 기록(세션)/식단/체중/프로필/설정,
+//      2차 = 운동 입력 전용(1차 위에 겹침) → 날짜(세션) 폼과 운동 폼 완전 분리.
 // ============================================================
-const HALF_RATIO = 0.34;      // 아래로 34% 내림 → 화면의 약 2/3 노출
-const FLING_V = 0.55;         // px/ms 이상이면 플링으로 간주
-const SNAP_ORDER = ['full', 'half', 'closed'];
+
+// [B] edit by smsong : 시트를 아래→위 슬라이드가 아니라 화면 중앙 모달 폼으로 변경.
+//   · 모달이 열리면 뒤 페이지(문서/앱 메인) 스크롤을 잠가서, 폼이 꽉 차도 뒤가 스크롤되지 않는다.
+//   · 모달 본문(.sheet-body)만 내부 스크롤된다.
+//   · 여러 모달(1차 상세 + 2차 운동입력)이 겹쳐도 잠금이 유지되도록 카운터로 관리.
+let modalLockCount = 0;
+function lockBgScroll() {
+    modalLockCount++;
+    document.documentElement.classList.add('modal-open');
+    document.body.classList.add('modal-open');
+    const m = document.getElementById('appMain'); if (m) m.classList.add('modal-lock');
+}
+function unlockBgScroll() {
+    modalLockCount = Math.max(0, modalLockCount - 1);
+    if (modalLockCount === 0) {
+        document.documentElement.classList.remove('modal-open');
+        document.body.classList.remove('modal-open');
+        const m = document.getElementById('appMain'); if (m) m.classList.remove('modal-lock');
+    }
+}
 
 function createSheet(sheetId, backdropId) {
     const sheet = document.getElementById(sheetId);
     const backdrop = document.getElementById(backdropId);
-    let snap = 'closed';
-    let curY = 0;
+    let isOpen = false;
     let closeTimer = null;
 
-    function h() { return sheet.offsetHeight || window.innerHeight; }
-    function points() {
-        const hh = h();
-        return { full: 0, half: Math.round(hh * HALF_RATIO), closed: hh };
-    }
-    function nearest(y) {
-        const p = points();
-        let best = 'half', bestD = Infinity;
-        SNAP_ORDER.forEach(k => { const d = Math.abs(p[k] - y); if (d < bestD) { bestD = d; best = k; } });
-        return best;
-    }
-    function applyY(y) {
-        curY = y;
-        sheet.style.transform = `translateX(-50%) translateY(${y}px)`;
-    }
-    function setSnap(name, animate) {
-        const p = points();
-        if (p[name] == null) name = 'half';
-        snap = name;
-        if (animate === false) sheet.classList.add('dragging');
-        sheet.classList.toggle('full', name === 'full');
-        sheet.classList.toggle('open', name !== 'closed');
-        backdrop.classList.toggle('open', name !== 'closed');
-        applyY(p[name]);
-        // 화면 밖으로 밀린 만큼 본문 하단에 여백 → 스크롤로 도달 가능해진다
-        sheet.style.setProperty('--sheet-off', p[name] + 'px');
-        if (animate === false) requestAnimationFrame(() => sheet.classList.remove('dragging'));
-    }
+    function body() { return sheet.querySelector('.sheet-body'); }
 
     function open(html, opts) {
         opts = opts || {};
         clearTimeout(closeTimer);
-        const reopening = snap !== 'closed';   // 이미 열려 있으면 내용만 교체
         sheet.innerHTML = `
-            <div class="sheet-drag">
-                <div class="sheet-grip"></div>
-                ${opts.title ? `<h3>${opts.title}</h3>` : ''}
-                ${opts.desc ? `<div class="sheet-desc">${opts.desc}</div>` : ''}
-            </div>
+            ${(opts.title || opts.desc) ? `<div class="sheet-head">
+                ${opts.title ? `<h3>${esc(opts.title)}</h3>` : ''}
+                ${opts.desc ? `<div class="sheet-desc">${esc(opts.desc)}</div>` : ''}
+            </div>` : ''}
             <div class="sheet-body">${html}</div>`;
-
-        if (reopening) {
-            // 세션 생성 직후 상세 모드로 바뀌는 경우 등 — 단계는 유지하고 내용만 바꾼다
-            const bd = body(); if (bd) bd.scrollTop = 0;
-            setSnap(snap, false);
-        } else {
-            // 닫힘 위치에서 시작 → 다음 프레임에 목표 단계로 애니메이션
-            sheet.classList.remove('full');
-            applyY(points().closed);
-            backdrop.classList.add('open');
-            requestAnimationFrame(() => setSnap(opts.snap || 'half', true));
-        }
-        wireDrag();
+        const bd = body(); if (bd) bd.scrollTop = 0;
+        if (!isOpen) { lockBgScroll(); isOpen = true; }
+        backdrop.classList.add('open');
+        // 다음 프레임에 .open 을 붙여 페이드+스케일 인 애니메이션
+        requestAnimationFrame(() => sheet.classList.add('open'));
     }
     function close() {
-        setSnap('closed', true);
+        if (!isOpen) return;
+        isOpen = false;
+        sheet.classList.remove('open');
+        backdrop.classList.remove('open');
+        unlockBgScroll();
         clearTimeout(closeTimer);
-        closeTimer = setTimeout(() => { if (snap === 'closed') sheet.innerHTML = ''; }, 380);
-    }
-
-    function body() { return sheet.querySelector('.sheet-body'); }
-
-    function wireDrag() {
-        const dragArea = sheet.querySelector('.sheet-drag');
-        const bd = body();
-        if (dragArea) dragArea.addEventListener('pointerdown', e => startDrag(e, false));
-        if (bd) bd.addEventListener('pointerdown', e => startDrag(e, true));
-    }
-
-    function startDrag(e, fromBody) {
-        if (e.button != null && e.button > 0) return;
-        // 슬라이더/입력/버튼/정렬 핸들 위에서 시작한 제스처는 시트 드래그로 가로채지 않는다
-        if (e.target.closest('input, select, textarea, button, .drag-handle')) return;
-
-        const bd = body();
-        const startY = e.clientY;
-        const baseY = curY;
-        let dragging = !fromBody;      // 헤더에서 시작하면 즉시 드래그
-        let lastY = startY, lastT = performance.now(), vel = 0;
-
-        if (dragging) sheet.classList.add('dragging');
-
-        function onMove(ev) {
-            const dy = ev.clientY - startY;
-
-            if (!dragging) {
-                // 본문에서 시작한 경우: 최상단에서 아래로 당길 때만 시트 드래그로 전환
-                // (그 외에는 즉시 포기 → 네이티브 세로 스크롤이 그대로 동작)
-                if (dy > 8 && bd && bd.scrollTop <= 0) {
-                    dragging = true;
-                    sheet.classList.add('dragging');
-                    bd.classList.add('no-scroll');
-                } else if (Math.abs(dy) > 8) {
-                    cleanup();
-                    return;
-                } else {
-                    return;
-                }
-            }
-
-            const now = performance.now();
-            const dt = now - lastT;
-            if (dt > 0) vel = (ev.clientY - lastY) / dt;
-            lastY = ev.clientY; lastT = now;
-
-            const p = points();
-            let y = baseY + dy;
-            if (y < p.full) y = p.full + (y - p.full) * 0.25;   // 최상단 저항(고무줄)
-            if (y > p.closed) y = p.closed;
-            applyY(y);
-            ev.preventDefault();
-        }
-
-        function onUp() {
-            if (!dragging) { cleanup(); return; }
-            sheet.classList.remove('dragging');
-            if (bd) bd.classList.remove('no-scroll');
-
-            let target;
-            if (Math.abs(vel) >= FLING_V) {
-                // 플링: 속도 방향으로 한 단계 이동
-                const cur = SNAP_ORDER.indexOf(nearest(curY));
-                const next = vel > 0 ? Math.min(cur + 1, SNAP_ORDER.length - 1) : Math.max(cur - 1, 0);
-                target = SNAP_ORDER[next];
-            } else {
-                target = nearest(curY);
-            }
-            if (target === 'closed') close(); else setSnap(target, true);
-            cleanup();
-        }
-
-        function cleanup() {
-            document.removeEventListener('pointermove', onMove);
-            document.removeEventListener('pointerup', onUp);
-            document.removeEventListener('pointercancel', onUp);
-            if (bd) bd.classList.remove('no-scroll');
-        }
-
-        document.addEventListener('pointermove', onMove, { passive: false });
-        document.addEventListener('pointerup', onUp);
-        document.addEventListener('pointercancel', onUp);
+        closeTimer = setTimeout(() => { if (!isOpen) sheet.innerHTML = ''; }, 240);
     }
 
     backdrop.onclick = close;
-    window.addEventListener('resize', () => { if (snap !== 'closed') setSnap(snap, false); });
+    // ESC 로 닫기(데스크톱)
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen) close(); });
 
-    return { open, close, isOpen: () => snap !== 'closed' };
+    return { open, close, isOpen: () => isOpen };
 }
+// [E] edit by smsong
 
 const Sheet1 = createSheet('sheet', 'sheetBackdrop');    // 운동 기록(세션)/식단/체중/프로필/설정
 const Sheet2 = createSheet('sheet2', 'sheetBackdrop2');  // 운동 입력 전용 (1차 위에 겹침)
@@ -1491,57 +1381,53 @@ function openSessionEditor(sessionId, date, mode) {
 
     function renderMode() {
         if (curMode === 'new' || curMode === 'edit') renderMetaForm();
-        else if (curMode === 'workouts') renderWorkoutList();
         else renderMetaView();
     }
 
-    // ---------- 조회(읽기 전용) ----------
+    // ---------- 조회(읽기 전용 상세 + 운동 리스트) ----------
     function renderMetaView() {
         const s = sess();
         if (!s) { closeSheet(); return; }
         const dur = sessionDuration(s);
         const parts = sessionBodyParts(s);
         const c = s.condition;
-        const n = (s.workouts || []).length;
+        const timeStr = fmtTimeRange(s);
         openSheet(`
             <div class="se-toolbar">
                 <div class="se-tb-left">
                     <button class="btn sm" id="seEdit">${icon('pencil')} 수정</button>
                     <button class="btn sm danger" id="seDel">${icon('trash')} 삭제</button>
                 </div>
-                <button class="btn sm grad" id="seWorkouts">운동 보기 ${icon('chevR')}</button>
+                <button class="btn sm grad" id="seAddW" type="button">${icon('plus')} 운동 추가</button>
             </div>
 
-            <div class="se-view">
-                <div class="kv"><span class="k">날짜</span><span class="v">${fmtKorean(s.date)}</span></div>
-                <div class="kv"><span class="k">시간</span><span class="v tabnum">${esc(fmtTimeRange(s))}${dur != null ? ' · ' + fmtDur(dur) : ''}</span></div>
-                <div class="kv"><span class="k">컨디션</span>
-                    <span class="v cond-inline">
-                        <i class="cond-bar"><b style="width:${c == null ? 0 : c}%;background:${condColor(c)}"></b></i>
-                        <span class="tabnum" style="color:${condColor(c)}">${c == null ? '—' : c}</span>
-                        <span class="cond-inline-lbl">${c == null ? '' : condLabel(c)}</span>
-                    </span>
-                </div>
-                <div class="kv col"><span class="k">운동 부위</span>
-                    ${parts.length ? `<div class="chip-row">${parts.map(p => `<span class="chip sm active view-chip">${esc(p)}</span>`).join('')}</div>` : `<span class="v muted">기록 없음</span>`}
-                </div>
-                ${s.memo ? `<div class="kv col"><span class="k">메모</span><span class="v">${esc(s.memo)}</span></div>` : ''}
-                <div class="se-summary tabnum">담긴 운동 ${n}개 · 총 볼륨 ${sessionVolume(s)} kg</div>
+            <div class="se-meta">
+                <span class="se-meta-date">${fmtKorean(s.date)}</span>
+                ${timeStr ? `<span class="se-meta-item">${esc(timeStr)}${dur != null ? ' · ' + fmtDur(dur) : ''}</span>` : (dur != null ? `<span class="se-meta-item">${fmtDur(dur)}</span>` : '')}
+                <span class="se-meta-item se-meta-cond" style="color:${condColor(c)}">컨디션 ${c == null ? '—' : c}</span>
             </div>
-        `, {
-            title: '운동 기록',
-            desc: '이 기록의 정보예요. 왼쪽 위 “수정”으로 고치고, 오른쪽 위 “운동 보기”로 담긴 운동을 확인하세요.',
-            snap: 'half'
-        });
+            ${parts.length ? `<div class="se-meta-parts">${parts.map(p => `<span class="chip xs active view-chip">${esc(p)}</span>`).join('')}</div>` : ''}
+            ${s.memo ? `<div class="se-meta-memo">${esc(s.memo)}</div>` : ''}
+
+            <div class="se-head">
+                <h4>운동 <span class="cnt tabnum" id="seCount">0</span></h4>
+                <span class="se-head-sum tabnum" id="seVol"></span>
+            </div>
+            <div class="reorder-list se-list" id="seList"></div>
+        `);
 
         document.getElementById('seEdit').onclick = () => { curMode = 'edit'; renderMode(); };
-        document.getElementById('seWorkouts').onclick = () => { curMode = 'workouts'; renderMode(); };
         document.getElementById('seDel').onclick = async () => {
             if (!confirm('이 운동 기록을 삭제할까요?\n안에 담긴 운동도 함께 삭제됩니다.')) return;
             const b = document.getElementById('seDel'); b.disabled = true;
             try { await delSessionRec(sid); closeSheet(); render(); toast('운동 기록을 삭제했어요'); }
             catch (err) { b.disabled = false; toast(errMsg(err, '삭제에 실패했어요')); }
         };
+        document.getElementById('seAddW').onclick = () => openWorkoutSheet(null, async item => {
+            await addWorkoutToSession(sid, item);
+            paintList(); render(); toast('운동을 추가했어요');
+        });
+        paintList();
     }
 
     // ---------- 생성/수정 폼 ----------
@@ -1593,13 +1479,7 @@ function openSessionEditor(sessionId, date, mode) {
                 <button class="btn grad block" id="seSave">${curMode === 'new' ? '운동 기록 만들기' : '변경사항 저장'}</button>
                 ${curMode === 'edit' ? `<button class="btn block" id="seCancel" style="margin-top:8px">취소</button>` : ''}
             </div>
-        `, {
-            title: curMode === 'new' ? '운동 기록 만들기' : '운동 기록 수정',
-            desc: curMode === 'new'
-                ? '날짜·시간·컨디션·부위를 정해 기록을 만드세요. 운동은 만든 뒤 “운동 보기”에서 추가해요.'
-                : '시간·컨디션·부위·메모를 수정하세요.',
-            snap: 'half'
-        });
+        `);
 
         // 컨디션 슬라이더
         const condEl = document.getElementById('seCond');
@@ -1661,7 +1541,7 @@ function openSessionEditor(sessionId, date, mode) {
                 render();
                 curMode = 'view';
                 renderMode();
-                toast(payload.id ? '운동 기록을 저장했어요' : '기록을 만들었어요. “운동 보기”에서 운동을 추가하세요');
+                toast(payload.id ? '운동 기록을 저장했어요' : '기록을 만들었어요. 아래 “운동 추가”로 운동을 담으세요');
             } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
         };
 
@@ -1669,33 +1549,7 @@ function openSessionEditor(sessionId, date, mode) {
         if (cancel) cancel.onclick = () => { curMode = 'view'; renderMode(); };
     }
 
-    // ---------- 운동 목록(운동 보기) ----------
-    function renderWorkoutList() {
-        const s = sess();
-        if (!s) { closeSheet(); return; }
-        openSheet(`
-            <div class="se-toolbar">
-                <button class="btn sm" id="seBack">${icon('chevL')} 기록으로</button>
-                <button class="btn sm grad" id="seAddW" type="button">＋ 운동 추가</button>
-            </div>
-            <div class="se-head">
-                <h4>운동 <span class="cnt tabnum" id="seCount">0</span></h4>
-                <span class="se-head-sum tabnum" id="seVol"></span>
-            </div>
-            <div class="reorder-list se-list" id="seList"></div>
-        `, {
-            title: '운동',
-            desc: `${fmtKorean(s.date)}${s.startTime ? ' · ' + s.startTime : ''} 기록에 담긴 운동이에요.`,
-            snap: 'half'
-        });
-        document.getElementById('seBack').onclick = () => { curMode = 'view'; renderMode(); };
-        document.getElementById('seAddW').onclick = () => openWorkoutSheet(null, async item => {
-            await addWorkoutToSession(sid, item);
-            paintList(); render(); toast('운동을 추가했어요');
-        });
-        paintList();
-    }
-
+    // ---------- 세션 안 운동 리스트 렌더 ----------
     function paintList() {
         const el = document.getElementById('seList');
         if (!el) return;
