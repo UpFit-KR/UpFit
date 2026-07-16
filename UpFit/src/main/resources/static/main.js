@@ -676,8 +676,8 @@ function renderWorkout() {
         </div>
         <!-- [B] edit by smsong : 선택한 날짜로 붙여넣기/파일 가져오기 -->
         <div class="head-btns">
-            <button class="icon-btn" id="importBtn">${icon('paste')} 가져오기</button>
-            <button class="icon-btn" id="addSessionBtn">${icon('plus')} 기록</button>
+            <button class="ibtn" id="importBtn" type="button" title="기록 가져오기" aria-label="기록 가져오기">${icon('paste')}</button>
+            <button class="ibtn grad" id="addSessionBtn" type="button" title="운동 기록 추가" aria-label="운동 기록 추가">${icon('plus')}</button>
         </div>
         <!-- [E] edit by smsong -->
     </div>`;
@@ -829,7 +829,7 @@ function workoutCalendarHtml() {
     if (parts.length) detail += `<div class="day-parts">부위 · ${parts.join(' · ')}</div>`;
     detail += list.length
         ? `<div class="sess-list reorder-list" data-reorder-date="${sel}">${list.map(s => sessionCardHtml(s, true)).join('')}</div>`
-        : emptyBlock('dumbbell', '이 날은 기록이 없어요', '＋ 기록 버튼으로 운동 기록을 만드세요');
+        : emptyBlock('dumbbell', '이 날은 기록이 없어요', '오른쪽 위 ＋ 버튼으로 운동 기록을 만드세요');
     detail += `</div>`;
 
     return `<div class="card">${cal}</div>${detail}`;
@@ -837,7 +837,7 @@ function workoutCalendarHtml() {
 
 function workoutListHtml() {
     const dates = [...new Set(state.sessions.map(s => s.date))].sort((a, b) => a < b ? 1 : -1);
-    if (!dates.length) return emptyBlock('dumbbell', '아직 운동 기록이 없어요', '오른쪽 위 ＋ 기록으로 시작하세요');
+    if (!dates.length) return emptyBlock('dumbbell', '아직 운동 기록이 없어요', '오른쪽 위 ＋ 버튼으로 시작하세요');
     return dates.map(date => {
         const parts = dayBodyParts(date);
         const dur = durationOfDate(date);
@@ -921,7 +921,7 @@ function renderDiet() {
             <button data-v="calendar" class="${ui.dietView === 'calendar' ? 'active' : ''}">달력</button>
             <button data-v="list" class="${ui.dietView === 'list' ? 'active' : ''}">목록</button>
         </div>
-        <button class="icon-btn" id="addMealBtn">${icon('plus')} 기록</button>
+        <button class="ibtn grad" id="addMealBtn" type="button" title="식단 기록 추가" aria-label="식단 기록 추가">${icon('plus')}</button>
     </div>`;
 
     html += ui.dietView === 'calendar' ? dietCalendarHtml() : dietListHtml();
@@ -943,14 +943,14 @@ function dietCalendarHtml() {
         <div class="d-sum tabnum">${kcalOfDate(ui.dietSel)} kcal</div></div>`;
     const recs = mealsByDate(ui.dietSel);
     detail += recs.length ? recs.map(m => mealRecHtml(m)).join('') :
-        emptyBlock('utensils', '이 날은 기록이 없어요', '＋ 기록 버튼으로 추가하세요');
+        emptyBlock('utensils', '이 날은 기록이 없어요', '오른쪽 위 ＋ 버튼으로 추가하세요');
     detail += `</div>`;
     return `<div class="card">${cal}</div>${detail}`;
 }
 
 function dietListHtml() {
     const dates = [...new Set(state.meals.map(m => m.date))].sort((a, b) => a < b ? 1 : -1);
-    if (!dates.length) return emptyBlock('utensils', '아직 식단 기록이 없어요', '오른쪽 위 ＋ 기록으로 시작하세요');
+    if (!dates.length) return emptyBlock('utensils', '아직 식단 기록이 없어요', '오른쪽 위 ＋ 버튼으로 시작하세요');
     return dates.map(date => `
         <div class="day-group">
             <div class="day-head">
@@ -1126,7 +1126,7 @@ function renderProfile() {
     </div>` : ''}
 
     <div class="section">
-        <div class="section-head"><h2>신체 정보</h2><button class="btn sm" id="editBodyBtn">수정</button></div>
+        <div class="section-head"><h2>신체 정보</h2><button class="ibtn sm" id="editBodyBtn" type="button" title="수정" aria-label="수정">${icon('pencil')}</button></div>
         <div class="card">
             <div class="kv"><span class="k">키</span><span class="v tabnum">${p.height ? p.height + ' cm' : '—'}</span></div>
             <div class="kv"><span class="k">현재 체중</span><span class="v tabnum">${lastWeight != null ? lastWeight + ' kg' : '—'}</span></div>
@@ -1521,13 +1521,13 @@ function openSessionEditor(sessionId, date, mode) {
                  전체보기 중에는 배경(backdrop)이 가려지므로 닫기(✕)를 항상 노출한다. -->
             <div class="se-toolbar">
                 <div class="se-tb-left">
-                    <button class="btn sm" id="seEdit">${icon('pencil')} 수정</button>
-                    <button class="btn sm danger" id="seDel">${icon('trash')} 삭제</button>
+                    <button class="ibtn sm" id="seEdit" type="button" title="수정" aria-label="수정">${icon('pencil')}</button>
+                    <button class="ibtn sm danger" id="seDel" type="button" title="삭제" aria-label="삭제">${icon('trash')}</button>
                 </div>
                 <div class="se-tb-right">
-                    <button class="btn sm grad" id="seAddW" type="button">${icon('plus')} 운동 추가</button>
-                    <button class="btn sm icon" id="seFull" type="button" title="전체보기" aria-label="전체보기">${icon(fullView ? 'collapse' : 'expand')}</button>
-                    <button class="btn sm icon" id="seClose" type="button" title="닫기" aria-label="닫기">${icon('x')}</button>
+                    <button class="ibtn sm grad" id="seAddW" type="button" title="운동 추가" aria-label="운동 추가">${icon('plus')}</button>
+                    <button class="ibtn sm" id="seFull" type="button" title="전체보기" aria-label="전체보기">${icon(fullView ? 'collapse' : 'expand')}</button>
+                    <button class="ibtn sm" id="seClose" type="button" title="닫기" aria-label="닫기">${icon('x')}</button>
                 </div>
             </div>
             <!-- [E] edit by smsong -->
@@ -1699,7 +1699,7 @@ function openSessionEditor(sessionId, date, mode) {
         const list = (s && s.workouts) || [];
         el.innerHTML = list.length
             ? list.map(w => workoutRowHtml(w, sid)).join('')
-            : `<div class="se-empty">아직 운동이 없어요. ‘＋ 운동 추가’로 추가하세요.</div>`;
+            : `<div class="se-empty">아직 운동이 없어요. 위 ＋ 버튼으로 추가하세요.</div>`;
         const cntEl = document.getElementById('seCount'); if (cntEl) cntEl.textContent = list.length;
         const volEl = document.getElementById('seVol'); if (volEl) volEl.textContent = list.length ? `볼륨 ${sessionVolume(s)} kg` : '';
 
@@ -1741,12 +1741,12 @@ function openWorkoutSheet(initial, onApply) {
             <label>운동 종목</label>
             <div class="exercise-picker">
                 <select class="select" id="wExercise">${exOptions(editing ? initial.exercise : '')}</select>
-                <button class="btn sm ex-btn toggle" id="wAddEx" type="button">＋ 종목</button>
+                <button class="ibtn ex-btn toggle" id="wAddEx" type="button" title="종목 추가" aria-label="종목 추가">${icon('plus')}</button>
             </div>
             <div class="ex-new-wrap" id="wNewExWrap">
                 <div class="exercise-picker">
                     <input class="input" id="wNewEx" placeholder="새 종목 이름 (예: 인클라인 벤치)">
-                    <button class="btn sm grad ex-btn" id="wNewExSave" type="button">추가</button>
+                    <button class="ibtn grad ex-btn" id="wNewExSave" type="button" title="종목 저장" aria-label="종목 저장">${icon('check')}</button>
                 </div>
             </div>
         </div>
@@ -1788,7 +1788,8 @@ function openWorkoutSheet(initial, onApply) {
         const opening = !newWrap.classList.contains('open');
         newWrap.classList.toggle('open', opening);
         addExBtn.classList.toggle('open', opening);
-        addExBtn.textContent = opening ? '－ 종목' : '＋ 종목';
+        addExBtn.innerHTML = icon(opening ? 'minus' : 'plus');   // [B][E] edit by smsong : 텍스트 → 아이콘
+        addExBtn.title = addExBtn.ariaLabel = opening ? '종목 추가 닫기' : '종목 추가';
         if (opening) document.getElementById('wNewEx').focus();
     };
     document.getElementById('wNewExSave').onclick = async () => {
@@ -1802,7 +1803,7 @@ function openWorkoutSheet(initial, onApply) {
             document.getElementById('wNewEx').value = '';
             newWrap.classList.remove('open');
             addExBtn.classList.remove('open');
-            addExBtn.textContent = '＋ 종목';
+            addExBtn.innerHTML = icon('plus');   // [B][E] edit by smsong : 텍스트 → 아이콘
             toast(`'${name}' 종목을 추가했어요`);
         } catch (err) { toast(errMsg(err, '종목 추가에 실패했어요')); }
         finally { btn.disabled = false; }
@@ -1987,7 +1988,7 @@ function openSettingsSheet() {
         <!-- [B] edit by smsong : 예전 텍스트 기록 마이그레이션 진입점 -->
         <div class="field">
             <label>기록 마이그레이션</label>
-            <button class="btn block" id="setImport" type="button">${icon('paste')} 운동 기록 가져오기 (.txt)</button>
+            <button class="ibtn" id="setImport" type="button" title="운동 기록 가져오기" aria-label="운동 기록 가져오기">${icon('paste')}</button>
             <div class="hint">월 단위로 남겨둔 텍스트 파일을 여러 개 한 번에 올릴 수 있어요.</div>
         </div>
         <!-- [E] edit by smsong -->
@@ -2078,6 +2079,8 @@ const IM_SUMMARY_RE = /^\d{1,2}\s*월\s*(휴식|운동|합계|총)/;            
 const IM_BULLET_RE  = /^[\s\u00a0]*[-–—•·∙▪◦*⁃‣]/;
 const IM_REST_RE    = /^(휴식|휴무|쉼|오프|off|rest|없음|-)$/i;
 const IM_DAY_RE     = /^(?:(\d{4})\s*[년.\-\/]\s*)?(\d{1,2})\s*[월.\-\/]\s*(\d{1,2})\s*일?\s*(?:[월화수목금토일](?:요일)?)?$/;
+// 월 없이 일만 적은 줄: "1일 월", "1일" → 기준 연·월을 사용
+const IM_DAYONLY_RE = /^(\d{1,2})\s*일\s*(?:[월화수목금토일](?:요일)?)?$/;
 const IM_WEEKDAY_RE = /^[월화수목금토일](?:요일)?$/;
 const IM_PCT_RE     = /^(\d{1,3})\s*%$/;
 const IM_TIME_RE    = /^(\d{1,2}:\d{2})\s*[~\-–—]\s*(\d{1,2}:\d{2})$/;
@@ -2137,12 +2140,22 @@ function imPadTime(t) {
 // 날짜 줄 판정 → 'YYYY-MM-DD' 또는 null
 function imMatchDate(rest, ctx) {
     const m = rest.match(IM_DAY_RE);
-    if (!m) return null;
-    const year = m[1] ? Number(m[1]) : ctx.year;
-    if (!year) return null;                                   // 연도를 알 수 없으면 날짜 줄로 보지 않는다
-    const mm = Number(m[2]), dd = Number(m[3]);
-    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-    return year + '-' + pad(mm) + '-' + pad(dd);
+    if (m) {
+        // 기준 연·월 강제 적용이면 파일에 적힌 연도를 무시한다
+        const year = (!ctx.force && m[1]) ? Number(m[1]) : ctx.year;
+        if (!year) return null;                               // 연도를 알 수 없으면 날짜 줄로 보지 않는다
+        const mm = Number(m[2]), dd = Number(m[3]);
+        if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+        return year + '-' + pad(mm) + '-' + pad(dd);
+    }
+    // "1일" 처럼 일만 적힌 줄 → 기준 연·월로 보완
+    const d1 = rest.match(IM_DAYONLY_RE);
+    if (d1 && ctx.year && ctx.month) {
+        const dd = Number(d1[1]);
+        if (dd < 1 || dd > 31) return null;
+        return ctx.year + '-' + pad(ctx.month) + '-' + pad(dd);
+    }
+    return null;
 }
 
 // 운동 줄 → { exercise, weight, reps, sets, bodyweight, memo } | { failed:true, ... } | null
@@ -2197,13 +2210,15 @@ function imParseItem(rest, groups, unit) {
 /**
  * 기록 텍스트 → 날짜별 세션 목록
  * @param {string} text
- * @param {{unit?:'lbs'|'kg', defaultDate?:string, year?:number}} opts
+ * @param {{unit?:'lbs'|'kg', defaultDate?:string, year?:number, month?:number, forceYm?:boolean}} opts
  * @returns {{days:Array, warnings:Array<string>, restCount:number}}
  */
 function parseWorkoutText(text, opts) {
     opts = opts || {};
     const unit = opts.unit === 'kg' ? 'kg' : 'lbs';
-    const ctx = { year: opts.year || null };
+    // 기준 연·월. 파일에 "2026년 6월 운동" 헤더가 있으면 그 값으로 갱신되지만,
+    // opts.forceYm 이면 헤더를 무시하고 사용자가 고른 기준 연·월을 끝까지 사용한다.
+    const ctx = { year: opts.year || null, month: opts.month || null, force: !!opts.forceYm };
     const days = [];
     const byDate = {};
     const warnings = [];
@@ -2235,7 +2250,10 @@ function parseWorkoutText(text, opts) {
         if (!raw.trim()) continue;
 
         const mh = raw.trim().match(IM_MONTH_RE);
-        if (mh) { ctx.year = Number(mh[1]); continue; }          // 월 헤더
+        if (mh) {                                                // 월 헤더 "2026년 6월 운동"
+            if (!ctx.force) { ctx.year = Number(mh[1]); ctx.month = Number(mh[2]); }
+            continue;
+        }
         if (IM_SUMMARY_RE.test(raw.trim())) continue;            // 월 요약
 
         const hadBullet = IM_BULLET_RE.test(raw);
@@ -2334,16 +2352,40 @@ async function importOneDay(d) {
 
 function openImportSheet(defaultDate) {
     const date0 = defaultDate || todayStr();
+    const d0 = parseDate(date0);
+    let year = d0.getFullYear();
+    let month = d0.getMonth() + 1;
+    let forceYm = false;
     let unit = imGetUnit();
     let dup = 'skip';
     let parsed = null;
     let busy = false;
 
+    // 기준 연도 후보: 올해 기준 앞뒤로 넉넉히
+    const thisYear = new Date().getFullYear();
+    const years = [];
+    for (let y = thisYear + 1; y >= thisYear - 12; y--) years.push(y);
+
     openSheet(`
+        <!-- [B] edit by smsong : 기준 연·월을 고르고 파일을 넣으면 한 번에 마이그레이션 -->
         <div class="field">
-            <label>기본 날짜 <span class="lbl-sub">텍스트에 날짜 줄이 없을 때 이 날짜로 저장</span></label>
-            <input class="input" id="imDate" type="date" value="${date0}">
+            <label>기준 연·월 <span class="lbl-sub">파일에 연도가 없을 때 사용</span></label>
+            <div class="ym-row">
+                <select class="select" id="imYear">
+                    ${years.map(y => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}년</option>`).join('')}
+                </select>
+                <select class="select" id="imMonth">
+                    ${Array.from({ length: 12 }, (_, i) => i + 1).map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${m}월</option>`).join('')}
+                </select>
+            </div>
+            <label class="check-row" style="margin-top:10px">
+                <input type="checkbox" id="imForce">
+                <span class="box">${icon('check')}</span>
+                <span>파일의 연·월 헤더 무시하고 기준 연·월 사용</span>
+            </label>
+            <div class="hint">“2026년 6월 운동” 같은 헤더가 있으면 그 값이 우선이에요. 날짜 줄(6/1)의 월은 그대로 씁니다.</div>
         </div>
+        <!-- [E] edit by smsong -->
 
         <div class="field">
             <label>단위 없는 숫자 해석 <span class="lbl-sub">예) 체스트 프레스 머신 4rep 2set (190)</span></label>
@@ -2355,14 +2397,19 @@ function openImportSheet(defaultDate) {
         </div>
 
         <div class="field">
-            <label>기록 붙여넣기</label>
+            <label>파일 선택 <span class="lbl-sub">.txt 여러 개 한 번에</span></label>
+            <input class="input im-file" id="imFiles" type="file" accept=".txt,text/plain" multiple>
+        </div>
+
+        <div class="field">
+            <label>또는 기록 붙여넣기 <span class="lbl-sub">날짜 줄이 없으면 아래 기본 날짜로</span></label>
             <textarea class="input im-text" id="imText" placeholder="플랫 벤치프레스 3rep 1set (85kg)&#10;체스트 프레스 머신 4rep 2set (190)&#10;풀업 12rep 1set"></textarea>
             <div class="hint">무게를 적지 않으면 맨몸 운동으로 저장돼요.</div>
         </div>
 
         <div class="field">
-            <label>또는 파일 선택 <span class="lbl-sub">.txt 여러 개 한 번에</span></label>
-            <input class="input im-file" id="imFiles" type="file" accept=".txt,text/plain" multiple>
+            <label>기본 날짜 <span class="lbl-sub">날짜 줄이 전혀 없을 때만 사용</span></label>
+            <input class="input" id="imDate" type="date" value="${date0}">
         </div>
 
         <div class="field">
@@ -2375,10 +2422,11 @@ function openImportSheet(defaultDate) {
 
         <div id="imPreview"></div>
         <button class="btn grad block" id="imGo" style="margin-top:6px">분석하기</button>
-    `, { title: '운동 기록 가져오기', desc: '기존에 텍스트로 남긴 기록을 그대로 붙여넣거나 파일로 올리면 날짜별 운동 기록으로 만들어요.' });
+    `, { title: '운동 기록 가져오기', desc: '기준 연·월을 고르고 파일을 넣으면 한 번에 마이그레이션돼요. 붙여넣기도 됩니다.' });
 
     const $ = id => document.getElementById(id);
     const taEl = $('imText'), fileEl = $('imFiles'), goEl = $('imGo'), pvEl = $('imPreview');
+    const yEl = $('imYear'), mEl = $('imMonth'), fEl = $('imForce');
 
     function resetParsed() {
         if (busy) return;
@@ -2386,6 +2434,19 @@ function openImportSheet(defaultDate) {
     }
     taEl.oninput = resetParsed;
     fileEl.onchange = resetParsed;
+    // [B] edit by smsong : 연·월을 바꾸면 기본 날짜의 연·월도 같이 맞춘다(일자는 유지)
+    function syncBaseDate() {
+        year = Number(yEl.value); month = Number(mEl.value);
+        const day = Math.min(Number(($('imDate').value || date0).slice(8, 10)) || 1,
+                             new Date(year, month, 0).getDate());
+        $('imDate').value = year + '-' + pad(month) + '-' + pad(day);
+        resetParsed();
+    }
+    yEl.onchange = syncBaseDate;
+    mEl.onchange = syncBaseDate;
+    fEl.onchange = () => { forceYm = fEl.checked; resetParsed(); };
+    $('imDate').onchange = resetParsed;
+    // [E] edit by smsong
     document.querySelectorAll('#imUnit button').forEach(b => b.onclick = () => {
         unit = b.dataset.u; imSetUnit(unit);
         document.querySelectorAll('#imUnit button').forEach(x => x.classList.toggle('active', x === b));
@@ -2414,10 +2475,13 @@ function openImportSheet(defaultDate) {
         if (!sources.length) { toast('기록을 붙여넣거나 파일을 선택하세요'); return; }
 
         const base = $('imDate').value || todayStr();
-        const year = Number(base.slice(0, 4));
         let days = [], warnings = [], restCount = 0;
         sources.forEach(src => {
-            const r = parseWorkoutText(src.text, { unit: unit, defaultDate: base, year: year });
+            // [B][E] edit by smsong : 기준 연·월(+강제 적용)을 파서에 전달
+            const r = parseWorkoutText(src.text, {
+                unit: unit, defaultDate: base,
+                year: year, month: month, forceYm: forceYm
+            });
             r.days.forEach(d => days.push(d));
             r.warnings.forEach(w => warnings.push((sources.length > 1 ? src.name + ' · ' : '') + w));
             restCount += r.restCount;
@@ -2476,6 +2540,7 @@ function openImportSheet(defaultDate) {
         if (!target.length) { toast('업로드할 날짜가 없어요'); return; }
 
         busy = true; goEl.disabled = true; taEl.disabled = true; fileEl.disabled = true;
+        yEl.disabled = mEl.disabled = fEl.disabled = true;
         const names = {};
         target.forEach(d => d.items.forEach(i => { names[i.exercise] = 1; }));
         const newNames = Object.keys(names).filter(n => state.exercises.indexOf(n) < 0);
@@ -2511,6 +2576,7 @@ function openImportSheet(defaultDate) {
             if (!fails.length) { closeSheet(); toast(`${ok}일 · 운동 ${target.reduce((a, d) => a + d.items.length, 0)}개를 가져왔어요`); }
             else {
                 busy = false; goEl.disabled = false; taEl.disabled = false; fileEl.disabled = false;
+                yEl.disabled = mEl.disabled = fEl.disabled = false;
                 parsed = null; goEl.textContent = '분석하기';
                 pvEl.innerHTML = `<div class="im-box im-warn">${ok}일 성공 · ${fails.length}일 실패
                     <ul>${fails.slice(0, 5).map(f => `<li>${esc(f)}</li>`).join('')}</ul></div>`;
@@ -2519,6 +2585,7 @@ function openImportSheet(defaultDate) {
         } catch (err) {
             if (err && err.auth) return;   // 세션 만료 → auth.js 가 로그인으로 보냄
             busy = false; goEl.disabled = false; taEl.disabled = false; fileEl.disabled = false;
+            yEl.disabled = mEl.disabled = fEl.disabled = false;
             toast(errMsg(err, '가져오기에 실패했어요'));
         }
     }
@@ -2555,6 +2622,7 @@ function icon(name) {
         expand: `<svg viewBox="0 0 24 24" ${s}><path d="M9 3H3v6"/><path d="M3 3l7 7"/><path d="M15 21h6v-6"/><path d="M21 21l-7-7"/></svg>`,
         collapse: `<svg viewBox="0 0 24 24" ${s}><path d="M3 10h6V4"/><path d="M10 10 3 3"/><path d="M21 14h-6v6"/><path d="m14 14 7 7"/></svg>`,
         x: `<svg viewBox="0 0 24 24" ${s}><path d="M6 6l12 12M18 6 6 18"/></svg>`,
+        minus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg>`,
         // [B][E] edit by smsong : 기록 가져오기(붙여넣기)
         paste: `<svg viewBox="0 0 24 24" ${s}><path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><rect x="9" y="2.5" width="6" height="3.5" rx="1"/><path d="M9 12h6M9 16h4"/></svg>`
         // [E] edit by smsong

@@ -60,17 +60,14 @@
         }
         /* [E] edit by smsong */
 
-        /* [B] edit by smsong : 하단 흰 여백(홈 인디케이터 영역) 제거
-           원인 — 루트(html)에 position:fixed 를 주면 루트 배경이 "캔버스"로 전파되지 않아
-                  하단 세이프에어리어가 브라우저 기본색(흰색)으로 남는다.
-           해결 — html 은 고정하지 않고 배경만 담당(→ 캔버스 전파, 화면 끝까지 채움). */
+        /* [B] edit by smsong : 하단 흰 여백(홈 인디케이터 영역) 제거 — 2차 수정
+           배경을 전용 고정 레이어(.app-bg)로 분리해 세이프에어리어 바깥까지 덮는다. */
         html {
             height: 100%;
-            background: var(--page-bg);
-            background-attachment: fixed;
-            background-repeat: no-repeat;
+            background-color: #eef2f8;   /* 캔버스 폴백(단색) */
             overflow: hidden;
         }
+        :root[data-theme="dark"] { background-color: #071120; }
         body {
             height: 100%; font-family: var(--font);
             position: fixed; inset: 0; width: 100%;
@@ -79,6 +76,12 @@
             display: flex; align-items: center; justify-content: center;
             padding: 24px;
             padding-top: max(24px, env(safe-area-inset-top));   /* 하단은 꽉 채우고 여백은 위로 */
+        }
+        .app-bg {
+            position: fixed; inset: -120px; z-index: -1; pointer-events: none;
+            background: var(--page-bg);
+            background-attachment: fixed;
+            background-repeat: no-repeat;
         }
         /* [E] edit by smsong */
 
@@ -143,6 +146,9 @@
     </style>
 </head>
 <body>
+<!-- [B][E] edit by smsong : 배경 전용 고정 레이어 -->
+<div class="app-bg" aria-hidden="true"></div>
+
 <div class="loading-container">
     <!-- [B] edit by smsong : 테마별 로고 자동 교체 -->
     <img class="brand-logo" src="icons/upfit-light.png" data-theme-logo alt="UpFit">

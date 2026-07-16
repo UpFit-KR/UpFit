@@ -74,19 +74,17 @@
     --toast-line: rgba(255,255,255,0.10);
 }
 
-/* [B] edit by smsong : 하단 흰 여백(홈 인디케이터 영역) 제거
-   원인 — 루트(html)에 position:fixed 를 주면 루트 배경이 "캔버스"로 전파되지 않아
-          하단 세이프에어리어가 브라우저 기본색(흰색)으로 남는다.
-   해결 — html 은 고정하지 않고 배경만 담당(→ 캔버스 전파, 화면 끝까지 채움).
-          스크롤 잠금은 body 에만. 여백은 상단(status bar)으로 이동. */
+/* [B] edit by smsong : 하단 흰 여백(홈 인디케이터 영역) 제거 — 2차 수정
+   루트 배경을 캔버스로 전파시키는 방식은 iOS 스탠드얼론에서 통하지 않았다.
+   (단색은 화면 전체를 채우지만 그라데이션 페인팅 영역은 루트 박스에 갇힘)
+   → 배경을 전용 고정 레이어(.app-bg)로 분리하고 뷰포트보다 사방 120px 크게 잡아
+     세이프에어리어 바깥까지 덮는다. 여백은 상단(status bar)으로 이동. */
 html {
     height: 100%;
-    background: var(--page-bg);
-    background-attachment: fixed;
-    background-repeat: no-repeat;
+    background-color: #eef2f8;   /* 캔버스 폴백(단색) */
     overflow: hidden;
-    transition: background-color 0.25s;
 }
+:root[data-theme="dark"] { background-color: #071120; }
 body {
     height: 100%;
     font-family: var(--font);
@@ -96,6 +94,12 @@ body {
     touch-action: none;
     background: transparent;
     padding-top: env(safe-area-inset-top);   /* 하단은 꽉 채우고 여백은 위로 */
+}
+.app-bg {
+    position: fixed; inset: -120px; z-index: -1; pointer-events: none;
+    background: var(--page-bg);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
 }
 /* [E] edit by smsong */
 

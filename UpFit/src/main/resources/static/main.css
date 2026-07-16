@@ -161,23 +161,36 @@ body {
 }
 /* [E] edit by smsong */
 
-/* [B] edit by smsong : 하단 흰 여백(홈 인디케이터 영역) 제거
-   body 배경만으로는 body 박스(100%) 바깥의 하단 세이프에어리어가 비어 흰 띠가 보인다.
-   → 배경(단색+글로우)을 루트(html)로 올려 "캔버스"에 전파시키면 화면 끝까지 채워진다.
-     body 는 배경을 비우고, 여백은 헤더의 상단 세이프에어리어 패딩이 담당한다. */
+/* [B] edit by smsong : 하단 흰 여백(홈 인디케이터 영역) 제거 — 2차 수정
+   1차 시도(루트 배경을 캔버스로 전파)로는 iOS 스탠드얼론에서 해결되지 않았다.
+   원인 — 루트 배경이 캔버스로 전파될 때 "단색"은 화면 전체를 채우지만
+          그라데이션(background-image)의 페인팅 영역은 루트 박스에 갇힌다.
+          그래서 세이프에어리어에는 바탕색(#eef2f8)만 남아 흰 띠처럼 보였다.
+   해결 — 배경을 전용 고정 레이어(.app-bg)로 분리하고, 박스를 뷰포트보다
+          사방 120px 크게 잡아 세이프에어리어 바깥까지 확실히 덮는다.
+          여백(세이프에어리어)은 헤더의 상단 패딩이 담당 → 아래는 꽉 참. */
 html {
     min-height: 100%;
-    background-image: radial-gradient(130% 60% at 50% -5%, var(--body-glow), transparent 55%);
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-    background-position: top center;
-    background-size: 100% 100%;
+    background-color: var(--body-bg);   /* 캔버스 폴백(단색) */
     transition: background-color 0.25s;
 }
 body {
     min-height: 100dvh;
     background-image: none;
     background-color: transparent;
+}
+.app-bg {
+    position: fixed;
+    inset: -120px;                      /* 뷰포트 밖까지 넘겨 덮는다 */
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--body-bg);
+    background-image: radial-gradient(130% 60% at 50% -5%, var(--body-glow), transparent 55%);
+    background-repeat: no-repeat;
+    background-attachment: fixed;       /* 그라데이션 기준 = 뷰포트(레이어를 키워도 위치 유지) */
+    background-position: top center;
+    background-size: 100% 100%;
+    transition: background-color 0.25s;
 }
 /* [E] edit by smsong */
 button { font-family: var(--font); cursor: pointer; }
@@ -321,6 +334,27 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .icon-btn svg { width: 16px; height: 16px; }
 
+/* [B] edit by smsong — 공통 아이콘 버튼(.ibtn)
+   프로젝트의 모든 "아이콘 + 이름" 버튼을 이름 없이 아이콘만 남긴 정사각형 버튼으로 통일.
+   정사각형 + 둥근 모서리. 이름은 title/aria-label 로만 남긴다(접근성·툴팁). */
+.ibtn {
+    width: 38px; height: 38px; padding: 0; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 12px;
+    border: 1px solid var(--line); background: var(--ink-800); color: var(--text);
+    transition: transform 0.1s, opacity 0.15s, background 0.15s, border-color 0.15s;
+}
+.ibtn svg { width: 19px; height: 19px; }
+.ibtn:active { transform: scale(0.94); }
+.ibtn:disabled { opacity: 0.55; }
+.ibtn.grad { background: var(--grad); color: var(--on-grad); border: 0; }
+.ibtn.danger { color: var(--up); border-color: var(--up); background: var(--up-bg); }
+.ibtn.ghost { background: transparent; }
+/* 작은 변형 (시트 툴바 등) */
+.ibtn.sm { width: 34px; height: 34px; border-radius: 10px; }
+.ibtn.sm svg { width: 17px; height: 17px; }
+/* [E] edit by smsong */
+
 /* ---------- 리스트(목록 보기) ---------- */
 .day-group { margin-bottom: 18px; }
 .day-head {
@@ -380,26 +414,30 @@ button { font-family: var(--font); cursor: pointer; }
    · 선택한 날 = 연한 그린 라운드 채움
    · 운동한 날 = 초록 라운드 테두리 (점 없이 테두리만) */
 /* [B] edit by smsong : 날짜가 서로 띄어져 보이던 문제 개선.
-   · 원인 1 — 그리드 gap(2px) + 셀 전체를 감싸는 라운드 테두리 → 칸이 분리돼 보임
-   · 원인 2 — 그리드가 카드 폭(최대 480px)을 꽉 채워 숫자 사이가 벌어짐
-   → gap 을 0 으로, 그리드 폭을 날짜 크기에 맞게 제한(가운데 정렬)하고
-     강조(오늘/선택/운동한 날)는 셀이 아니라 "숫자를 감싸는 원형 배지"로 표시한다. */
+   · 원인 1 — 그리드 gap + 셀 전체를 감싸는 라운드 테두리 → 칸이 분리돼 보임
+   · 원인 2 — 그리드가 카드 폭을 꽉 채워 숫자 사이가 벌어짐
+   · 원인 3 — .cal-cell 의 aspect-ratio. 그리드 행 높이를 자동 계산할 때
+              빈 셀(.empty)이 섞인 첫 줄만 높이가 2배로 잡히는 문제가 있었다.
+              → aspect-ratio 를 버리고 행 높이를 고정값으로 못 박는다(모든 줄 동일 간격). */
 .cal-grid {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-rows: 24px;   /* 1행 = 요일 헤더 */
+    grid-auto-rows: 44px;       /* 2행부터 = 날짜. 고정 높이 → 줄 간격이 항상 같다 */
     gap: 0;
     width: 100%;
-    max-width: 336px;      /* 7칸 × 48px → 날짜가 붙어서 보임 */
+    max-width: 336px;           /* 7칸 × 48px → 날짜가 붙어서 보임 */
     margin: 0 auto;
 }
 .cal-dow {
-    text-align: center; font-size: 11px; font-weight: 700; color: var(--text-mute);
-    padding: 2px 0 8px; min-width: 0; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--text-mute);
+    padding: 0; min-width: 0; overflow: hidden;
 }
 .cal-dow.sun { color: var(--up); }
 .cal-dow.sat { color: var(--down); }
 .cal-cell {
-    aspect-ratio: 1 / 1;
+    height: 100%;
     background: transparent; border: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
     position: relative; font-variant-numeric: tabular-nums;
@@ -408,10 +446,10 @@ button { font-family: var(--font); cursor: pointer; }
 .cal-cell.empty { background: transparent; border: 0; }
 /* 숫자 = 원형 배지. 셀 사이에 틈이 없어도 배지끼리는 서로 닿지 않는다. */
 .cal-cell .dnum {
-    width: 32px; height: 32px; flex: 0 0 auto;
+    width: 30px; height: 30px; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center;
     border: 2px solid transparent; border-radius: 50%;
-    font-size: 14px; font-weight: 800; color: var(--text-dim); letter-spacing: -0.2px;
+    font-size: 13.5px; font-weight: 800; color: var(--text-dim); letter-spacing: -0.2px;
 }
 .cal-cell.today .dnum { border-color: var(--accent); color: var(--accent); }      /* 오늘 = 파란 원 테두리 */
 .cal-cell.selected .dnum { background: var(--grad-soft); }                        /* 선택 = 연한 그린 원 채움 */
@@ -658,10 +696,8 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .exercise-picker { display: flex; gap: 8px; align-items: stretch; }
 .exercise-picker .select,
 .exercise-picker .input { flex: 1 1 auto; min-width: 0; }
-.exercise-picker .ex-btn {
-    flex: 0 0 84px; width: 84px; white-space: nowrap;
-    display: inline-flex; align-items: center; justify-content: center;
-}
+/* [B][E] edit by smsong : 이름 제거 → 아이콘 전용 정사각형(.ibtn). 두 줄 버튼 폭 동일 유지 */
+.exercise-picker .ex-btn { flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; }
 /* '＋ 종목' 토글이 열린 상태 → '－ 종목' + 빨간 테두리 */
 .exercise-picker .ex-btn.toggle.open {
     border: 1px solid var(--up); color: var(--up); background: var(--up-bg);
@@ -896,22 +932,16 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .rec .rec-acts { display: flex; gap: 2px; }
 
 /* [B] edit by smsong : 운동 기록 상세 — 조회/수정 분리 + 운동 보기 툴바 */
+/* [B] edit by smsong : 아이콘 전용 버튼 5개를 한 줄에 배치 (줄바꿈 없음)
+   좌측 [수정][삭제] · 우측 [운동 추가][전체보기][닫기] */
 .se-toolbar {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line);
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
-.se-tb-left { display: flex; gap: 8px; }
-/* [B] edit by smsong : 우측 그룹 = [운동 추가][전체보기 ⤢][닫기 ✕] */
+.se-tb-left { display: flex; align-items: center; gap: 6px; }
 .se-tb-right { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.btn.sm.icon {
-    width: 32px; height: 32px; padding: 0; flex: 0 0 auto;
-    display: inline-flex; align-items: center; justify-content: center;
-}
-.btn.sm.icon svg { width: 16px; height: 16px; }
 /* [E] edit by smsong */
-.se-toolbar .btn { display: inline-flex; align-items: center; gap: 5px; }
-.se-toolbar .btn svg { width: 15px; height: 15px; }
 
 .se-view .kv:first-child { padding-top: 2px; }
 .se-view .kv.col { flex-direction: column; align-items: stretch; gap: 8px; }
@@ -956,6 +986,8 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 
 /* [B] edit by smsong — 운동 기록 가져오기(붙여넣기/마이그레이션) */
 .head-btns { display: flex; align-items: center; gap: 6px; }
+.ym-row { display: flex; gap: 8px; }
+.ym-row .select { flex: 1 1 0; min-width: 0; }
 .lbl-sub { font-weight: 600; color: var(--text-mute); font-size: 11px; margin-left: 4px; }
 textarea.input.im-text {
     min-height: 150px; resize: vertical; line-height: 1.55;
