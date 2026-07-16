@@ -954,6 +954,43 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 }
 /* [E] edit by smsong */
 
+/* [B] edit by smsong — 운동 기록 가져오기(붙여넣기/마이그레이션) */
+.head-btns { display: flex; align-items: center; gap: 6px; }
+.lbl-sub { font-weight: 600; color: var(--text-mute); font-size: 11px; margin-left: 4px; }
+textarea.input.im-text {
+    min-height: 150px; resize: vertical; line-height: 1.55;
+    font-size: 13px; font-family: var(--num); white-space: pre; overflow-wrap: normal; overflow-x: auto;
+}
+.input.im-file { padding: 10px 12px; font-size: 13px; }
+.input.im-file::file-selector-button {
+    margin-right: 10px; padding: 6px 12px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--ink-750); color: var(--text);
+    font-family: var(--font); font-size: 12px; font-weight: 700;
+}
+.im-box {
+    margin: 14px 0 4px; padding: 14px;
+    background: var(--ink-850); border: 1px solid var(--line); border-radius: var(--radius-md);
+}
+.im-sum { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-dim); font-weight: 700; }
+.im-sum b { font-size: 17px; color: var(--accent); margin-right: 2px; }
+.im-note { font-size: 12px; color: var(--text-mute); margin-top: 8px; font-weight: 600; }
+.im-days { margin-top: 10px; max-height: 190px; overflow-y: auto; overscroll-behavior: contain; }
+.im-day {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px;
+}
+.im-day:last-child { border-bottom: 0; }
+.im-day .im-d { font-weight: 800; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.im-day .im-p { flex: 1; min-width: 0; color: var(--accent-2); font-weight: 700;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.im-day .im-c { color: var(--text-mute); font-weight: 700; flex: 0 0 auto; }
+.im-day .muted { color: var(--text-mute); font-weight: 600; }
+.im-warn { margin-top: 10px; font-size: 12px; color: var(--up); font-weight: 700; line-height: 1.5; }
+.im-warn ul { margin: 6px 0 0 16px; font-weight: 600; }
+.im-bar { margin-top: 10px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.im-bar b { display: block; height: 100%; border-radius: 3px; background: var(--grad); transition: width .2s; }
+/* [E] edit by smsong */
+
 /* ---------- 토스트 ---------- */
 #toast {
     position: fixed; bottom: calc(var(--nav-h) + 24px); left: 50%;

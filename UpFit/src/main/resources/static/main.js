@@ -674,7 +674,12 @@ function renderWorkout() {
             <button data-v="calendar" class="${ui.workoutView === 'calendar' ? 'active' : ''}">달력</button>
             <button data-v="list" class="${ui.workoutView === 'list' ? 'active' : ''}">목록</button>
         </div>
-        <button class="icon-btn" id="addSessionBtn">${icon('plus')} 기록</button>
+        <!-- [B] edit by smsong : 선택한 날짜로 붙여넣기/파일 가져오기 -->
+        <div class="head-btns">
+            <button class="icon-btn" id="importBtn">${icon('paste')} 가져오기</button>
+            <button class="icon-btn" id="addSessionBtn">${icon('plus')} 기록</button>
+        </div>
+        <!-- [E] edit by smsong -->
     </div>`;
 
     html += ui.workoutView === 'calendar' ? workoutCalendarHtml() : workoutListHtml();
@@ -683,6 +688,10 @@ function renderWorkout() {
     // 이벤트
     document.getElementById('addSessionBtn').onclick =
         () => openSessionEditor(null, ui.workoutView === 'calendar' ? ui.workoutSel : todayStr());
+    // [B] edit by smsong : 달력에서 고른 날짜가 기본 날짜로 들어간다
+    document.getElementById('importBtn').onclick =
+        () => openImportSheet(ui.workoutView === 'calendar' ? ui.workoutSel : todayStr());
+    // [E] edit by smsong
     document.querySelectorAll('#workoutSeg button').forEach(b => b.onclick = () => { ui.workoutView = b.dataset.v; renderWorkout(); });
     bindCalendar('workout');
     wireReorder();   // [B][E] edit by smsong : 세션 드래그 순서 변경 활성화
@@ -1975,12 +1984,22 @@ function openSettingsSheet() {
                 <button data-theme="dark" class="${cur === 'dark' ? 'active' : ''}">다크</button>
             </div>
         </div>
+        <!-- [B] edit by smsong : 예전 텍스트 기록 마이그레이션 진입점 -->
+        <div class="field">
+            <label>기록 마이그레이션</label>
+            <button class="btn block" id="setImport" type="button">${icon('paste')} 운동 기록 가져오기 (.txt)</button>
+            <div class="hint">월 단위로 남겨둔 텍스트 파일을 여러 개 한 번에 올릴 수 있어요.</div>
+        </div>
+        <!-- [E] edit by smsong -->
         <button class="btn block" id="setDone" style="margin-top:6px">완료</button>
     `, { title: '설정', desc: '화면 테마를 선택하세요. 선택한 테마는 이 기기에 계속 유지돼요.', snap: 'half' });
     document.querySelectorAll('#themeSeg button').forEach(b => b.onclick = () => {
         window.UpFitTheme.apply(b.dataset.theme, true);   // persist = true
         document.querySelectorAll('#themeSeg button').forEach(x => x.classList.toggle('active', x === b));
     });
+    // [B] edit by smsong : 설정에서 열면 기본 날짜는 오늘(파일에 날짜가 있으면 파일 날짜 우선)
+    document.getElementById('setImport').onclick = () => openImportSheet(todayStr());
+    // [E] edit by smsong
     document.getElementById('setDone').onclick = closeSheet;
     // [E] edit by smsong
 }
@@ -2032,6 +2051,481 @@ function resetScrollTop() {
 document.querySelectorAll('.nav-item').forEach(btn => btn.onclick = () => activateTab(btn.dataset.tab, true));
 
 // ============================================================
+//  [B] edit by smsong — 운동 기록 텍스트 파서
+//    기존에 텍스트로 남기던 기록을 그대로 읽어 세션+운동으로 변환한다.
+//    · 붙여넣기 가져오기(날짜 선택 후 운동 목록만 붙여넣기)
+//    · 파일 마이그레이션(월 단위 .txt 여러 개)
+//    두 기능이 같은 파서를 쓴다.
+//
+//    인식 문법
+//      월 헤더 : "2026년 6월 운동"            → 이후 날짜의 연/월 기준
+//      월 요약 : "6월 휴식 : 12번"             → 무시
+//      날짜 줄 : "6/1 월 (가슴, 이두) (10%)"   → 세션 1개
+//                괄호는 순서 무관하게 해석: 부위 / 컨디션(%) / 시간(19:00~20:30) / 그 외=메모
+//      운동 줄 : "⁃ 플랫 벤치프레스 3rep 1set (85kg)"
+//                무게 생략      → 맨몸 운동(bodyweight)
+//                단위 없는 숫자 → 머신 중량. opts.unit('lbs'|'kg') 로 해석
+//                "(실패)"       → 횟수 0. 서버가 reps>0 을 요구하므로 운동으로 넣지 않고
+//                                 세션 메모에 "실패: 종목 무게" 로 남긴다.
+//      휴식 줄 : "휴식"                        → 그 날은 세션을 만들지 않음
+// ============================================================
+
+// 종목 문자열에서 쓰는 별칭 → BODY_PARTS 표준 이름
+const PART_ALIAS = { '등': '등중앙', '랫': '광배', '다리': '하체', '코어': '복근', '숄더': '어깨', '어께': '어깨' };
+
+const IM_MONTH_RE   = /^(\d{4})\s*년\s*(\d{1,2})\s*월/;                 // 2026년 6월 운동
+const IM_SUMMARY_RE = /^\d{1,2}\s*월\s*(휴식|운동|합계|총)/;             // 6월 휴식 : 12번
+const IM_BULLET_RE  = /^[\s\u00a0]*[-–—•·∙▪◦*⁃‣]/;
+const IM_REST_RE    = /^(휴식|휴무|쉼|오프|off|rest|없음|-)$/i;
+const IM_DAY_RE     = /^(?:(\d{4})\s*[년.\-\/]\s*)?(\d{1,2})\s*[월.\-\/]\s*(\d{1,2})\s*일?\s*(?:[월화수목금토일](?:요일)?)?$/;
+const IM_WEEKDAY_RE = /^[월화수목금토일](?:요일)?$/;
+const IM_PCT_RE     = /^(\d{1,3})\s*%$/;
+const IM_TIME_RE    = /^(\d{1,2}:\d{2})\s*[~\-–—]\s*(\d{1,2}:\d{2})$/;
+const IM_WEIGHT_RE  = /^(\d+(?:\.\d+)?)\s*(kg|킬로(?:그램)?|lbs?|파운드)?$/i;
+const IM_FAIL_RE    = /(실패|fail(ed)?)/i;
+const IM_REPS_RE    = /(\d+)\s*(?:reps?|회|번)/i;
+const IM_SETS_RE    = /(\d+)\s*(?:sets?|세트|셋)/i;
+
+// 줄 앞의 불릿/번호/탭 제거
+function imStripBullet(line) {
+    return String(line).replace(/^[\s\u00a0]*(?:[-–—•·∙▪◦*⁃‣]|\d+[.)])?[\s\u00a0]*/, '').trim();
+}
+
+// 괄호를 모두 뽑아내고 나머지 본문을 돌려준다. "벤치 3rep 1set (85kg)" → rest:"벤치 3rep 1set", groups:["85kg"]
+function imSplitParens(text) {
+    const groups = [];
+    const rest = String(text).replace(/[（(]\s*([^（()）]*?)\s*[)）]/g, (m, g) => {
+        if (g) groups.push(g.trim());
+        return ' ';
+    });
+    return { groups: groups, rest: rest.replace(/\s+/g, ' ').trim() };
+}
+
+// 괄호 하나를 부위 목록으로 해석 (모든 토큰이 부위일 때만 성공)
+function imAsParts(group) {
+    const tokens = group.split(/[,、·/·|+]/).map(t => t.trim()).filter(Boolean);
+    if (!tokens.length) return null;
+    const parts = [];
+    for (const t of tokens) {
+        const name = PART_ALIAS[t] || t;
+        if (BODY_PARTS.indexOf(name) < 0) return null;   // 하나라도 부위가 아니면 부위 그룹이 아님(=메모)
+        if (parts.indexOf(name) < 0) parts.push(name);
+    }
+    return parts;
+}
+
+// 날짜 줄의 괄호들을 해석해 세션 메타로
+function imDayMeta(groups) {
+    const meta = { bodyParts: [], condition: null, startTime: '', endTime: '', memo: [] };
+    groups.forEach(g => {
+        if (IM_WEEKDAY_RE.test(g)) return;                       // (월) 같은 요일 표기는 버림
+        const pct = g.match(IM_PCT_RE);
+        if (pct) { meta.condition = Math.max(0, Math.min(100, Number(pct[1]))); return; }
+        const tm = g.match(IM_TIME_RE);
+        if (tm) { meta.startTime = imPadTime(tm[1]); meta.endTime = imPadTime(tm[2]); return; }
+        const parts = imAsParts(g);
+        if (parts) { parts.forEach(p => { if (meta.bodyParts.indexOf(p) < 0) meta.bodyParts.push(p); }); return; }
+        meta.memo.push(g);
+    });
+    return meta;
+}
+function imPadTime(t) {
+    const [h, m] = String(t).split(':');
+    return pad(Number(h)) + ':' + m;
+}
+
+// 날짜 줄 판정 → 'YYYY-MM-DD' 또는 null
+function imMatchDate(rest, ctx) {
+    const m = rest.match(IM_DAY_RE);
+    if (!m) return null;
+    const year = m[1] ? Number(m[1]) : ctx.year;
+    if (!year) return null;                                   // 연도를 알 수 없으면 날짜 줄로 보지 않는다
+    const mm = Number(m[2]), dd = Number(m[3]);
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+    return year + '-' + pad(mm) + '-' + pad(dd);
+}
+
+// 운동 줄 → { exercise, weight, reps, sets, bodyweight, memo } | { failed:true, ... } | null
+function imParseItem(rest, groups, unit) {
+    let weight = null, failed = false;
+    const memo = [];
+
+    groups.forEach(g => {
+        const w = g.match(IM_WEIGHT_RE);
+        if (w) {
+            const v = Number(w[1]);
+            const u = (w[2] || '').toLowerCase();
+            if (u.indexOf('kg') === 0 || u.indexOf('킬로') === 0) weight = v;          // 명시 kg
+            else if (u) weight = lbsToKg(v);                                           // 명시 lbs/파운드
+            else weight = (unit === 'kg') ? v : lbsToKg(v);                            // 단위 없음 → 옵션
+            return;
+        }
+        if (IM_FAIL_RE.test(g)) { failed = true; memo.push(g); return; }
+        memo.push(g);
+    });
+
+    const repsM = rest.match(IM_REPS_RE);
+    const setsM = rest.match(IM_SETS_RE);
+
+    // 종목명 = 본문에서 횟수/세트 토큰을 걷어낸 나머지
+    let name = rest;
+    if (repsM) name = name.replace(repsM[0], ' ');
+    if (setsM) name = name.replace(setsM[0], ' ');
+    name = name.replace(/\s+/g, ' ').trim();
+    if (!name) return null;
+
+    if (failed || !repsM) {
+        // 횟수가 없는 줄(=실패/메모성 기록). 운동으로 저장하지 않고 호출부가 메모로 남긴다.
+        return { failed: true, exercise: name, weight: weight, memo: memo.join(' ') };
+    }
+
+    const reps = Number(repsM[1]);
+    const sets = setsM ? Number(setsM[1]) : 1;
+    if (!(reps > 0) || !(sets > 0)) return { failed: true, exercise: name, weight: weight, memo: memo.join(' ') };
+
+    const bodyweight = (weight == null || weight === 0);
+    return {
+        exercise: name,
+        weight: bodyweight ? 0 : weight,
+        reps: reps,
+        sets: sets,
+        bodyweight: bodyweight,
+        memo: memo.join(' ')
+    };
+}
+
+/**
+ * 기록 텍스트 → 날짜별 세션 목록
+ * @param {string} text
+ * @param {{unit?:'lbs'|'kg', defaultDate?:string, year?:number}} opts
+ * @returns {{days:Array, warnings:Array<string>, restCount:number}}
+ */
+function parseWorkoutText(text, opts) {
+    opts = opts || {};
+    const unit = opts.unit === 'kg' ? 'kg' : 'lbs';
+    const ctx = { year: opts.year || null };
+    const days = [];
+    const byDate = {};
+    const warnings = [];
+    let cur = null;
+
+    function openDay(date, groups) {
+        if (byDate[date]) { cur = byDate[date]; return cur; }   // 같은 날짜가 또 나오면 이어붙인다
+        const meta = imDayMeta(groups || []);
+        cur = {
+            date: date,
+            bodyParts: meta.bodyParts,
+            condition: meta.condition,
+            startTime: meta.startTime,
+            endTime: meta.endTime,
+            memo: meta.memo,
+            items: [],
+            failed: [],
+            rest: false
+        };
+        byDate[date] = cur;
+        days.push(cur);
+        return cur;
+    }
+
+    const lines = String(text || '').replace(/\r/g, '').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        const raw = lines[i];
+        const lineNo = i + 1;
+        if (!raw.trim()) continue;
+
+        const mh = raw.trim().match(IM_MONTH_RE);
+        if (mh) { ctx.year = Number(mh[1]); continue; }          // 월 헤더
+        if (IM_SUMMARY_RE.test(raw.trim())) continue;            // 월 요약
+
+        const hadBullet = IM_BULLET_RE.test(raw);
+        const body = imStripBullet(raw);
+        if (!body) continue;
+
+        const sp = imSplitParens(body);
+
+        // 날짜 줄 (불릿이 붙은 줄은 항상 운동 줄로 본다)
+        if (!hadBullet) {
+            const date = imMatchDate(sp.rest, ctx);
+            if (date) { openDay(date, sp.groups); continue; }
+        }
+
+        if (IM_REST_RE.test(sp.rest)) { if (cur) cur.rest = true; continue; }
+
+        const item = imParseItem(sp.rest, sp.groups, unit);
+        if (!item) { warnings.push(lineNo + '행: 해석할 수 없어 건너뜀 — ' + body); continue; }
+
+        if (!cur) {
+            if (!opts.defaultDate) { warnings.push(lineNo + '행: 날짜를 알 수 없어 건너뜀 — ' + body); continue; }
+            openDay(opts.defaultDate, []);
+        }
+        if (item.failed) cur.failed.push(item);
+        else cur.items.push(item);
+    }
+
+    // 운동이 하나도 없는 날 = 휴식일 → 세션을 만들지 않는다
+    let restCount = 0;
+    const result = days.filter(d => {
+        if (d.items.length) return true;
+        restCount++;
+        return false;
+    });
+
+    // 실패 기록은 세션 메모로 흡수 (서버가 reps>0 을 요구하므로 운동 행으로 넣지 않는다)
+    result.forEach(d => {
+        d.failed.forEach(f => {
+            const w = f.weight != null ? ' ' + f.weight + 'kg' : '';
+            d.memo.push('실패: ' + f.exercise + w);
+        });
+        d.memoText = d.memo.join(' · ').slice(0, 300);
+        // 부위가 비어 있으면 운동 줄에서 유추하지 않고 그대로 둔다(사용자가 나중에 채움)
+    });
+
+    return { days: result, warnings: warnings, restCount: restCount };
+}
+// [E] edit by smsong
+
+// ============================================================
+//  [B] edit by smsong — 운동 기록 가져오기 시트
+//    · 붙여넣기 : 날짜 선택 후 운동 목록만 붙여넣으면 그 날짜로 업로드
+//    · 파일     : 월 단위 .txt 를 여러 개 골라 한 번에 마이그레이션
+//    저장은 날짜 1일 = 요청 1건. 백엔드 createSession 이 workouts 를 함께 받아
+//    세션+운동을 한 트랜잭션으로 만든다(중간 실패로 반쪽 기록이 남지 않음).
+// ============================================================
+const IMPORT_UNIT_KEY = 'UF_IMPORT_UNIT_' + UID;
+function imGetUnit() {
+    try { return localStorage.getItem(IMPORT_UNIT_KEY) === 'kg' ? 'kg' : 'lbs'; } catch (_) { return 'lbs'; }
+}
+function imSetUnit(u) { try { localStorage.setItem(IMPORT_UNIT_KEY, u); } catch (_) {} }
+
+// 여러 소스에서 나온 같은 날짜를 하나로 합친다
+function imMergeDays(days) {
+    const byDate = {};
+    const out = [];
+    days.forEach(d => {
+        const prev = byDate[d.date];
+        if (!prev) { byDate[d.date] = d; out.push(d); return; }
+        d.items.forEach(i => prev.items.push(i));
+        d.bodyParts.forEach(p => { if (prev.bodyParts.indexOf(p) < 0) prev.bodyParts.push(p); });
+        if (prev.condition == null) prev.condition = d.condition;
+        if (!prev.startTime) { prev.startTime = d.startTime; prev.endTime = d.endTime; }
+        prev.memoText = [prev.memoText, d.memoText].filter(Boolean).join(' · ').slice(0, 300);
+    });
+    return out.sort((a, b) => a.date < b.date ? -1 : 1);
+}
+
+// 하루치 = 요청 1건 (세션 + 운동 전체)
+async function importOneDay(d) {
+    const dto = toSessionDTO({
+        date: d.date,
+        startTime: d.startTime,
+        endTime: d.endTime,
+        durationMin: spanMinutes(d.startTime, d.endTime),
+        condition: d.condition,
+        bodyParts: d.bodyParts,
+        memo: d.memoText || ''
+    });
+    // toSessionDTO 는 평소 workouts 를 보내지 않지만(세션 메타만 다룸),
+    // 가져오기에서는 세션 생성과 동시에 운동을 저장해야 하므로 여기서만 함께 싣는다.
+    dto.workouts = d.items.map(toWorkoutDTO);
+    const res = await api.addSession(dto);
+    upsertSessionLocal(fromSessionDTO(res));
+}
+
+function openImportSheet(defaultDate) {
+    const date0 = defaultDate || todayStr();
+    let unit = imGetUnit();
+    let dup = 'skip';
+    let parsed = null;
+    let busy = false;
+
+    openSheet(`
+        <div class="field">
+            <label>기본 날짜 <span class="lbl-sub">텍스트에 날짜 줄이 없을 때 이 날짜로 저장</span></label>
+            <input class="input" id="imDate" type="date" value="${date0}">
+        </div>
+
+        <div class="field">
+            <label>단위 없는 숫자 해석 <span class="lbl-sub">예) 체스트 프레스 머신 4rep 2set (190)</span></label>
+            <div class="seg" id="imUnit">
+                <button data-u="lbs" class="${unit === 'lbs' ? 'active' : ''}" type="button">lbs · 머신</button>
+                <button data-u="kg" class="${unit === 'kg' ? 'active' : ''}" type="button">kg</button>
+            </div>
+            <div class="hint">저장은 항상 kg 으로 변환돼요. (kg) 처럼 단위가 붙어 있으면 그대로 씁니다.</div>
+        </div>
+
+        <div class="field">
+            <label>기록 붙여넣기</label>
+            <textarea class="input im-text" id="imText" placeholder="플랫 벤치프레스 3rep 1set (85kg)&#10;체스트 프레스 머신 4rep 2set (190)&#10;풀업 12rep 1set"></textarea>
+            <div class="hint">무게를 적지 않으면 맨몸 운동으로 저장돼요.</div>
+        </div>
+
+        <div class="field">
+            <label>또는 파일 선택 <span class="lbl-sub">.txt 여러 개 한 번에</span></label>
+            <input class="input im-file" id="imFiles" type="file" accept=".txt,text/plain" multiple>
+        </div>
+
+        <div class="field">
+            <label>이미 기록이 있는 날짜</label>
+            <div class="seg" id="imDup">
+                <button data-d="skip" class="active" type="button">건너뛰기</button>
+                <button data-d="add" type="button">새 기록으로 추가</button>
+            </div>
+        </div>
+
+        <div id="imPreview"></div>
+        <button class="btn grad block" id="imGo" style="margin-top:6px">분석하기</button>
+    `, { title: '운동 기록 가져오기', desc: '기존에 텍스트로 남긴 기록을 그대로 붙여넣거나 파일로 올리면 날짜별 운동 기록으로 만들어요.' });
+
+    const $ = id => document.getElementById(id);
+    const taEl = $('imText'), fileEl = $('imFiles'), goEl = $('imGo'), pvEl = $('imPreview');
+
+    function resetParsed() {
+        if (busy) return;
+        parsed = null; pvEl.innerHTML = ''; goEl.textContent = '분석하기';
+    }
+    taEl.oninput = resetParsed;
+    fileEl.onchange = resetParsed;
+    document.querySelectorAll('#imUnit button').forEach(b => b.onclick = () => {
+        unit = b.dataset.u; imSetUnit(unit);
+        document.querySelectorAll('#imUnit button').forEach(x => x.classList.toggle('active', x === b));
+        resetParsed();
+    });
+    document.querySelectorAll('#imDup button').forEach(b => b.onclick = () => {
+        dup = b.dataset.d;
+        document.querySelectorAll('#imDup button').forEach(x => x.classList.toggle('active', x === b));
+        if (parsed) preview();
+    });
+
+    goEl.onclick = async () => {
+        if (busy) return;
+        if (!parsed) await analyze(); else await upload();
+    };
+
+    // ---------- 분석 ----------
+    async function analyze() {
+        const sources = [];
+        const files = fileEl.files ? Array.prototype.slice.call(fileEl.files) : [];
+        try {
+            for (const f of files) sources.push({ name: f.name, text: await f.text() });
+        } catch (_) { toast('파일을 읽지 못했어요'); return; }
+        const ta = taEl.value.trim();
+        if (ta) sources.push({ name: '붙여넣기', text: ta });
+        if (!sources.length) { toast('기록을 붙여넣거나 파일을 선택하세요'); return; }
+
+        const base = $('imDate').value || todayStr();
+        const year = Number(base.slice(0, 4));
+        let days = [], warnings = [], restCount = 0;
+        sources.forEach(src => {
+            const r = parseWorkoutText(src.text, { unit: unit, defaultDate: base, year: year });
+            r.days.forEach(d => days.push(d));
+            r.warnings.forEach(w => warnings.push((sources.length > 1 ? src.name + ' · ' : '') + w));
+            restCount += r.restCount;
+        });
+        parsed = { days: imMergeDays(days), warnings: warnings, restCount: restCount };
+        preview();
+    }
+
+    // ---------- 미리보기 ----------
+    function targetDays() {
+        return dup === 'skip' ? parsed.days.filter(d => !sessionsByDate(d.date).length) : parsed.days;
+    }
+    function preview() {
+        const all = parsed.days;
+        if (!all.length) {
+            pvEl.innerHTML = `<div class="im-box im-warn">해석된 운동이 없어요. 형식을 확인해 주세요.
+                ${parsed.restCount ? `<br>휴식으로 표시된 ${parsed.restCount}일은 원래 제외됩니다.` : ''}</div>`;
+            goEl.textContent = '분석하기'; parsed = null; return;
+        }
+        const target = targetDays();
+        const skipped = all.length - target.length;
+        const items = target.reduce((a, d) => a + d.items.length, 0);
+        const names = {};
+        target.forEach(d => d.items.forEach(i => { names[i.exercise] = 1; }));
+        const newNames = Object.keys(names).filter(n => state.exercises.indexOf(n) < 0);
+
+        pvEl.innerHTML = `
+            <div class="im-box">
+                <div class="im-sum">
+                    <span><b class="tabnum">${target.length}</b>일</span>
+                    <span><b class="tabnum">${items}</b>개 운동</span>
+                    <span>새 종목 <b class="tabnum">${newNames.length}</b>개</span>
+                </div>
+                ${parsed.restCount ? `<div class="im-note">휴식 ${parsed.restCount}일은 제외했어요.</div>` : ''}
+                ${skipped ? `<div class="im-note">이미 기록이 있는 ${skipped}일은 건너뜁니다.</div>` : ''}
+                <div class="im-days">
+                    ${target.slice(0, 40).map(d => `
+                        <div class="im-day">
+                            <span class="im-d">${esc(d.date)}</span>
+                            <span class="im-p">${d.bodyParts.length ? esc(d.bodyParts.join(' · ')) : '<span class="muted">부위 없음</span>'}</span>
+                            <span class="im-c tabnum">${d.items.length}개${d.condition != null ? ' · 컨디션 ' + d.condition : ''}</span>
+                        </div>`).join('')}
+                    ${target.length > 40 ? `<div class="im-note">외 ${target.length - 40}일…</div>` : ''}
+                </div>
+                ${parsed.warnings.length ? `<div class="im-warn">
+                    해석 못한 줄 ${parsed.warnings.length}개 (건너뜀)
+                    <ul>${parsed.warnings.slice(0, 5).map(w => `<li>${esc(w)}</li>`).join('')}</ul>
+                </div>` : ''}
+            </div>`;
+        goEl.textContent = target.length ? `${target.length}일 업로드` : '업로드할 날짜 없음';
+    }
+
+    // ---------- 업로드 ----------
+    async function upload() {
+        const target = targetDays();
+        if (!target.length) { toast('업로드할 날짜가 없어요'); return; }
+
+        busy = true; goEl.disabled = true; taEl.disabled = true; fileEl.disabled = true;
+        const names = {};
+        target.forEach(d => d.items.forEach(i => { names[i.exercise] = 1; }));
+        const newNames = Object.keys(names).filter(n => state.exercises.indexOf(n) < 0);
+
+        const total = target.length + newNames.length;
+        let step = 0;
+        const bar = (msg) => {
+            pvEl.innerHTML = `<div class="im-box">
+                <div class="im-note">${esc(msg)}</div>
+                <div class="im-bar"><b style="width:${Math.round(step / total * 100)}%"></b></div>
+            </div>`;
+        };
+
+        try {
+            // 1) 새 종목 먼저 등록 (콤보박스에서 바로 고를 수 있도록)
+            for (const n of newNames) {
+                bar(`종목 등록 중… ${n}`);
+                try { await addExerciseType(n); } catch (err) { if (err && err.auth) throw err; }
+                step++;
+            }
+            // 2) 날짜별 업로드
+            let ok = 0; const fails = [];
+            for (const d of target) {
+                bar(`${d.date} 업로드 중… (${ok + fails.length + 1}/${target.length})`);
+                try { await importOneDay(d); ok++; }
+                catch (err) {
+                    if (err && err.auth) throw err;
+                    fails.push(d.date + ' — ' + errMsg(err, '실패'));
+                }
+                step++;
+            }
+            render();
+            if (!fails.length) { closeSheet(); toast(`${ok}일 · 운동 ${target.reduce((a, d) => a + d.items.length, 0)}개를 가져왔어요`); }
+            else {
+                busy = false; goEl.disabled = false; taEl.disabled = false; fileEl.disabled = false;
+                parsed = null; goEl.textContent = '분석하기';
+                pvEl.innerHTML = `<div class="im-box im-warn">${ok}일 성공 · ${fails.length}일 실패
+                    <ul>${fails.slice(0, 5).map(f => `<li>${esc(f)}</li>`).join('')}</ul></div>`;
+                toast('일부 날짜를 저장하지 못했어요');
+            }
+        } catch (err) {
+            if (err && err.auth) return;   // 세션 만료 → auth.js 가 로그인으로 보냄
+            busy = false; goEl.disabled = false; taEl.disabled = false; fileEl.disabled = false;
+            toast(errMsg(err, '가져오기에 실패했어요'));
+        }
+    }
+}
+// [E] edit by smsong
+
+// ============================================================
 //  아이콘 + 유틸
 // ============================================================
 function icon(name) {
@@ -2060,7 +2554,9 @@ function icon(name) {
         // [B] edit by smsong : 전체보기(확대) / 작게 보기(축소) / 닫기
         expand: `<svg viewBox="0 0 24 24" ${s}><path d="M9 3H3v6"/><path d="M3 3l7 7"/><path d="M15 21h6v-6"/><path d="M21 21l-7-7"/></svg>`,
         collapse: `<svg viewBox="0 0 24 24" ${s}><path d="M3 10h6V4"/><path d="M10 10 3 3"/><path d="M21 14h-6v6"/><path d="m14 14 7 7"/></svg>`,
-        x: `<svg viewBox="0 0 24 24" ${s}><path d="M6 6l12 12M18 6 6 18"/></svg>`
+        x: `<svg viewBox="0 0 24 24" ${s}><path d="M6 6l12 12M18 6 6 18"/></svg>`,
+        // [B][E] edit by smsong : 기록 가져오기(붙여넣기)
+        paste: `<svg viewBox="0 0 24 24" ${s}><path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><rect x="9" y="2.5" width="6" height="3.5" rx="1"/><path d="M9 12h6M9 16h4"/></svg>`
         // [E] edit by smsong
     };
     return map[name] || '';
