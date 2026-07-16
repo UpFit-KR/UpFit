@@ -257,7 +257,8 @@ const ui = {
     dietCal: firstOfThisMonth(),
     workoutSel: todayStr(),
     dietSel: todayStr(),
-    changeExercise: null
+    changeExercise: null,
+    changePeriod: '1m'   // [B][E] edit by smsong : 변화 탭 그래프 기간(1d/1w/1m/6m/1y)
 };
 function firstOfThisMonth() { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; }
 
@@ -998,6 +999,10 @@ function renderChange() {
 
     let html = '';
 
+    // [B] edit by smsong : 기간 탭 — 아래 모든 그래프가 이 기준으로 필터링된다
+    html += `<div class="section"><div class="card period-card">${periodTabsHtml('changePeriodTabs', ui.changePeriod)}</div></div>`;
+    // [E] edit by smsong
+
     // 1) 종목별 성장 분석 : 직전 세션 대비 무게·횟수·세트·볼륨 등락(상승=빨강/하락=파랑) + 추이 그래프
     html += `<div class="section">
         <div class="section-head"><h2>종목별 성장 분석</h2></div>
@@ -1007,9 +1012,11 @@ function renderChange() {
             ${exsWithData.map(ex => `<option value="${esc(ex)}" ${ex === ui.changeExercise ? 'selected' : ''}>${esc(ex)}</option>`).join('')}
         </select>`;
 
-        const stats = exerciseSessionStats(ui.changeExercise);
-        const last = stats[stats.length - 1];
-        const prev = stats.length > 1 ? stats[stats.length - 2] : null;
+        // [B][E] edit by smsong : 기간으로 필터링 (그래프에 반영. 최신값 비교 카드는 전체 최신 기준 유지)
+        const statsAll = exerciseSessionStats(ui.changeExercise);
+        const stats = filterByPeriod(statsAll, s => s.date, ui.changePeriod);
+        const last = statsAll[statsAll.length - 1];
+        const prev = statsAll.length > 1 ? statsAll[statsAll.length - 2] : null;
         const isBw = exerciseIsBodyweight(ui.changeExercise);   // [B][E] edit by smsong : 맨몸이면 횟수 중심
 
         html += `<div class="cmp-meta">최근 ${fmtKorean(last.date)}${last.startTime ? ' ' + last.startTime : ''}${prev ? ` · 직전(${fmtKorean(prev.date)}${prev.startTime ? ' ' + prev.startTime : ''}) 대비` : ' · 첫 기록'}${isBw ? ' · 맨몸' : ''}</div>`;
@@ -1045,10 +1052,11 @@ function renderChange() {
 
     // [B] edit by smsong : 2) 컨디션 · 운동 시간 추이 (세션 구조에서 새로 생긴 지표)
     html += `<div class="section">
-        <div class="section-head"><h2>컨디션 · 운동 시간</h2><span class="sub">최근 기록순</span></div>
+        <div class="section-head"><h2>컨디션 · 운동 시간</h2></div>
         <div class="card">`;
-    const condSeries = orderedSessions().filter(s => s.condition != null).slice(-14);
-    const durSeries = orderedSessions().filter(s => sessionDuration(s) != null).slice(-14);
+    // [B][E] edit by smsong : 최근 14개 고정 → 선택한 기간으로 필터링
+    const condSeries = filterByPeriod(orderedSessions().filter(s => s.condition != null), s => s.date, ui.changePeriod);
+    const durSeries = filterByPeriod(orderedSessions().filter(s => sessionDuration(s) != null), s => s.date, ui.changePeriod);
     if (condSeries.length) {
         html += `<div class="chart-sub-title">컨디션 (0~100)</div>`;
         html += lineChart(condSeries.map(s => ({ label: labelMd(s.date), value: s.condition })), { color: C_COND, unit: '', fixedMin: 0, fixedMax: 100 });
@@ -1069,7 +1077,8 @@ function renderChange() {
     html += `<div class="section">
         <div class="section-head"><h2>체중 변화</h2>${state.profile.targetWeight ? `<span class="sub">목표 ${state.profile.targetWeight}kg</span>` : ''}</div>
         <div class="card">`;
-    const bl = state.bodyLogs.slice().sort((a, b) => a.date < b.date ? -1 : 1);
+    const blAll = state.bodyLogs.slice().sort((a, b) => a.date < b.date ? -1 : 1);
+    const bl = filterByPeriod(blAll, b => b.date, ui.changePeriod);   // [B][E] edit by smsong : 기간 필터링
     if (bl.length) {
         html += lineChart(bl.map(b => ({ label: labelMd(b.date), value: b.weight })), { color: C_WEIGHT, unit: 'kg', target: state.profile.targetWeight, targetColor: C_TARGET });
         html += chartLegend([[C_WEIGHT, '체중 (kg)']].concat(state.profile.targetWeight ? [[C_TARGET, '목표']] : []));
@@ -1080,15 +1089,16 @@ function renderChange() {
     }
     html += `</div></div>`;
 
-    // 4) 칼로리 추이 (최근 14일)
+    // [B][E] edit by smsong : 4) 칼로리 추이 — 고정 14일 → 선택한 기간만큼 생성
     html += `<div class="section">
-        <div class="section-head"><h2>칼로리 추이</h2><span class="sub">최근 14일</span></div>
+        <div class="section-head"><h2>칼로리 추이</h2></div>
         <div class="card">`;
+    const kdays = periodDays(ui.changePeriod);
     const days = [];
-    for (let i = 13; i >= 0; i--) days.push(shiftDays(-i));
+    for (let i = kdays - 1; i >= 0; i--) days.push(shiftDays(-i));
     const kcalPoints = days.map(d => ({ label: labelMd(d), value: kcalOfDate(d) }));
     if (kcalPoints.some(p => p.value > 0)) {
-        html += lineChart(kcalPoints, { color: C_KCAL, unit: 'kcal', everyLabel: 3 });
+        html += lineChart(kcalPoints, { color: C_KCAL, unit: 'kcal' });
         html += chartLegend([[C_KCAL, '섭취 칼로리 (kcal)']]);
     } else {
         html += emptyBlock('chart', '식단 데이터가 없어요', '식단을 기록하면 칼로리 추이가 그려져요');
@@ -1096,8 +1106,12 @@ function renderChange() {
     html += `</div></div>`;
 
     document.getElementById('view-change').innerHTML = html;
-    wireCharts(document.getElementById('view-change'));   // [B][E] edit by smsong : 그래프 점 탭 활성화
+    wireCharts(document.getElementById('view-change'));   // [B][E] edit by smsong : 그래프 점 탭 활성화 + 최신 위치로 스크롤
 
+    // [B][E] edit by smsong : 기간 탭 전환
+    document.querySelectorAll('#changePeriodTabs button').forEach(b => b.onclick = () => {
+        ui.changePeriod = b.dataset.period; renderChange();
+    });
     const sel = document.getElementById('changeExSelect');
     if (sel) sel.onchange = () => { ui.changeExercise = sel.value; renderChange(); };
     const bb = document.getElementById('addBodyBtn');
@@ -1105,6 +1119,29 @@ function renderChange() {
 }
 
 function labelMd(s) { const d = parseDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; }
+
+// [B] edit by smsong — 변화 탭 기간 탭(1일/1주/1개월/6개월/1년)
+//   모든 그래프(종목 추이/컨디션·시간/체중/칼로리)가 같은 기준으로 필터링된다.
+const CHANGE_PERIODS = [
+    { key: '1d', label: '1일', days: 1 },
+    { key: '1w', label: '1주', days: 7 },
+    { key: '1m', label: '1개월', days: 30 },
+    { key: '6m', label: '6개월', days: 182 },
+    { key: '1y', label: '1년', days: 365 }
+];
+function periodDays(key) { const p = CHANGE_PERIODS.find(p => p.key === key); return p ? p.days : 30; }
+function periodCutoff(key) { return shiftDays(-(periodDays(key) - 1)); }   // 오늘 포함 N일 전
+// 날짜 문자열(YYYY-MM-DD)을 가진 배열을 기간으로 필터링
+function filterByPeriod(items, dateOf, periodKey) {
+    const cutoff = periodCutoff(periodKey);
+    return items.filter(it => dateOf(it) >= cutoff);
+}
+function periodTabsHtml(id, current) {
+    return `<div class="seg period-seg" id="${id}">${CHANGE_PERIODS.map(p =>
+        `<button data-period="${p.key}" class="${p.key === current ? 'active' : ''}" type="button">${p.label}</button>`
+    ).join('')}</div>`;
+}
+// [E] edit by smsong
 
 // ---------- 내 정보 ----------
 function renderProfile() {
@@ -1241,18 +1278,28 @@ function bindCalendar(kind) {
 // ============================================================
 function lineChart(points, opts) {
     opts = opts || {};
-    // [B] edit by smsong : 그래프 잘림 개선
-    //   · padT 14 → 34 : 최고점의 값 라벨/툴팁 말풍선이 위로 잘리던 문제
-    //   · padL/padR 8 → 24 : 첫/마지막 x축 라벨이 좌우로 잘리던 문제
-    //   · H 170 → 196 : 세로를 키워 추이가 더 잘 보이게
-    const W = 320, H = 196, padL = 24, padR = 24, padT = 34, padB = 30;
-    // [E] edit by smsong
     if (!points || points.length === 0) return emptyBlock('chart', '데이터가 없어요', '');
     if (points.length === 1) {
         return `<div style="text-align:center;padding:26px 0;color:var(--text-dim)">
             <div style="font-size:26px;font-weight:800" class="tabnum">${points[0].value}${opts.unit || ''}</div>
             <div style="font-size:12px;margin-top:6px">데이터가 2개 이상이면 추이 그래프가 그려져요</div></div>`;
     }
+
+    // [B] edit by smsong : 그래프 잘림 개선
+    //   · padT 14 → 34 : 최고점의 값 라벨/툴팁 말풍선이 위로 잘리던 문제
+    //   · padL/padR 8 → 24 : 첫/마지막 x축 라벨이 좌우로 잘리던 문제
+    //   · H 170 → 196 : 세로를 키워 추이가 더 잘 보이게
+    const H = 196, padT = 34, padB = 30;
+    // [E] edit by smsong
+    // [B] edit by smsong : 점마다 폭을 고정(SPACING)해서 그린다. 데이터가 적으면 카드 폭(BASE_W)에
+    //   맞춰 기존과 똑같이 보이고, 데이터가 많아지면 그래프 자체가 넓어져서(overflow) 옆으로
+    //   드래그해 전체 추이를 볼 수 있다 — 억지로 욱여넣어 겹치거나 잘리지 않는다.
+    const SPACING = 46;
+    const BASE_W = 320;
+    const padL = 24, padR = 24;
+    const innerNeed = SPACING * (points.length - 1);
+    const W = Math.max(BASE_W, innerNeed + padL + padR);
+    // [E] edit by smsong
 
     const vals = points.map(p => p.value);
     let min = Math.min(...vals), max = Math.max(...vals);
@@ -1308,7 +1355,9 @@ function lineChart(points, opts) {
     // [E] edit by smsong
 
     // x축 라벨 — [B] edit by smsong : 테마 변수 사용(style 로 지정해야 var() 가 안전하게 적용됨)
-    const every = opts.everyLabel || Math.ceil(points.length / 6);
+    //   라벨 간 최소 간격을 확보해서 촘촘한 구간에서도 겹치지 않게 자동으로 솎아낸다.
+    const minLabelGap = 40;
+    const every = opts.everyLabel || Math.max(1, Math.ceil(minLabelGap / SPACING));
     let labels = '';
     points.forEach((p, i) => {
         if (i % every === 0 || i === points.length - 1) {
@@ -1320,7 +1369,10 @@ function lineChart(points, opts) {
     });
     // [E] edit by smsong
 
-    return `<div class="chart-wrap"><svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" data-unit="${opts.unit || ''}" data-color="${color}" data-h="${H}">
+    // [B] edit by smsong : 가로 스크롤 래퍼 — SVG 를 실제 픽셀 폭(W)으로 그리고,
+    //   바깥(.chart-scroll)만 카드 폭에 맞춘 뒤 overflow-x:auto 로 드래그/스와이프를 지원한다.
+    //   데이터가 적어 W === BASE_W 인 경우엔 스크롤이 생기지 않아 기존과 동일하게 보인다.
+    return `<div class="chart-scroll"><div class="chart-wrap" style="width:${W}px"><svg class="chart-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-unit="${opts.unit || ''}" data-color="${color}" data-h="${H}">
         <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="${color}" stop-opacity="0.28"/>
             <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
@@ -1329,11 +1381,16 @@ function lineChart(points, opts) {
         <path d="${area}" fill="url(#${gid})"/>
         <path d="${path}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
         ${dots}${labels}${hits}
-    </svg></div>`;
+    </svg></div></div>`;
+    // [E] edit by smsong
 }
 
 // [B] edit by smsong : 그래프 점 탭 → 해당 날짜 수치 툴팁 표시
 function wireCharts(root) {
+    // [B][E] edit by smsong : 가로로 넓어진 그래프는 기본적으로 최신 데이터(오른쪽 끝)가 보이게
+    (root || document).querySelectorAll('.chart-scroll').forEach(el => {
+        el.scrollLeft = el.scrollWidth;
+    });
     (root || document).querySelectorAll('.chart-svg').forEach(svg => {
         if (svg.dataset.wired) return;
         svg.dataset.wired = '1';
@@ -1404,6 +1461,8 @@ function createSheet(sheetId, backdropId) {
     let closeTimer = null;
     // [B] edit by smsong : 전체보기(화면 꽉 채움) 상태. 정중앙 모달에서만 의미가 있다.
     let full = false;
+    // [B][E] edit by smsong : 크게보기 전환 애니메이션(FLIP)의 진행 중 정리 콜백
+    let resizeCleanup = null;
     // [B] edit by smsong : 작성 중 이탈 방지.
     //   opts.isDirty 가 없으면 본문의 입력요소/칩 상태를 열 때 스냅샷 떠두고 비교해 자동 판정한다.
     let dirtyFn = null;
@@ -1435,6 +1494,57 @@ function createSheet(sheetId, backdropId) {
     }
     // [E] edit by smsong
 
+    // [B] edit by smsong : 크게보기 전환 — FLIP(First-Last-Invert-Play) 기법으로 재작성.
+    //   기존엔 width/height/max-height 를 CSS 트랜지션으로 직접 움직였는데, 이 속성들은
+    //   프레임마다 레이아웃(리플로우)을 다시 계산해야 해서 저사양 기기에서 미세하게 버벅였다.
+    //   → 클래스 전환으로 "크기는 즉시" 바꾸고, 옛 크기처럼 보이도록 역방향 transform 을 준 뒤
+    //     그 transform 만 애니메이션한다. transform 은 GPU 합성만으로 처리돼 훨씬 매끈하다.
+    function animateFullToggle(next) {
+        if (next === full) return;
+        const firstRect = sheet.getBoundingClientRect();
+        const firstRadius = getComputedStyle(sheet).borderRadius;
+
+        full = next;
+        sheet.classList.toggle('as-full', full);   // 크기는 여기서 즉시(트랜지션 없이) 바뀐다
+
+        const lastRect = sheet.getBoundingClientRect();
+        const lastRadius = getComputedStyle(sheet).borderRadius;
+
+        // Invert : 새 크기/위치를 기준으로, 옛 상태처럼 보이게 만드는 이동/배율값 계산
+        const dx = (firstRect.left + firstRect.width / 2) - (lastRect.left + lastRect.width / 2);
+        const dy = (firstRect.top + firstRect.height / 2) - (lastRect.top + lastRect.height / 2);
+        const sx = firstRect.width / lastRect.width;
+        const sy = firstRect.height / lastRect.height;
+
+        if (resizeCleanup) { sheet.removeEventListener('transitionend', resizeCleanup); resizeCleanup = null; }
+
+        sheet.style.willChange = 'transform, border-radius';
+        sheet.style.transition = 'none';
+        sheet.style.borderRadius = firstRadius;
+        sheet.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+
+        void sheet.offsetWidth;   // 강제 리플로우 : 위 스타일을 실제로 적용시킨 뒤에 트랜지션을 건다
+
+        // Play : transform 을 원상태(0,0 / scale 1)로 되돌리며 애니메이션 → 부드럽게 커지거나 작아짐
+        requestAnimationFrame(() => {
+            sheet.style.transition = 'transform .42s cubic-bezier(.22,1,.36,1), border-radius .42s cubic-bezier(.22,1,.36,1)';
+            sheet.style.transform = 'translate(-50%, -50%)';
+            sheet.style.borderRadius = lastRadius;
+        });
+
+        resizeCleanup = function (e) {
+            if (e.target !== sheet || e.propertyName !== 'transform') return;
+            sheet.style.transition = '';
+            sheet.style.transform = '';
+            sheet.style.borderRadius = '';
+            sheet.style.willChange = '';
+            sheet.removeEventListener('transitionend', resizeCleanup);
+            resizeCleanup = null;
+        };
+        sheet.addEventListener('transitionend', resizeCleanup);
+    }
+    // [E] edit by smsong
+
     function open(html, opts) {
         opts = opts || {};
         present = 'center';                                       // 모든 폼 = 정중앙 모달
@@ -1461,10 +1571,11 @@ function createSheet(sheetId, backdropId) {
         baseSnap = snapshotBody();
         const fb = sheet.querySelector('[data-sheet-full]');
         if (fb) fb.onclick = () => {
-            setFull(!full);
-            fb.innerHTML = icon(full ? 'collapse' : 'expand');
-            fb.title = fb.ariaLabel = full ? '작게 보기' : '크게 보기';
-            if (opts.onFull) opts.onFull(full);
+            const next = !full;
+            animateFullToggle(next);   // [B][E] edit by smsong : 즉시 토글 대신 FLIP 애니메이션
+            fb.innerHTML = icon(next ? 'collapse' : 'expand');
+            fb.title = fb.ariaLabel = next ? '작게 보기' : '크게 보기';
+            if (opts.onFull) opts.onFull(next);
         };
         const xb = sheet.querySelector('[data-sheet-x]');
         if (xb) xb.onclick = requestClose;
@@ -1477,7 +1588,12 @@ function createSheet(sheetId, backdropId) {
         isOpen = false;
         sheet.classList.remove('open');
         backdrop.classList.remove('open');
+        // [B][E] edit by smsong : 애니메이션 도중 닫히면 FLIP 이 남긴 인라인 스타일도 함께 정리
+        if (resizeCleanup) { sheet.removeEventListener('transitionend', resizeCleanup); resizeCleanup = null; }
         sheet.style.transform = '';
+        sheet.style.borderRadius = '';
+        sheet.style.willChange = '';
+        sheet.style.transition = '';
         unlockBgScroll();
         clearTimeout(closeTimer);
         closeTimer = setTimeout(() => { if (!isOpen) sheet.innerHTML = ''; }, 300);

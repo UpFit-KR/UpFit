@@ -472,8 +472,18 @@ button { font-family: var(--font); cursor: pointer; }
 .cal-day-detail { margin-top: 16px; }
 
 /* ---------- 차트(변화 탭) ---------- */
-.chart-wrap { width: 100%; overflow: hidden; }
-.chart-svg { width: 100%; height: auto; display: block; }
+/* [B] edit by smsong : 점당 폭을 고정으로 그리므로(SPACING) 데이터가 많으면 SVG 자체가
+   카드보다 넓어진다. .chart-scroll 이 그 초과분을 가로 스크롤(드래그/스와이프)로 보여준다.
+   데이터가 적어 SVG 가 카드보다 좁을 때는 스크롤이 생기지 않아 기존과 동일하게 보인다. */
+.chart-scroll {
+    width: 100%; overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+    scrollbar-width: none;               /* Firefox : 스크롤바 숨김(스와이프로 충분) */
+}
+.chart-scroll::-webkit-scrollbar { display: none; }
+.chart-wrap { overflow: visible; }
+.chart-svg { display: block; }
+/* [E] edit by smsong */
 /* [B] edit by smsong : 그래프 점 탭 영역은 투명이라도 이벤트 받도록, 툴팁은 이벤트 통과 */
 .chart-svg .cpt { pointer-events: all; }
 .chart-svg .chart-tip { pointer-events: none; }
@@ -583,17 +593,16 @@ button { font-family: var(--font); cursor: pointer; }
     border-radius: var(--radius-xl);
     overflow: hidden;
     opacity: 0;
-    transition: opacity 0.2s ease,
-                transform 0.2s cubic-bezier(0.32,0.72,0,1),
-                width 0.38s cubic-bezier(0.32,0.72,0,1),
-                max-width 0.38s cubic-bezier(0.32,0.72,0,1),
-                min-height 0.38s cubic-bezier(0.32,0.72,0,1),
-                max-height 0.38s cubic-bezier(0.32,0.72,0,1),
-                border-radius 0.38s ease;
+    /* [B][E] edit by smsong : width/height/border-radius 는 여기서 트랜지션하지 않는다.
+       크게보기 전환은 main.js 의 animateFullToggle()이 FLIP 기법(transform 만 애니메이션)으로
+       처리한다 — 레이아웃 속성을 프레임마다 다시 계산하지 않아 훨씬 매끄럽다.
+       이 트랜지션은 모달 열기/닫기(투명도·스케일) 전용으로만 남긴다. */
+    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.32,0.72,0,1);
 }
 .sheet.as-center.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
 
-/* 크게 보기 = 화면 꽉 채움. 크기만 바뀌므로 위 트랜지션을 그대로 탄다. */
+/* 크게 보기 = 화면 꽉 채움. 크기 자체는 클래스 전환 시 즉시 바뀌고,
+   부드러워 보이는 애니메이션은 JS 가 transform 으로 대신 만든다(위 설명 참고). */
 .sheet.as-center.as-full {
     width: 100%; max-width: 100%;
     min-height: 100vh; min-height: 100dvh;
@@ -787,6 +796,10 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .cmp-row .cmp-right { display: flex; align-items: center; gap: 10px; }
 .cmp-row .cmp-v { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 68px; text-align: right; }
 .chart-sub-title { font-size: 13px; font-weight: 800; color: var(--text-dim); margin: 2px 0 10px; }
+/* [B][E] edit by smsong : 변화 탭 상단 기간 탭(1일/1주/1개월/6개월/1년) */
+.period-card { padding: 6px; }
+.seg.period-seg { display: flex; width: 100%; }
+.seg.period-seg button { flex: 1; text-align: center; padding: 9px 4px; font-size: 12.5px; }
 /* [E] edit by smsong */
 
 /* ============================================================
