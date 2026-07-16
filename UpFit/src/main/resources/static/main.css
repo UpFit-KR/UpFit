@@ -250,13 +250,25 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .view { display: none; }
 .view.active { display: block; }
-/* [B] edit by smsong : 탭 전환 시 이동 방향에 맞춰 옆에서 미끄러져 들어오는 전환 */
-.view.v-enter   { animation: vEnter  .30s cubic-bezier(.22,1,.36,1); }
-.view.v-enter-r { animation: vEnterR .34s cubic-bezier(.22,1,.36,1); }
-.view.v-enter-l { animation: vEnterL .34s cubic-bezier(.22,1,.36,1); }
-@keyframes vEnter  { from { opacity: 0; transform: translateY(8px); }            to { opacity: 1; transform: none; } }
-@keyframes vEnterR { from { opacity: 0; transform: translateX(46px) scale(.985); } to { opacity: 1; transform: none; } }
-@keyframes vEnterL { from { opacity: 0; transform: translateX(-46px) scale(.985);} to { opacity: 1; transform: none; } }
+/* [B] edit by smsong : 탭 전환 시 이동 방향에 맞춰 옆에서 미끄러져 들어오는 전환
+   개선 — 직선 슬라이드가 아니라 아래에서 호(弧)를 그리며 살짝 기울어진 채로 날아 들어와
+          제자리에서 수평을 잡는다(곡예 착지감). 중간 키프레임이 곡률을 만든다. */
+.view.v-enter   { animation: vEnter  .34s cubic-bezier(.22,1,.36,1); }
+.view.v-enter-r { animation: vEnterR .46s cubic-bezier(.16,.9,.24,1); }
+.view.v-enter-l { animation: vEnterL .46s cubic-bezier(.16,.9,.24,1); }
+@keyframes vEnter  { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
+@keyframes vEnterR {
+    0%   { opacity: 0; transform: translate(64px, 26px) rotate(3.2deg) scale(.955); }
+    55%  { opacity: 1; transform: translate(-8px, -6px) rotate(-1deg) scale(1.004); }
+    80%  { transform: translate(2px, 1px) rotate(.3deg) scale(.999); }
+    100% { opacity: 1; transform: none; }
+}
+@keyframes vEnterL {
+    0%   { opacity: 0; transform: translate(-64px, 26px) rotate(-3.2deg) scale(.955); }
+    55%  { opacity: 1; transform: translate(8px, -6px) rotate(1deg) scale(1.004); }
+    80%  { transform: translate(-2px, 1px) rotate(-.3deg) scale(.999); }
+    100% { opacity: 1; transform: none; }
+}
 /* [E] edit by smsong */
 
 /* ---------- 섹션 ---------- */
@@ -611,22 +623,70 @@ button { font-family: var(--font); cursor: pointer; }
 .nav-center.active .nav-orb svg { stroke: var(--on-grad); }   /* 원 안 아이콘은 항상 그라데이션 대비색 */
 .nav-center:active .nav-orb { transform: translateX(-50%) scale(0.94); }
 
-/* [B] edit by smsong : 탭 전환 시 이전 → 새 탭으로 날아가는 빛나는 코멧(우주선 궤적) */
+/* [B] edit by smsong : 탭 전환 시 이전 → 새 탭으로 날아가는 빛나는 코멧(우주선 궤적)
+   개선 — 직선/물결이 아니라 "곡예 비행" 느낌으로.
+   · 궤적       : 네비 위로 크게 솟았다 내려앉는 포물선(베지어) + 진행 방향 회전(JS/WAAPI)
+   · 꼬리       : ::before 로 뒤로 늘어나는 잔광, ::after 로 코어 반짝임
+   · 착지        : 도착 탭에서 링이 퍼지며(.nav-splash) 마무리 */
 .nav-comet {
-    position: absolute; left: 0; z-index: 2; pointer-events: none;
-    width: 30px; height: 6px; margin-left: -15px; border-radius: 999px;
+    position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none;
+    width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
     background: var(--grad); opacity: 0.95;
-    box-shadow: 0 0 14px 3px var(--home-glow);
+    box-shadow: 0 0 16px 4px var(--home-glow);
+    will-change: transform, opacity;
+}
+/* 꼬리 — 코멧 뒤로 늘어지는 잔광(진행 방향은 코멧의 rotate 를 그대로 따라간다) */
+.nav-comet::before {
+    content: ""; position: absolute; top: 50%; right: 6px;
+    width: 42px; height: 5px; transform: translateY(-50%);
+    border-radius: 999px;
+    background: linear-gradient(270deg, var(--accent), transparent 92%);
+    opacity: 0.85; filter: blur(0.4px);
+}
+.nav-comet::after {
+    content: ""; position: absolute; inset: 3px; border-radius: 50%;
+    background: #fff; opacity: 0.85; filter: blur(1px);
 }
 .nav-comet.fly {
     opacity: 0;
-    transition: transform 0.46s cubic-bezier(.3,.9,.25,1), opacity 0.46s ease-out;
+    transition: transform 0.52s cubic-bezier(.3,.9,.25,1), opacity 0.52s ease-out;
 }
-/* 새로 활성화된 항목이 살짝 튀어오르는 팝 */
-.nav-item:not(.nav-center).nav-pop svg { animation: navPop 0.42s cubic-bezier(.22,1.4,.36,1); }
-.nav-center.nav-pop .nav-orb { animation: navPopOrb 0.46s cubic-bezier(.22,1.5,.36,1); }
-@keyframes navPop { 0% { transform: scale(1); } 45% { transform: scale(1.32) translateY(-2px); } 100% { transform: scale(1); } }
-@keyframes navPopOrb { 0% { transform: translateX(-50%) translateY(-3px) scale(1); } 45% { transform: translateX(-50%) translateY(-9px) scale(1.08); } 100% { transform: translateX(-50%) translateY(-3px) scale(1); } }
+/* 도착 지점에서 퍼지는 착지 링 */
+.nav-splash {
+    position: absolute; z-index: 2; pointer-events: none;
+    width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
+    border: 2px solid var(--accent); opacity: 0.9;
+    animation: navSplash 0.5s cubic-bezier(.22,1,.36,1) forwards;
+}
+@keyframes navSplash {
+    from { transform: scale(0.3); opacity: 0.9; }
+    to   { transform: scale(3.2); opacity: 0; }
+}
+
+/* 새로 활성화된 항목이 곡선을 그리며 튀어오르는 팝 (좌우로 살짝 흔들리며 착지 → "곡예") */
+.nav-item:not(.nav-center).nav-pop svg { animation: navPop 0.62s cubic-bezier(.22,1.2,.32,1); }
+.nav-center.nav-pop .nav-orb { animation: navPopOrb 0.66s cubic-bezier(.22,1.3,.32,1); }
+@keyframes navPop {
+    0%   { transform: translate(0,0) rotate(0deg) scale(1); }
+    28%  { transform: translate(-3px,-9px) rotate(-16deg) scale(1.28); }
+    52%  { transform: translate(3px,-11px) rotate(14deg) scale(1.3); }
+    76%  { transform: translate(-1px,1px) rotate(-5deg) scale(0.94); }
+    100% { transform: translate(0,0) rotate(0deg) scale(1); }
+}
+@keyframes navPopOrb {
+    0%   { transform: translateX(-50%) translateY(-3px) rotate(0deg) scale(1); }
+    28%  { transform: translateX(calc(-50% - 4px)) translateY(-14px) rotate(-14deg) scale(1.1); }
+    52%  { transform: translateX(calc(-50% + 4px)) translateY(-16px) rotate(12deg) scale(1.12); }
+    76%  { transform: translateX(-50%) translateY(1px) rotate(-4deg) scale(0.95); }
+    100% { transform: translateX(-50%) translateY(-3px) rotate(0deg) scale(1); }
+}
+/* 활성 인디케이터 바도 좌우로 늘었다 줄며 따라붙는다 */
+.nav-item:not(.nav-center).active::after { animation: navBar 0.42s cubic-bezier(.22,1.4,.36,1); }
+@keyframes navBar {
+    0%   { transform: translateX(-50%) scaleX(0.1); opacity: 0; }
+    60%  { transform: translateX(-50%) scaleX(1.45); opacity: 1; }
+    100% { transform: translateX(-50%) scaleX(1); opacity: 1; }
+}
 /* [E] edit by smsong */
 
 /* ---------- 중앙 모달 폼 ---------- */
@@ -1014,20 +1074,41 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
     font-size: 28px; font-weight: 800; line-height: 1;
     font-variant-numeric: tabular-nums;
 }
+/* [B] edit by smsong : 컨디션 색 처리 전면 수정.
+   기존 — 트랙에 빨강→주황→초록 "무지개"를 깔아둬서 그라데이션이 화면에 그대로 보였다(원치 않던 모습).
+   변경 — 트랙/썸/숫자를 "그 순간의 단 하나의 색"으로만 칠한다.
+          그 색(--cond-color)은 main.js 가 값(0~100)에 따라 연속적으로 보간해 넣어주고,
+          @property 로 <color> 타입을 등록해 두었기 때문에 값이 바뀔 때마다
+          이전 색 → 새 색으로 그라데이션(부드러운 전환)을 그리며 변한다.
+          (@property 미지원 브라우저에선 전환 없이 즉시 바뀌기만 함 — 동작은 동일) */
+@property --cond-color {
+    syntax: '<color>';
+    inherits: true;
+    initial-value: #2dd4a0;
+}
+@property --cond-pct {
+    syntax: '<percentage>';
+    inherits: true;
+    initial-value: 70%;
+}
+/* 변수는 슬라이더가 아니라 그 부모(.cond-field)에 얹는다.
+   → 트랙·썸·숫자·라벨이 모두 같은 값을 상속받아 "한 몸처럼" 동시에 물든다. */
+.cond-field {
+    --cond-pct: 70%;
+    --cond-color: #2dd4a0;
+    transition: --cond-color .28s ease, --cond-pct .1s linear;
+}
 .cond-range {
     -webkit-appearance: none; appearance: none;
     display: block; width: 100%; height: 28px; background: transparent;
-    /* --cond-pct / --cond-color 는 main.js 가 값 변경 시 갱신 */
-    --cond-pct: 70%;
-    --cond-color: var(--accent-2);
     touch-action: pan-y;   /* 세로 제스처는 본문 스크롤에 양보, 좌우 드래그만 슬라이더가 처리 */
 }
 .cond-range::-webkit-slider-runnable-track {
     height: 8px; border-radius: 4px;
-    /* [B][E] edit by smsong : 최악(빨강)→보통(주황)→최상(초록) 그라데이션을 값(--cond-pct)까지 채우고 나머지는 중립색 */
-    background:
-        linear-gradient(90deg, transparent 0 var(--cond-pct), var(--ink-750) var(--cond-pct) 100%),
-        linear-gradient(90deg, var(--up) 0%, var(--meal-breakfast) 50%, var(--accent-2) 100%);
+    /* 값까지는 현재 컨디션 색 "한 가지"로, 나머지는 중립색 */
+    background: linear-gradient(90deg,
+        var(--cond-color) 0 var(--cond-pct),
+        var(--ink-750) var(--cond-pct) 100%);
 }
 .cond-range::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none;
@@ -1039,13 +1120,19 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .cond-range::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.08); }
 .cond-range::-moz-range-track {
     height: 8px; border-radius: 4px;
-    background: linear-gradient(90deg, var(--up) 0%, var(--meal-breakfast) 50%, var(--accent-2) 100%);
+    background: linear-gradient(90deg,
+        var(--cond-color) 0 var(--cond-pct),
+        var(--ink-750) var(--cond-pct) 100%);
 }
 .cond-range::-moz-range-progress { height: 8px; border-radius: 4px; background: transparent; }
 .cond-range::-moz-range-thumb {
     width: 20px; height: 20px; border-radius: 50%;
     background: var(--ink-900); border: 3px solid var(--cond-color); box-shadow: var(--shadow-md);
 }
+/* 숫자/라벨도 같은 색으로 함께 물든다 (색상 전환은 --cond-color 가 담당) */
+.cond-field .cond-big, .cond-field .cond-chip { color: var(--cond-color); }
+.cond-field .cond-chip { background: color-mix(in srgb, var(--cond-color) 16%, transparent); }
+/* [E] edit by smsong */
 .cond-scale {
     display: flex; justify-content: space-between;
     font-size: 10.5px; color: var(--text-mute); margin-top: 6px; padding: 0 2px;
@@ -1190,6 +1277,97 @@ textarea.input.im-text {
 .im-bar b { display: block; height: 100%; border-radius: 3px; background: var(--grad); transition: width .2s; }
 /* [E] edit by smsong */
 
+/* ============================================================
+   [B] edit by smsong — 전역 로딩 폼 (덤벨 들었다 놨다)
+   · 모든 API(생성/수정/조회/삭제/마이그레이션)의 시작~종료 동안 표시된다.
+   · inset:0 + pointer-events:auto → 화면 전체를 덮어 클릭/터치/스크롤을 원천 차단.
+   · 아주 짧은 요청에서 깜빡이지 않도록, 차단(.block)은 즉시 / 그림(.show)은 조금 늦게 켠다.
+   ============================================================ */
+.lo {
+    position: fixed; inset: 0; z-index: 9500;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--backdrop);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .18s ease, visibility .18s;
+}
+/* 차단 전용 상태 — 눈에는 안 보이지만 입력은 이미 막는다 */
+.lo.block { visibility: visible; pointer-events: auto; touch-action: none; }
+.lo.block.show { opacity: 1; }
+.lo-card {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    padding: 26px 30px 22px; min-width: 178px;
+    background: var(--ink-900); border: 1px solid var(--line);
+    border-radius: var(--radius-xl); box-shadow: var(--shadow-lg);
+    transform: scale(.92) translateY(8px);
+    transition: transform .22s cubic-bezier(.22,1.3,.36,1);
+}
+.lo.show .lo-card { transform: scale(1) translateY(0); }
+
+/* 무대: 덤벨(위) + 바닥 그림자(아래) */
+.lo-stage {
+    position: relative; width: 66px; height: 62px;
+    display: flex; align-items: flex-start; justify-content: center;
+}
+.lo-dumbbell {
+    width: 42px; height: 42px; color: var(--accent);
+    animation: loLift 1.15s cubic-bezier(.45,0,.35,1) infinite;
+    transform-origin: 50% 60%;
+}
+.lo-dumbbell svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 3px 6px var(--home-glow)); }
+.lo-shadow {
+    position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%);
+    width: 34px; height: 6px; border-radius: 50%;
+    background: var(--accent); opacity: .22; filter: blur(1.5px);
+    animation: loShadow 1.15s cubic-bezier(.45,0,.35,1) infinite;
+}
+/* 들어올릴 때 살짝 기울고, 내려놓을 때 눌리는 스쿼시 → 실제로 드는 느낌 */
+@keyframes loLift {
+    0%   { transform: translateY(14px) rotate(0deg)  scale(1.06, .92); }
+    38%  { transform: translateY(-8px) rotate(-8deg) scale(.97, 1.05); }
+    52%  { transform: translateY(-11px) rotate(6deg) scale(1, 1.02); }
+    100% { transform: translateY(14px) rotate(0deg)  scale(1.06, .92); }
+}
+@keyframes loShadow {
+    0%   { transform: translateX(-50%) scaleX(1);   opacity: .28; }
+    45%  { transform: translateX(-50%) scaleX(.55); opacity: .12; }
+    100% { transform: translateX(-50%) scaleX(1);   opacity: .28; }
+}
+.lo-msg { font-size: 13px; font-weight: 700; color: var(--text-dim); text-align: center; max-width: 220px; line-height: 1.45; }
+/* 진행률을 알 수 없는 작업용 인디케이터 바 */
+.lo-bar { width: 108px; height: 4px; border-radius: 2px; background: var(--ink-750); overflow: hidden; }
+.lo-bar i { display: block; width: 42%; height: 100%; border-radius: 2px; background: var(--grad); animation: loBar 1.15s ease-in-out infinite; }
+@keyframes loBar {
+    0%   { transform: translateX(-110%); }
+    100% { transform: translateX(250%); }
+}
+/* [E] edit by smsong */
+
+/* ============================================================
+   [B] edit by smsong — 그래프: 고정 세로축(y축) + 부드러운 전환 애니메이션
+   세로축은 가로 스크롤 밖(.chart-axis)에 따로 그려서, 옆으로 넘겨도 눈금이 항상 보인다.
+   ============================================================ */
+.chart-box { display: flex; align-items: flex-start; width: 100%; }
+.chart-axis { flex: 0 0 auto; display: block; overflow: visible; }
+.chart-box .chart-scroll { flex: 1 1 auto; min-width: 0; }
+.chart-svg .cl-grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
+.chart-axis .cl-ytxt { fill: var(--text-mute); font-size: 9.5px; }
+
+/* 등장/전환 — 기간 탭을 바꾸면 선이 왼→오로 그려지고, 면과 점이 따라 올라온다 */
+.chart-box { animation: clFade .34s ease both; }
+@keyframes clFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.chart-svg .cl-line {
+    stroke-dasharray: 1; stroke-dashoffset: 1;
+    animation: clDraw .72s cubic-bezier(.22,1,.36,1) forwards;
+}
+@keyframes clDraw { to { stroke-dashoffset: 0; } }
+.chart-svg .cl-area { opacity: 0; animation: clArea .5s ease .28s forwards; }
+@keyframes clArea { to { opacity: 1; } }
+.chart-svg .cl-dot { opacity: 0; transform-box: fill-box; transform-origin: center; animation: clDot .34s cubic-bezier(.22,1.5,.36,1) forwards; }
+@keyframes clDot { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
+.chart-svg .cl-last { opacity: 0; animation: clArea .3s ease .62s forwards; }
+/* [E] edit by smsong */
+
 /* ---------- 토스트 ---------- */
 #toast {
     position: fixed; bottom: calc(var(--nav-h) + 24px); left: 50%;
@@ -1205,7 +1383,16 @@ textarea.input.im-text {
 @media (prefers-reduced-motion: reduce) {
     .view, .sheet, .sheet-backdrop { animation: none !important; transition: none !important; }
     /* [B][E] edit by smsong : 모션 최소화 설정 시 코멧/팝/슬라이드 비활성화 */
-    .nav-comet { display: none !important; }
+    .nav-comet, .nav-splash { display: none !important; }
     .nav-item:not(.nav-center).nav-pop svg, .nav-center.nav-pop .nav-orb,
+    .nav-item:not(.nav-center).active::after,
     .view.v-enter, .view.v-enter-r, .view.v-enter-l { animation: none !important; }
+    /* [B][E] edit by smsong : 그래프/로딩 폼 — 움직임은 줄이되 "보이는 것"은 유지해야 하므로
+       animation 만 끄고 최종 상태(선/면/점/카드)는 그대로 나타나게 한다. */
+    .chart-box, .chart-svg .cl-line, .chart-svg .cl-area, .chart-svg .cl-dot, .chart-svg .cl-last {
+        animation: none !important; opacity: 1 !important; stroke-dashoffset: 0 !important; transform: none !important;
+    }
+    .lo-dumbbell, .lo-shadow, .lo-bar i { animation: none !important; }
+    .lo-card { transition: none !important; transform: none !important; }
+    .cond-field { transition: none !important; }
 }

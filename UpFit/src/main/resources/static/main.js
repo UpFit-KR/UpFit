@@ -73,23 +73,80 @@ const DEFAULT_CONDITION = 70;
 const CFG = window.APP_CONFIG || {};
 const BACKEND_BASE = CFG.BACKEND_BASE || '';
 
-async function apiReq(method, path, body) {
-    const token = Auth.getToken();
-    // 요청 직전에도 만료 확인 (30분 토큰)
-    if (!token || Auth.isExpired(token)) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
+// ============================================================
+//  [B] edit by smsong — 전역 로딩 폼 (덤벨 들었다 놨다)
+//    · 이 앱의 모든 서버 작업(생성/수정/조회/삭제/마이그레이션)은 apiReq / apiUserUpdate 를
+//      반드시 거치므로, 두 함수만 감싸면 "API 시작 ~ 종료" 전 구간이 자동으로 커버된다.
+//    · 요청이 겹칠 수 있으므로(마이그레이션 등) 카운터로 관리 → 마지막 요청이 끝나야 닫힌다.
+//    · 차단(.block)은 즉시 켜서 그 사이 클릭/터치가 절대 먹지 않게 하고,
+//      그림(.show)은 SHOW_DELAY 뒤에 켜서 아주 빠른 요청에서 화면이 깜빡이지 않게 한다.
+// ============================================================
+const Busy = (function () {
+    const SHOW_DELAY = 120;          // ms — 이보다 빨리 끝나는 요청은 아무것도 보여주지 않는다
+    const DEFAULT_MSG = '잠시만요…';
+    let count = 0, timer = null;
 
-    const res = await fetch(BACKEND_BASE + path, {
-        method,
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: body != null ? JSON.stringify(body) : undefined
-    });
-    if (res.status === 401 || res.status === 403) {
-        Auth.invalidSession();                     // 서버가 거부 → 알림 + login.html
-        const e = new Error('AUTH'); e.auth = true; throw e;
+    function box() { return document.getElementById('loadingOverlay'); }
+    function setMsg(text) {
+        const el = document.getElementById('loadingMsg');
+        if (el) el.textContent = text || DEFAULT_MSG;
     }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const txt = await res.text();
-    return txt ? JSON.parse(txt) : null;
+    function start(msg) {
+        count++;
+        const o = box(); if (!o) return;
+        if (msg) setMsg(msg);
+        o.classList.add('block');            // 입력 차단은 즉시
+        o.setAttribute('aria-hidden', 'false');
+        if (!timer) timer = setTimeout(() => { timer = null; if (count > 0) o.classList.add('show'); }, SHOW_DELAY);
+    }
+    function end() {
+        count = Math.max(0, count - 1);
+        if (count > 0) return;               // 아직 진행 중인 요청이 남아 있음
+        if (timer) { clearTimeout(timer); timer = null; }
+        const o = box(); if (!o) return;
+        o.classList.remove('show', 'block');
+        o.setAttribute('aria-hidden', 'true');
+        setMsg(DEFAULT_MSG);
+    }
+    // 여러 API 를 묶은 작업(마이그레이션 등)에서 진행 문구만 갱신
+    function msg(text) { if (count > 0) setMsg(text); }
+    // 서버 통신이 아닌 무거운 작업도 같은 폼으로 감쌀 수 있게
+    async function wrap(text, fn) { start(text); try { return await fn(); } finally { end(); } }
+    return { start, end, msg, wrap, get active() { return count > 0; } };
+})();
+// 로딩 중에는 키보드 조작(Enter/Space 로 버튼 누르기 등)도 막는다 — 캡처 단계에서 가로챈다.
+['keydown', 'keypress', 'keyup'].forEach(evt => {
+    document.addEventListener(evt, e => {
+        if (!Busy.active) return;
+        if (e.key === 'Escape') return;      // 탈출구는 남겨둔다
+        e.preventDefault(); e.stopPropagation();
+    }, true);
+});
+// [E] edit by smsong
+
+async function apiReq(method, path, body) {
+    // [B][E] edit by smsong : API 시작 ~ 종료 동안 로딩 폼 표시 + 입력 차단
+    Busy.start();
+    try {
+        const token = Auth.getToken();
+        // 요청 직전에도 만료 확인 (30분 토큰)
+        if (!token || Auth.isExpired(token)) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
+
+        const res = await fetch(BACKEND_BASE + path, {
+            method,
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: body != null ? JSON.stringify(body) : undefined
+        });
+        if (res.status === 401 || res.status === 403) {
+            Auth.invalidSession();                     // 서버가 거부 → 알림 + login.html
+            const e = new Error('AUTH'); e.auth = true; throw e;
+        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const txt = await res.text();
+        return txt ? JSON.parse(txt) : null;
+    } finally {
+        Busy.end();
+    }
 }
 // [B] edit by smsong : /workout/* → /session/* 로 전면 교체 (세션 구조)
 const api = {
@@ -120,19 +177,25 @@ const api = {
 //   신체 정보(키/현재 체중/목표 체중)만 바꿔도 다른 필드가 지워지지 않도록,
 //   호출부에서 기존 사용자 전체(state.userRaw)에 변경값을 병합해 넘긴다.
 async function apiUserUpdate(userDto) {
-    const token = Auth.getToken();
-    if (!token || Auth.isExpired(token)) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
-    const fd = new FormData();
-    fd.append('userData', JSON.stringify(userDto));   // @RequestPart("userData") String
-    const res = await fetch(BACKEND_BASE + '/user', {
-        method: 'PUT',
-        headers: { 'Authorization': 'Bearer ' + token },   // Content-Type 은 브라우저가 boundary 와 함께 자동 설정
-        body: fd
-    });
-    if (res.status === 401 || res.status === 403) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const txt = await res.text();
-    return txt ? JSON.parse(txt) : null;
+    // [B][E] edit by smsong : 회원 수정도 동일하게 로딩 폼으로 감싼다
+    Busy.start('내 정보를 저장하고 있어요');
+    try {
+        const token = Auth.getToken();
+        if (!token || Auth.isExpired(token)) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
+        const fd = new FormData();
+        fd.append('userData', JSON.stringify(userDto));   // @RequestPart("userData") String
+        const res = await fetch(BACKEND_BASE + '/user', {
+            method: 'PUT',
+            headers: { 'Authorization': 'Bearer ' + token },   // Content-Type 은 브라우저가 boundary 와 함께 자동 설정
+            body: fd
+        });
+        if (res.status === 401 || res.status === 403) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const txt = await res.text();
+        return txt ? JSON.parse(txt) : null;
+    } finally {
+        Busy.end();
+    }
 }
 // [E] edit by smsong
 
@@ -200,6 +263,8 @@ function todayStr() { return toDateStr(new Date()); }
 function shiftDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return toDateStr(d); }
 function parseDate(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
 function fmtKorean(s) { const d = parseDate(s); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]})`; }
+// [B][E] edit by smsong : 년도까지 포함한 표기 — 과거 기록을 고를 때 어느 해인지 구분되도록
+function fmtKoreanFull(s) { const d = parseDate(s); return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]})`; }
 function fmtHeaderDate() { const d = new Date(); return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEKDAYS[d.getDay()]}요일`; }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function nowTimeStr() { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
@@ -239,13 +304,31 @@ function condLabel(c) {
     if (c >= 20) return '나쁨';
     return '최악';
 }
-// 컨디션 → 색 (낮음 빨강 → 높음 초록)
+// [B] edit by smsong : 컨디션 → 색.
+//   기존 — 65/40 구간에서 세 가지 색 중 하나로 "툭툭" 끊겨 바뀌었고, 화면에는 무지개 그라데이션이 깔려 있었다.
+//   변경 — 0~100 을 색상환 위에서 연속 보간해 "그 값에 딱 맞는 단 하나의 색"을 만든다.
+//          0=빨강(0°) → 50=주황/노랑(45°) → 100=초록(148°). 채도·명도도 함께 살짝 보정.
+//          값이 움직이면 CSS(@property --cond-color)가 이전 색 → 새 색을 그라데이션으로 이어준다.
+const COND_STOPS = [
+    { at: 0,   h: 0,   s: 78, l: 55 },   // 최악 — 빨강
+    { at: 25,  h: 20,  s: 82, l: 54 },   // 나쁨 — 주홍
+    { at: 50,  h: 42,  s: 88, l: 52 },   // 보통 — 주황/노랑
+    { at: 75,  h: 92,  s: 62, l: 45 },   // 좋음 — 연두
+    { at: 100, h: 148, s: 62, l: 44 }    // 최상 — 초록
+];
 function condColor(c) {
     if (c == null) return 'var(--text-mute)';
-    if (c >= 65) return 'var(--accent-2)';
-    if (c >= 40) return 'var(--meal-breakfast)';
-    return 'var(--up)';
+    const v = Math.max(0, Math.min(100, Number(c)));
+    let a = COND_STOPS[0], b = COND_STOPS[COND_STOPS.length - 1];
+    for (let i = 0; i < COND_STOPS.length - 1; i++) {
+        if (v >= COND_STOPS[i].at && v <= COND_STOPS[i + 1].at) { a = COND_STOPS[i]; b = COND_STOPS[i + 1]; break; }
+    }
+    const span = (b.at - a.at) || 1;
+    const t = (v - a.at) / span;
+    const mix = (x, y) => x + (y - x) * t;
+    return `hsl(${mix(a.h, b.h).toFixed(1)} ${mix(a.s, b.s).toFixed(1)}% ${mix(a.l, b.l).toFixed(1)}%)`;
 }
+// [E] edit by smsong
 // [E] edit by smsong
 
 // ---------- 상태 ----------
@@ -879,7 +962,8 @@ function sessionCardHtml(s, draggable) {
             ${parts.length ? `<div class="sess-parts">${parts.map(p => `<span class="bp">${esc(p)}</span>`).join('')}</div>` : ''}
             <div class="cond-line">
                 <span class="cond-cap">컨디션</span>
-                <span class="cond-bar"><i style="width:${c == null ? 0 : c}%;background:linear-gradient(90deg, var(--up), ${condColor(c)})"></i></span>
+                <!-- [B][E] edit by smsong : 빨강→현재색 그라데이션 제거. 그 값에 해당하는 "한 가지 색"으로만 채운다 -->
+                <span class="cond-bar"><i style="width:${c == null ? 0 : c}%;background:${condColor(c)}"></i></span>
                 <span class="cond-num tabnum" style="color:${condColor(c)}">${c == null ? '—' : c}</span>
             </div>
         </div>
@@ -1021,6 +1105,8 @@ function renderChange() {
         // [B][E] edit by smsong : 기간으로 필터링 (그래프에 반영. 최신값 비교 카드는 전체 최신 기준 유지)
         const statsAll = exerciseSessionStats(ui.changeExercise);
         const stats = filterByPeriod(statsAll, s => s.date, ui.changePeriod);
+        // [B][E] edit by smsong : "1일" 기간에서는 묶지 않고 그날의 기록을 그대로 → 라벨은 시각으로
+        const exRawLabel = s => s.startTime || labelMd(s.date);
         const n = statsAll.length;
         const last = statsAll[n - 1];
         const isBw = exerciseIsBodyweight(ui.changeExercise);   // [B][E] edit by smsong : 맨몸이면 횟수 중심
@@ -1033,14 +1119,18 @@ function renderChange() {
         const dateCount = {};
         cands.forEach(c => { dateCount[c.date] = (dateCount[c.date] || 0) + 1; });
         const cmpTabLabel = c => labelMd(c.date) + (dateCount[c.date] > 1 && c.startTime ? ` ${c.startTime}` : '');
-        const cmpFullLabel = c => `${fmtKorean(c.date)}${c.startTime ? ' ' + c.startTime : ''}`;
+        // [B][E] edit by smsong : 콤보박스에 월·일·요일만 나와 어느 해 기록인지 알 수 없었다 → 년도 추가
+        const cmpFullLabel = c => `${fmtKoreanFull(c.date)}${c.startTime ? ' ' + c.startTime : ''}`;
         if (cands.length && !cands.some(c => String(c.id) === String(ui.changeGrowthCmpId))) {
             ui.changeGrowthCmpId = cands[0].id;   // 직전 세션으로 기본 선택
         }
         const prev = cands.find(c => String(c.id) === String(ui.changeGrowthCmpId)) || null;
 
         if (cands.length) {
-            const quick = cands.slice(0, 5);
+            // [B][E] edit by smsong : 가까운 5개를 "과거 → 최근" 순으로 배치.
+            //   cands 는 최신순이므로 앞에서 5개를 뽑은 뒤 뒤집어야 제일 최근 기록이 오른쪽 끝에 온다.
+            //   (시간이 왼→오로 흐르는 그래프의 x축 방향과 일치)
+            const quick = cands.slice(0, 5).reverse();
             html += `<div class="growth-cmp-cap">최근 기록과 비교할 날짜</div>`;
             html += `<div class="seg growth-cmp-seg" id="growthCmpTabs">${
                 quick.map(c => `<button data-id="${c.id}" class="${String(c.id) === String(ui.changeGrowthCmpId) ? 'active' : ''}" type="button">${cmpTabLabel(c)}</button>`).join('')
@@ -1063,10 +1153,11 @@ function renderChange() {
                 <div class="cmp-row"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}</div></div>
                 <div class="cmp-row"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}</div></div>
             </div>`;
-            html += `<div class="chart-sub-title" style="margin-top:18px">총 횟수 추이</div>`;
-            html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.totalReps })), { color: C_WEIGHT, unit: '회' });
-            html += `<div class="chart-sub-title" style="margin-top:18px">총 세트 추이</div>`;
-            html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.totalSets })), { color: C_VOL, unit: '세트' });
+            // [B][E] edit by smsong : 기간 단위(일/주/월)로 묶어서 그린다. 횟수·세트는 구간 합계.
+            html += `<div class="chart-sub-title" style="margin-top:18px">총 횟수 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
+            html += lineChart(aggSeries(stats, s => s.date, s => s.totalReps, ui.changePeriod, 'sum', exRawLabel), { color: C_WEIGHT, unit: '회' });
+            html += `<div class="chart-sub-title" style="margin-top:18px">총 세트 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
+            html += lineChart(aggSeries(stats, s => s.date, s => s.totalSets, ui.changePeriod, 'sum', exRawLabel), { color: C_VOL, unit: '세트' });
             html += chartLegend([[C_WEIGHT, '총 횟수 (회)'], [C_VOL, '총 세트']]);
         } else {
             html += `<div class="cmp-list">
@@ -1075,10 +1166,11 @@ function renderChange() {
                 <div class="cmp-row"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}</div></div>
                 <div class="cmp-row"><span class="cmp-k">총 볼륨</span><div class="cmp-right"><span class="cmp-v tabnum">${last.volume}kg</span>${deltaChip(last.volume, prev ? prev.volume : null, 'kg')}</div></div>
             </div>`;
-            html += `<div class="chart-sub-title" style="margin-top:18px">최고 무게 추이</div>`;
-            html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.topWeight })), { color: C_WEIGHT, unit: 'kg' });
-            html += `<div class="chart-sub-title" style="margin-top:18px">볼륨 추이</div>`;
-            html += lineChart(stats.map(s => ({ label: labelMd(s.date), value: s.volume })), { color: C_VOL, unit: 'kg' });
+            // [B][E] edit by smsong : 기간 단위로 묶기 — 최고 무게는 구간 최댓값, 볼륨은 구간 합계
+            html += `<div class="chart-sub-title" style="margin-top:18px">최고 무게 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
+            html += lineChart(aggSeries(stats, s => s.date, s => s.topWeight, ui.changePeriod, 'max', exRawLabel), { color: C_WEIGHT, unit: 'kg' });
+            html += `<div class="chart-sub-title" style="margin-top:18px">볼륨 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
+            html += lineChart(aggSeries(stats, s => s.date, s => s.volume, ui.changePeriod, 'sum', exRawLabel), { color: C_VOL, unit: 'kg' });
             html += chartLegend([[C_WEIGHT, '최고 무게 (kg)'], [C_VOL, '볼륨 (kg)']]);
         }
         // [E] edit by smsong
@@ -1094,13 +1186,15 @@ function renderChange() {
     // [B][E] edit by smsong : 최근 14개 고정 → 선택한 기간으로 필터링
     const condSeries = filterByPeriod(orderedSessions().filter(s => s.condition != null), s => s.date, ui.changePeriod);
     const durSeries = filterByPeriod(orderedSessions().filter(s => sessionDuration(s) != null), s => s.date, ui.changePeriod);
+    // [B][E] edit by smsong : 컨디션은 구간 평균, 운동 시간은 구간 합계로 묶는다
+    const sessRawLabel = s => s.startTime || labelMd(s.date);
     if (condSeries.length) {
-        html += `<div class="chart-sub-title">컨디션 (0~100)</div>`;
-        html += lineChart(condSeries.map(s => ({ label: labelMd(s.date), value: s.condition })), { color: C_COND, unit: '', fixedMin: 0, fixedMax: 100 });
+        html += `<div class="chart-sub-title">컨디션 (0~100) <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
+        html += lineChart(aggSeries(condSeries, s => s.date, s => s.condition, ui.changePeriod, 'avg', sessRawLabel), { color: C_COND, unit: '', fixedMin: 0, fixedMax: 100 });
     }
     if (durSeries.length) {
-        html += `<div class="chart-sub-title" style="margin-top:18px">운동 시간 (분)</div>`;
-        html += lineChart(durSeries.map(s => ({ label: labelMd(s.date), value: sessionDuration(s) })), { color: C_VOL, unit: '분' });
+        html += `<div class="chart-sub-title" style="margin-top:18px">운동 시간 (분) <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
+        html += lineChart(aggSeries(durSeries, s => s.date, s => sessionDuration(s), ui.changePeriod, 'sum', sessRawLabel), { color: C_VOL, unit: '분' });
     }
     if (condSeries.length || durSeries.length) {
         html += chartLegend([[C_COND, '컨디션'], [C_VOL, '운동 시간 (분)']]);
@@ -1117,7 +1211,10 @@ function renderChange() {
     const blAll = state.bodyLogs.slice().sort((a, b) => a.date < b.date ? -1 : 1);
     const bl = filterByPeriod(blAll, b => b.date, ui.changePeriod);   // [B][E] edit by smsong : 기간 필터링
     if (bl.length) {
-        html += lineChart(bl.map(b => ({ label: labelMd(b.date), value: b.weight })), { color: C_WEIGHT, unit: 'kg', target: state.profile.targetWeight, targetColor: C_TARGET });
+        // [B][E] edit by smsong : 체중은 구간 평균(같은 주/달에 여러 번 쟀어도 하나의 점으로)
+        html += `<div class="chart-sub-title">체중 (kg) <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
+        html += lineChart(aggSeries(bl, b => b.date, b => b.weight, ui.changePeriod, 'avg', b => labelMd(b.date)),
+            { color: C_WEIGHT, unit: 'kg', target: state.profile.targetWeight, targetColor: C_TARGET });
         html += chartLegend([[C_WEIGHT, '체중 (kg)']].concat(state.profile.targetWeight ? [[C_TARGET, '목표']] : []));
         html += `<button class="btn sm block" id="addBodyBtn" style="margin-top:14px">오늘 체중 기록</button>`;
     } else {
@@ -1130,11 +1227,16 @@ function renderChange() {
     html += `<div class="section">
         <div class="section-head"><h2>칼로리 추이</h2></div>
         <div class="card">`;
+    // [B][E] edit by smsong : 기간 단위로 묶어 합계. 1일이면 그날의 끼니별로 그대로 표시.
     const kdays = periodDays(ui.changePeriod);
     const days = [];
     for (let i = kdays - 1; i >= 0; i--) days.push(shiftDays(-i));
-    const kcalPoints = days.map(d => ({ label: labelMd(d), value: kcalOfDate(d) }));
+    const kcalRaw = days.map(d => ({ date: d, kcal: kcalOfDate(d) }));
+    const kcalPoints = periodUnit(ui.changePeriod) === 'raw'
+        ? mealsByDate(todayStr()).map(m => ({ label: (MEAL_TYPES.find(t => t.key === m.mealType) || {}).label || m.name, value: m.kcal || 0 }))
+        : aggSeries(kcalRaw, r => r.date, r => r.kcal, ui.changePeriod, 'sum');
     if (kcalPoints.some(p => p.value > 0)) {
+        html += `<div class="chart-sub-title">섭취 칼로리 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
         html += lineChart(kcalPoints, { color: C_KCAL, unit: 'kcal' });
         html += chartLegend([[C_KCAL, '섭취 칼로리 (kcal)']]);
     } else {
@@ -1320,16 +1422,117 @@ const CHANGE_PERIODS = [
     { key: '1y', label: '1년', days: 365 }
 ];
 function periodDays(key) { const p = CHANGE_PERIODS.find(p => p.key === key); return p ? p.days : 30; }
-function periodCutoff(key) { return shiftDays(-(periodDays(key) - 1)); }   // 오늘 포함 N일 전
+
+// [B] edit by smsong : 기간 = "x축의 단위" 로 재정의.
+//   기존엔 기간이 단순 필터(cutoff 이후 기록만)라, 1년을 골라도 기록이 3개면 점 3개짜리 그래프였다.
+//   변경 — 기간마다 x축의 눈금(버킷) 자체를 만든다. 기록이 없는 구간도 축에 그대로 남는다.
+//     1일   : 그날의 기록을 있는 그대로 (라벨 = 시각)
+//     1주   : 일 단위  ×  7칸
+//     1개월 : 일 단위  × 30칸
+//     6개월 : 주 단위  × 26칸 (월요일 시작)
+//     1년   : 월 단위  × 12칸
+function periodUnit(key) {
+    return key === '1y' ? 'month' : key === '6m' ? 'week' : key === '1d' ? 'raw' : 'day';
+}
+function monthKey(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; }
+function weekStartStr(dateStr) {              // 그 날짜가 속한 주의 월요일
+    const d = parseDate(dateStr);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return toDateStr(d);
+}
+// 날짜(YYYY-MM-DD) → 그 날짜가 속한 버킷 키
+function bucketKeyOf(dateStr, unit) {
+    if (unit === 'month') return monthKey(parseDate(dateStr));
+    if (unit === 'week') return weekStartStr(dateStr);
+    return dateStr;
+}
+// 버킷 키 → x축 라벨
+function bucketLabel(key, unit) {
+    if (unit === 'month') { const m = Number(key.split('-')[1]); return `${m}월`; }
+    return labelMd(key);
+}
+// 기간 전체의 버킷 목록(과거 → 현재). 기록 유무와 무관하게 축을 먼저 만든다.
+function periodBuckets(key) {
+    const unit = periodUnit(key);
+    const keys = [];
+    const today = new Date();
+    if (unit === 'month') {
+        for (let i = 11; i >= 0; i--) keys.push(monthKey(new Date(today.getFullYear(), today.getMonth() - i, 1)));
+    } else if (unit === 'week') {
+        const w0 = weekStartStr(todayStr());
+        for (let i = 25; i >= 0; i--) { const d = parseDate(w0); d.setDate(d.getDate() - i * 7); keys.push(toDateStr(d)); }
+    } else if (unit === 'day') {
+        const n = periodDays(key);
+        for (let i = n - 1; i >= 0; i--) keys.push(shiftDays(-i));
+    }
+    return { unit, keys };
+}
+// 축의 시작 = 필터 기준일 (월/주 단위는 버킷 경계에 맞춘다 → 축과 데이터가 어긋나지 않음)
+function periodCutoff(key) {
+    const { unit, keys } = periodBuckets(key);
+    if (unit === 'raw') return todayStr();
+    const first = keys[0];
+    return unit === 'month' ? first + '-01' : first;
+}
 // 날짜 문자열(YYYY-MM-DD)을 가진 배열을 기간으로 필터링
 function filterByPeriod(items, dateOf, periodKey) {
     const cutoff = periodCutoff(periodKey);
     return items.filter(it => dateOf(it) >= cutoff);
 }
+
+/**
+ * 기간 단위로 묶어 그래프 점 배열을 만든다.
+ * @param {Array}    items      원본 (기간 필터를 이미 통과한 것)
+ * @param {function} dateOf     (item) => 'YYYY-MM-DD'
+ * @param {function} valueOf    (item) => number
+ * @param {string}   periodKey  1d/1w/1m/6m/1y
+ * @param {string}   mode       'sum' | 'avg' | 'max' | 'last'
+ * @param {function} [rawLabelOf] 1일 모드에서 쓸 라벨 (item) => string
+ * @returns {Array<{label,value}>}  기록이 없는 버킷은 value=null (sum 계열은 0)
+ */
+function aggSeries(items, dateOf, valueOf, periodKey, mode, rawLabelOf) {
+    const { unit, keys } = periodBuckets(periodKey);
+    if (unit === 'raw') {
+        return items.map(it => ({
+            label: rawLabelOf ? rawLabelOf(it) : labelMd(dateOf(it)),
+            value: valueOf(it)
+        }));
+    }
+    const map = {};
+    items.forEach(it => {
+        const k = bucketKeyOf(dateOf(it), unit);
+        const v = valueOf(it);
+        if (v == null || isNaN(v)) return;
+        (map[k] || (map[k] = [])).push(Number(v));
+    });
+    return keys.map(k => {
+        const arr = map[k];
+        let v = null;
+        if (arr && arr.length) {
+            if (mode === 'sum') v = arr.reduce((a, b) => a + b, 0);
+            else if (mode === 'max') v = Math.max.apply(null, arr);
+            else if (mode === 'last') v = arr[arr.length - 1];
+            else v = Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10;   // avg
+        } else if (mode === 'sum') {
+            v = 0;    // 합계 지표(볼륨/칼로리 등)는 "0인 구간"이 정보다 → 축에 0으로 남긴다
+        }
+        return { label: bucketLabel(k, unit), value: v, key: k };
+    });
+}
+// [E] edit by smsong
 function periodTabsHtml(id, current) {
     return `<div class="seg period-seg" id="${id}">${CHANGE_PERIODS.map(p =>
         `<button data-period="${p.key}" class="${p.key === current ? 'active' : ''}" type="button">${p.label}</button>`
     ).join('')}</div>`;
+}
+// [B][E] edit by smsong : 지금 그래프의 x축이 어떤 단위인지 소제목 옆에 표기 (1년=월별 …)
+function periodUnitLabel(key) {
+    const u = periodUnit(key);
+    return u === 'month' ? '· 월별 (최근 1년)'
+         : u === 'week'  ? '· 주별 (최근 6개월)'
+         : u === 'raw'   ? '· 오늘'
+         : key === '1w'  ? '· 일별 (최근 1주)'
+                         : '· 일별 (최근 1개월)';
 }
 // [E] edit by smsong
 
@@ -1468,39 +1671,83 @@ function bindCalendar(kind) {
 // ============================================================
 //  SVG 라인 차트 (의존성 없음)
 // ============================================================
+// [B] edit by smsong : 축 눈금 숫자 포맷.
+//   ref(축 최댓값)를 함께 넘기면 축 전체가 같은 단위로 표기된다.
+//   (5000 / 10k / 15k 처럼 섞여 보이지 않도록 — 10000 이상이면 전부 k)
+function fmtAxis(v, ref) {
+    const scale = Math.abs(ref == null ? v : ref);
+    if (scale >= 10000) {
+        const k = v / 1000;
+        return (Number.isInteger(k) ? k : k.toFixed(1)) + 'k';
+    }
+    if (Number.isInteger(v)) return String(v);
+    return String(Math.round(v * 10) / 10);
+}
+// 눈금 간격을 사람이 읽기 좋은 값(1/2/5 × 10ⁿ)으로 맞춘다
+function niceStep(range, count) {
+    const raw = range / Math.max(1, count);
+    if (!(raw > 0)) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const n = raw / mag;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
+}
+// [E] edit by smsong
+
+/**
+ * SVG 라인 차트
+ * [B] edit by smsong — 개선점
+ *   1) 세로축(y) 값 표시 : 가로 스크롤 밖에 고정된 축(.chart-axis)에 눈금 + 숫자를 그린다.
+ *                          → 옆으로 넘겨도 "이 높이가 몇인지"가 항상 보인다.
+ *   2) 빈 구간 지원      : value === null 이면 선을 끊는다(기간 축에 기록 없는 달/주가 있어도 자연스럽다).
+ *   3) 전환 애니메이션   : 선(cl-line)은 왼→오로 그려지고, 면(cl-area)/점(cl-dot)은 뒤이어 떠오른다.
+ *                          기간 탭을 바꿔 다시 그려질 때마다 애니메이션이 재생된다.
+ * @param {Array<{label:string, value:number|null}>} points
+ */
 function lineChart(points, opts) {
     opts = opts || {};
     if (!points || points.length === 0) return emptyBlock('chart', '데이터가 없어요', '');
+    const real = points.filter(p => p.value != null);
+    if (!real.length) return emptyBlock('chart', '이 기간에는 기록이 없어요', '기간 탭을 넓혀서 확인해 보세요');
     if (points.length === 1) {
         return `<div style="text-align:center;padding:26px 0;color:var(--text-dim)">
             <div style="font-size:26px;font-weight:800" class="tabnum">${points[0].value}${opts.unit || ''}</div>
             <div style="font-size:12px;margin-top:6px">데이터가 2개 이상이면 추이 그래프가 그려져요</div></div>`;
     }
 
-    // [B] edit by smsong : 그래프 잘림 개선
-    //   · padT 14 → 34 : 최고점의 값 라벨/툴팁 말풍선이 위로 잘리던 문제
-    //   · padL/padR 8 → 24 : 첫/마지막 x축 라벨이 좌우로 잘리던 문제
-    //   · H 170 → 196 : 세로를 키워 추이가 더 잘 보이게
     const H = 196, padT = 34, padB = 30;
-    // [E] edit by smsong
-    // [B] edit by smsong : 점마다 폭을 고정(SPACING)해서 그린다. 데이터가 적으면 카드 폭(BASE_W)에
-    //   맞춰 기존과 똑같이 보이고, 데이터가 많아지면 그래프 자체가 넓어져서(overflow) 옆으로
-    //   드래그해 전체 추이를 볼 수 있다 — 억지로 욱여넣어 겹치거나 잘리지 않는다.
+    // 점당 폭 고정 → 데이터가 많으면 SVG 가 넓어지고 .chart-scroll 이 가로 스크롤로 보여준다.
     const SPACING = 46;
-    const BASE_W = 320;
-    const padL = 24, padR = 24;
+    const AXIS_W = 42;              // 고정 세로축 폭
+    const BASE_W = 320 - AXIS_W;    // 축을 뺀 나머지가 기본 그림 폭
+    const padL = 10, padR = 20;
     const innerNeed = SPACING * (points.length - 1);
     const W = Math.max(BASE_W, innerNeed + padL + padR);
-    // [E] edit by smsong
 
-    const vals = points.map(p => p.value);
-    let min = Math.min(...vals), max = Math.max(...vals);
+    // ---------- y 축 범위/눈금 ----------
+    const vals = real.map(p => p.value);
+    let min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
     if (opts.target != null) { min = Math.min(min, opts.target); max = Math.max(max, opts.target); }
-    // [B] edit by smsong : 컨디션처럼 눈금이 고정된 지표용 (0~100 축 고정)
     if (opts.fixedMin != null) min = opts.fixedMin;
     if (opts.fixedMax != null) max = opts.fixedMax;
-    // [E] edit by smsong
     if (min === max) { min -= 1; max += 1; }
+
+    const TICKS = 4;                // 구간 수 → 눈금선 5개
+    let step;
+    if (opts.fixedMin != null && opts.fixedMax != null) {
+        step = (max - min) / TICKS;
+    } else {
+        // 데이터 범위를 덮으면서 눈금이 정확히 TICKS 칸이 되도록 간격을 키워 맞춘다.
+        step = niceStep(max - min, TICKS);
+        min = Math.floor(min / step) * step;
+        max = Math.ceil(max / step) * step;
+        let guard = 0;
+        while ((max - min) / step > TICKS && guard++ < 40) {
+            step *= 2;
+            min = Math.floor(min / step) * step;
+            max = Math.ceil(max / step) * step;
+        }
+        max = min + step * TICKS;   // 남는 칸은 위쪽 여유로
+    }
     const range = max - min || 1;
     const innerW = W - padL - padR, innerH = H - padT - padB;
     const x = i => padL + (innerW * i) / (points.length - 1);
@@ -1509,71 +1756,107 @@ function lineChart(points, opts) {
     const color = opts.color || cssVar('--chart-volume', '#38bdf8');
     const gid = 'g' + Math.random().toString(36).slice(2, 7);
 
-    let path = '', area = '';
+    // 눈금 값 목록 (아래 → 위). 누적 덧셈은 부동소수 오차가 쌓이므로 인덱스로 계산한다.
+    const ticks = [];
+    for (let i = 0; i <= TICKS; i++) ticks.push(Math.round((min + step * i) * 1000) / 1000);
+
+    // ---------- 선/면 (null 구간에서 끊는다) ----------
+    // 연속된 non-null 구간을 세그먼트로 나눠, 각각 선과 면을 그린다.
+    const segs = [];
+    let cur = [];
     points.forEach((p, i) => {
-        const cmd = i === 0 ? 'M' : 'L';
-        path += `${cmd}${x(i).toFixed(1)} ${y(p.value).toFixed(1)} `;
+        if (p.value == null) { if (cur.length) segs.push(cur); cur = []; return; }
+        cur.push(i);
     });
-    area = path + `L${x(points.length - 1).toFixed(1)} ${padT + innerH} L${x(0).toFixed(1)} ${padT + innerH} Z`;
+    if (cur.length) segs.push(cur);
+
+    let linePath = '', areaPaths = '', dots = '';
+    segs.forEach(seg => {
+        if (seg.length === 1) {
+            // 앞뒤가 비어 점 하나만 남은 구간 → 선 대신 점만 (아래 dots 에서 그려짐)
+            return;
+        }
+        let d = '';
+        seg.forEach((i, k) => { d += `${k === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(points[i].value).toFixed(1)} `; });
+        linePath += d;
+        const y0 = (padT + innerH).toFixed(1);
+        areaPaths += `<path class="cl-area" d="${d}L${x(seg[seg.length - 1]).toFixed(1)} ${y0} L${x(seg[0]).toFixed(1)} ${y0} Z" fill="url(#${gid})"/>`;
+    });
 
     // 목표선
     let targetLine = '';
     if (opts.target != null) {
         const ty = y(opts.target).toFixed(1);
         const tc = opts.targetColor || cssVar('--chart-target', '#ff5a6a');
-        targetLine = `<line x1="${padL}" y1="${ty}" x2="${W - padR}" y2="${ty}" stroke="${tc}" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.7"/>`;
+        targetLine = `<line x1="0" y1="${ty}" x2="${W}" y2="${ty}" stroke="${tc}" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.7"/>`;
     }
 
-    // 점 + 값  [B] edit by smsong : 각 점에 큰 투명 히트영역(.cpt) + 데이터 → 탭하면 수치 표시
-    let dots = '';
-    // [B] edit by smsong : 히트영역을 "점 주변 원(r=13)" → "그 점이 속한 세로 컬럼 전체"로 확장.
-    //   점을 정확히 누르지 않고 그래프의 위/아래 아무 곳이나 눌러도 해당 값이 뜬다.
+    // 가로 눈금선 (숫자는 왼쪽 고정축이 담당)
+    let grid = '';
+    ticks.forEach(v => { grid += `<line class="cl-grid" x1="0" y1="${y(v).toFixed(1)}" x2="${W}" y2="${y(v).toFixed(1)}"/>`; });
+
+    // ---------- 점 + 히트영역 ----------
     let hits = '';
     points.forEach((p, i) => {
+        if (p.value == null) return;
         const cx = x(i);
         const left  = i === 0 ? 0 : (x(i - 1) + cx) / 2;
         const right = i === points.length - 1 ? W : (cx + x(i + 1)) / 2;
         hits += `<rect class="cpt" x="${left.toFixed(1)}" y="0" width="${(right - left).toFixed(1)}" height="${H}" fill="transparent" style="cursor:pointer" data-cx="${cx.toFixed(1)}" data-cy="${y(p.value).toFixed(1)}" data-v="${p.value}" data-lab="${esc(String(p.label))}"/>`;
     });
-    // [E] edit by smsong
+    let di = 0;
     points.forEach((p, i) => {
-        dots += `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3.2" fill="${color}"/>`;
+        if (p.value == null) return;
+        // 점마다 조금씩 늦게 나타나 왼쪽부터 차오르는 느낌 (최대 0.5초)
+        const delay = Math.min(0.5, 0.26 + di * 0.018).toFixed(3);
+        di++;
+        dots += `<circle class="cl-dot" cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3.2" fill="${color}" style="animation-delay:${delay}s"/>`;
     });
-    // 마지막 값 라벨
-    const li = points.length - 1;
-    dots += `<text x="${x(li).toFixed(1)}" y="${(y(points[li].value) - 8).toFixed(1)}" text-anchor="end" fill="${color}" font-size="11" font-weight="700">${points[li].value}${opts.unit || ''}</text>`;
+    // 마지막(가장 최근) 실제 값 라벨
+    let lastIdx = -1;
+    for (let i = points.length - 1; i >= 0; i--) { if (points[i].value != null) { lastIdx = i; break; } }
+    if (lastIdx >= 0) {
+        const lv = points[lastIdx].value;
+        dots += `<text class="cl-last" x="${x(lastIdx).toFixed(1)}" y="${(y(lv) - 8).toFixed(1)}" text-anchor="end" fill="${color}" font-size="11" font-weight="700">${fmtAxis(lv)}${opts.unit || ''}</text>`;
+    }
     // 탭 시 채워지는 툴팁 레이어
     dots += `<g class="chart-tip" style="display:none"></g>`;
-    // [E] edit by smsong
 
-    // x축 라벨 — [B] edit by smsong : 테마 변수 사용(style 로 지정해야 var() 가 안전하게 적용됨)
-    //   라벨 간 최소 간격을 확보해서 촘촘한 구간에서도 겹치지 않게 자동으로 솎아낸다.
+    // ---------- x축 라벨 ----------
     const minLabelGap = 40;
     const every = opts.everyLabel || Math.max(1, Math.ceil(minLabelGap / SPACING));
     let labels = '';
     points.forEach((p, i) => {
         if (i % every === 0 || i === points.length - 1) {
-            // [B][E] edit by smsong : 양 끝 라벨은 anchor 를 안쪽으로 → 좌우 잘림 방지
             const anchor = i === 0 ? 'start' : (i === points.length - 1 ? 'end' : 'middle');
-            const lx = i === 0 ? Math.max(x(i) - 10, 2) : (i === points.length - 1 ? Math.min(x(i) + 10, W - 2) : x(i));
-            labels += `<text x="${lx.toFixed(1)}" y="${H - 9}" text-anchor="${anchor}" style="fill:var(--text-mute)" font-size="9.5">${p.label}</text>`;
+            const lx = i === 0 ? Math.max(x(i) - 6, 2) : (i === points.length - 1 ? Math.min(x(i) + 8, W - 2) : x(i));
+            labels += `<text x="${lx.toFixed(1)}" y="${H - 9}" text-anchor="${anchor}" style="fill:var(--text-mute)" font-size="9.5">${esc(String(p.label))}</text>`;
         }
     });
-    // [E] edit by smsong
 
-    // [B] edit by smsong : 가로 스크롤 래퍼 — SVG 를 실제 픽셀 폭(W)으로 그리고,
-    //   바깥(.chart-scroll)만 카드 폭에 맞춘 뒤 overflow-x:auto 로 드래그/스와이프를 지원한다.
-    //   데이터가 적어 W === BASE_W 인 경우엔 스크롤이 생기지 않아 기존과 동일하게 보인다.
-    return `<div class="chart-scroll"><div class="chart-wrap" style="width:${W}px"><svg class="chart-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-unit="${opts.unit || ''}" data-color="${color}" data-h="${H}">
-        <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${color}" stop-opacity="0.28"/>
-            <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
-        </linearGradient></defs>
-        ${targetLine}
-        <path d="${area}" fill="url(#${gid})"/>
-        <path d="${path}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-        ${dots}${labels}${hits}
-    </svg></div></div>`;
+    // ---------- 왼쪽 고정 세로축 ----------
+    let axis = '';
+    ticks.forEach(v => {
+        axis += `<text class="cl-ytxt" x="${AXIS_W - 6}" y="${(y(v) + 3.2).toFixed(1)}" text-anchor="end">${fmtAxis(v, max)}</text>`;
+    });
+    axis += `<line x1="${AXIS_W - 0.5}" y1="${padT - 6}" x2="${AXIS_W - 0.5}" y2="${padT + innerH}" stroke="var(--line)" stroke-width="1"/>`;
+    if (opts.unit) axis += `<text class="cl-ytxt" x="${AXIS_W - 6}" y="${padT - 14}" text-anchor="end" style="font-weight:700">${esc(opts.unit)}</text>`;
+
+    // 축(고정) + 그림(가로 스크롤)
+    return `<div class="chart-box">
+        <svg class="chart-axis" width="${AXIS_W}" height="${H}" viewBox="0 0 ${AXIS_W} ${H}">${axis}</svg>
+        <div class="chart-scroll"><div class="chart-wrap" style="width:${W}px"><svg class="chart-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-unit="${opts.unit || ''}" data-color="${color}" data-h="${H}" data-w="${W}">
+            <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="${color}" stop-opacity="0.28"/>
+                <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+            </linearGradient></defs>
+            ${grid}
+            ${targetLine}
+            ${areaPaths}
+            <path class="cl-line" pathLength="1" d="${linePath}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+            ${dots}${labels}${hits}
+        </svg></div></div>
+    </div>`;
     // [E] edit by smsong
 }
 
@@ -1591,13 +1874,14 @@ function wireCharts(root) {
         const unit = svg.dataset.unit || '';
         const color = svg.dataset.color || 'currentColor';
         const H = parseFloat(svg.dataset.h) || 170;
+        const W = parseFloat(svg.dataset.w) || 320;   // [B][E] edit by smsong : 실제 그림 폭 기준으로 말풍선 보정
         svg.addEventListener('click', e => {
             const t = e.target.closest('.cpt');
             if (!t) { tip.style.display = 'none'; tip.innerHTML = ''; return; }
             const cx = parseFloat(t.dataset.cx), cy = parseFloat(t.dataset.cy);
             const v = t.dataset.v, lab = t.dataset.lab;
-            // [B][E] edit by smsong : 넓어진 패딩에 맞춰 말풍선이 화면 밖으로 나가지 않게 보정
-            const tx = Math.min(Math.max(cx, 30), 290);
+            // [B][E] edit by smsong : 말풍선이 그림 밖으로 나가지 않게 보정 (고정폭 290 → 실제 폭 W)
+            const tx = Math.min(Math.max(cx, 30), W - 30);
             const bubbleY = Math.max(cy - 12, 20);
             tip.innerHTML =
                 `<line x1="${cx}" y1="18" x2="${cx}" y2="${H - 24}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.45"/>` +
@@ -1973,14 +2257,20 @@ function openSessionEditor(sessionId, date, mode) {
         const condEl = document.getElementById('seCond');
         const condVal = document.getElementById('seCondVal');
         const condLbl = document.getElementById('seCondLbl');
+        // [B] edit by smsong : 컨디션 색 갱신.
+        //   변수를 슬라이더가 아니라 부모(.cond-field)에 얹는다 → 트랙·썸·숫자·라벨이 전부
+        //   같은 --cond-color 를 상속받아, 값을 움직이는 즉시 "한 가지 색"으로 함께 물든다.
+        //   색 자체의 부드러운 전환(그라데이션)은 CSS 의 transition: --cond-color 가 담당한다.
+        const condField = condEl.closest('.cond-field') || condEl.parentElement;
         const paintCond = () => {
             const v = Number(condEl.value);
-            condVal.textContent = v; condVal.style.color = condColor(v);
-            condLbl.textContent = condLabel(v); condLbl.style.color = condColor(v);
-            condEl.style.setProperty('--cond-pct', v + '%');
-            condEl.style.setProperty('--cond-color', condColor(v));
+            condVal.textContent = v;
+            condLbl.textContent = condLabel(v);
+            condField.style.setProperty('--cond-pct', v + '%');
+            condField.style.setProperty('--cond-color', condColor(v));
         };
         condEl.addEventListener('input', paintCond); paintCond();
+        // [E] edit by smsong
 
         // 시작·종료 → 총 시간(분) 자동 계산 (직접 입력 불가)
         const startEl = document.getElementById('seStart');
@@ -2376,6 +2666,18 @@ const TAB_KEY = 'UF_TAB';
 //   · 이전 탭 → 새 탭으로 빛나는 코멧(streak)이 네비 위를 가로질러 날아가 어디로 왔는지 각인시킨다.
 const TAB_ORDER = ['workout', 'diet', 'home', 'change', 'profile'];   // 네비의 실제 좌→우 배치
 let curTab = null;
+// [B] edit by smsong : 코멧 궤적 전면 재작성 — "요리조리 곡예를 그리며" 날아가게.
+//   기존은 x 는 등속 + y 만 sin 물결이라 결국 직선 위에서 흔들리는 느낌이었다.
+//   변경 — 3차 베지어 곡선을 실제로 따라간다.
+//     · 출발점에서 네비 위로 크게 솟아올랐다가(제어점 1) 도착 직전에 아래로 파고들어(제어점 2)
+//       탭에 내려앉는 포물선. 거리에 비례해 호(arc)의 높이가 커진다.
+//     · 여기에 작은 sin 물결을 얹어 굽이를 하나 더 준다.
+//     · 회전은 "곡선의 접선 방향"으로 계산 → 코멧 꼬리가 진행 방향을 정확히 따라간다.
+//     · 도착하면 그 탭에서 링이 퍼지며(.nav-splash) 마무리.
+function bez(p0, p1, p2, p3, t) {          // 3차 베지어 위의 점
+    const u = 1 - t;
+    return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
+}
 function navComet(fromTab, toTab) {
     const nav = document.querySelector('.bottom-nav');
     if (!nav) return;
@@ -2387,38 +2689,58 @@ function navComet(fromTab, toTab) {
     const br = b.getBoundingClientRect();
     const x0 = ar.left + ar.width / 2 - nr.left;
     const x1 = br.left + br.width / 2 - nr.left;
-    const y = Math.min(ar.top + ar.height / 2, br.top + br.height / 2) - nr.top - 2;
+    // 아이콘 높이 근처를 기준선으로 잡는다(홈은 원형이라 위로 떠 있어 살짝 다름)
+    const y0 = ar.top + ar.height * 0.42 - nr.top;
+    const y1 = br.top + br.height * 0.42 - nr.top;
+
+    const dist = Math.abs(x1 - x0);
+    const dir = x1 >= x0 ? 1 : -1;
+    const arc = Math.max(26, Math.min(64, dist * 0.55));   // 솟아오르는 높이 (거리에 비례)
+
+    // 제어점 — 초반엔 위로 크게, 후반엔 아래로 파고들었다가 착지
+    const c1x = x0 + (x1 - x0) * 0.22, c1y = y0 - arc;
+    const c2x = x0 + (x1 - x0) * 0.72, c2y = y1 - arc * 0.18;
+
     const c = document.createElement('span');
     c.className = 'nav-comet';
-    c.style.top = y + 'px';
     nav.appendChild(c);
-    // [B] edit by smsong : 직선이 아니라 위아래로 물결치며 "요리조리" 날아가는 궤적.
-    //   여러 웨이포인트(x는 등속, y는 sin 물결)를 WAAPI 로 이어 붙인다. 이동량이 클수록 굽이도 크게.
-    const dist = Math.abs(x1 - x0);
-    const amp = Math.max(7, Math.min(16, dist * 0.12));   // 물결 진폭
-    const waves = 2.5;                                      // 굽이 수
-    const steps = 12;
-    const dir = x1 >= x0 ? 1 : -1;
+
+    const steps = 24;
     const frames = [];
+    let px = x0, py = y0;
     for (let i = 0; i <= steps; i++) {
         const t = i / steps;
-        const x = x0 + (x1 - x0) * t;
-        const wob = Math.sin(t * Math.PI * waves) * amp * (1 - t * 0.35);   // 도착 즈음 잦아듦
-        const rot = dir * (12 + Math.sin(t * Math.PI * waves) * 18);        // 진행감 있는 살짝의 회전
+        // 베지어 위치 + 잔물결(도착에 가까울수록 잦아듦)
+        const wob = Math.sin(t * Math.PI * 2) * 6 * (1 - t);
+        const x = bez(x0, c1x, c2x, x1, t);
+        const y = bez(y0, c1y, c2y, y1, t) + wob;
+        // 접선 방향 = 직전 프레임과의 차이 → 꼬리가 진행 방향을 향한다
+        const rot = i === 0 ? dir * -35 : Math.atan2(y - py, x - px) * 180 / Math.PI;
+        const sc = 0.7 + Math.sin(t * Math.PI) * 0.5;      // 가운데서 가장 커졌다 작아짐
+        px = x; py = y;
         frames.push({
-            transform: `translate(${x}px, ${wob}px) rotate(${rot}deg)`,
-            opacity: i === 0 ? 0.6 : i >= steps - 1 ? 0 : 0.98,
+            transform: `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) rotate(${rot.toFixed(1)}deg) scale(${sc.toFixed(3)})`,
+            opacity: t === 0 ? 0 : t < 0.12 ? 0.9 : t > 0.9 ? 0 : 1,
             offset: t
         });
     }
     if (typeof c.animate === 'function') {
-        c.animate(frames, { duration: 560, easing: 'cubic-bezier(.45,.05,.55,.95)', fill: 'both' });
+        c.animate(frames, { duration: 620, easing: 'cubic-bezier(.35,.02,.2,1)', fill: 'both' });
+        // 착지 링
+        const sp = document.createElement('span');
+        sp.className = 'nav-splash';
+        sp.style.left = x1 + 'px'; sp.style.top = y1 + 'px';
+        setTimeout(() => {
+            nav.appendChild(sp);
+            setTimeout(() => sp.remove(), 520);
+        }, 500);
     } else {   // WAAPI 미지원 폴백 — 그냥 직선 이동
-        c.style.transform = `translateX(${x0}px)`;
-        requestAnimationFrame(() => { c.classList.add('fly'); c.style.transform = `translateX(${x1}px)`; c.style.opacity = '0'; });
+        c.style.transform = `translate(${x0}px, ${y0}px)`;
+        requestAnimationFrame(() => { c.classList.add('fly'); c.style.transform = `translate(${x1}px, ${y1}px)`; c.style.opacity = '0'; });
     }
-    setTimeout(() => c.remove(), 600);
+    setTimeout(() => c.remove(), 680);
 }
+// [E] edit by smsong
 function activateTab(tab, remember) {
     const valid = ['home', 'workout', 'diet', 'change', 'profile'];
     if (!valid.includes(tab)) tab = 'home';
@@ -3106,9 +3428,17 @@ function openImportSheet(defaultDate) {
                 <div class="im-note">${esc(msg)}</div>
                 <div class="im-bar"><b style="width:${Math.round(step / total * 100)}%"></b></div>
             </div>`;
+            // [B][E] edit by smsong : 마이그레이션은 요청이 수십 건 이어지므로,
+            //   전역 로딩 폼에도 같은 진행 문구를 실어 어디까지 왔는지 보이게 한다.
+            Busy.msg(`${msg}  (${Math.round(step / total * 100)}%)`);
         };
 
         try {
+            // [B] edit by smsong : 마이그레이션은 수십 건의 요청이 이어진다.
+            //   요청 사이사이에 로딩 폼이 켜졌다 꺼졌다 깜빡이지 않도록,
+            //   작업 전체 구간을 감싸는 카운트를 하나 더 잡아 끝까지 열어 둔다(finally 에서 해제).
+            Busy.start('운동 기록을 가져오는 중이에요');
+            // [E] edit by smsong
             // 1) 새 종목 먼저 등록 (콤보박스에서 바로 고를 수 있도록)
             for (const n of newNames) {
                 bar(`종목 등록 중… ${n}`);
@@ -3141,6 +3471,8 @@ function openImportSheet(defaultDate) {
             busy = false; goEl.disabled = false; taEl.disabled = false; fileEl.disabled = false;
             yEl.disabled = mEl.disabled = fEl.disabled = false;
             toast(errMsg(err, '가져오기에 실패했어요'));
+        } finally {
+            Busy.end();   // [B][E] edit by smsong : 위에서 하나 더 잡아둔 전체 구간 카운트 해제
         }
     }
 }

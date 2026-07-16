@@ -22,7 +22,7 @@
     <script src="auth.js?v=1.0.3"></script>
     <!-- [E] edit by smsong -->
 
-    <link rel="stylesheet" href="main.css?v=1.8.0">
+    <link rel="stylesheet" href="main.css?v=1.9.0">
 </head>
 <body>
 <!-- 아이콘 그라데이션 정의 (활성 네비 아이콘용) -->
@@ -112,10 +112,34 @@
 <div class="sheet lv2" id="sheet2"></div>
 <!-- [E] edit by smsong -->
 
+<!-- [B] edit by smsong : 전역 로딩 폼 — 모든 API(생성/수정/조회/삭제/마이그레이션)가 시작~종료될 때까지 표시.
+     inset:0 로 화면 전체를 덮어 클릭/터치/스크롤을 원천 차단한다(z-index 는 모달(103)보다 위, 토스트(9999)보다 아래). -->
+<div id="loadingOverlay" class="lo" aria-hidden="true" role="alertdialog" aria-live="polite" aria-busy="true">
+    <div class="lo-card">
+        <div class="lo-stage">
+            <!-- 덤벨: 위아래로 들었다 놨다 (아이콘은 네비/버튼과 동일한 스트로크 스타일) -->
+            <div class="lo-dumbbell">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6.5 6.5 17.5 17.5"/>
+                    <path d="M4 8l-1 1a1.4 1.4 0 0 0 0 2l1 1"/>
+                    <path d="M8 4 7 5a1.4 1.4 0 0 0 0 2l1 1"/>
+                    <path d="M20 16l1-1a1.4 1.4 0 0 0 0-2l-1-1"/>
+                    <path d="M16 20l1-1a1.4 1.4 0 0 0 0-2l-1-1"/>
+                </svg>
+            </div>
+            <!-- 바닥 그림자: 덤벨이 올라가면 작아지고 내려오면 커진다 -->
+            <div class="lo-shadow" aria-hidden="true"></div>
+        </div>
+        <div class="lo-msg" id="loadingMsg">잠시만요…</div>
+        <div class="lo-bar" aria-hidden="true"><i></i></div>
+    </div>
+</div>
+<!-- [E] edit by smsong -->
+
 <!-- 토스트 -->
 <div id="toast"></div>
 
 <script src="config.js?v=1.0.1"></script>
-<script src="main.js?v=1.8.0"></script>
+<script src="main.js?v=1.9.0"></script>
 </body>
 </html>
