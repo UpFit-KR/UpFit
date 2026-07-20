@@ -284,7 +284,8 @@ function toDateStr(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pa
 function todayStr() { return toDateStr(new Date()); }
 function shiftDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return toDateStr(d); }
 function parseDate(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
-function fmtKorean(s) { const d = parseDate(s); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]})`; }
+// [B][E] edit by smsong : 날짜 표시에 년도 포함(프로젝트 전역). "2026년 7월 16일 (목)"
+function fmtKorean(s) { const d = parseDate(s); return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]})`; }
 // [B][E] edit by smsong : 년도까지 포함한 표기 — 과거 기록을 고를 때 어느 해인지 구분되도록
 function fmtKoreanFull(s) { const d = parseDate(s); return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]})`; }
 function fmtHeaderDate() { const d = new Date(); return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEKDAYS[d.getDay()]}요일`; }
@@ -1032,7 +1033,7 @@ function enableDragReorder(listEl, onCommit) {
 function workoutCalendarHtml() {
     // [B] edit by smsong : 운동한 날은 점 대신 셀 테두리로만 표시(cellExtra=null, hasFn 은 유지)
     const cal = calendarGrid(ui.workoutCal, ui.workoutSel, null,
-        date => sessionsByDate(date).length > 0);
+        date => sessionsByDate(date).length > 0, { showCounts: true });
     // [E] edit by smsong
 
     const sel = ui.workoutSel;
@@ -1514,6 +1515,8 @@ function searchExercises(list, query) {
 // [E] edit by smsong
 
 function labelMd(s) { const d = parseDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; }
+// [B][E] edit by smsong : 년도 포함 짧은 날짜 "2026.7.16"
+function labelYmd(s) { const d = parseDate(s); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; }
 
 // [B] edit by smsong — 검색되는 종목 콤보박스
 //   <select> 는 목록이 길어지면 원하는 종목을 찾기 어려워 검색 입력 + 연관 목록으로 대체한다.
@@ -1798,7 +1801,8 @@ function renderProfile() {
 // ============================================================
 //  달력
 // ============================================================
-function calendarGrid(cal, selDate, cellExtra, hasFn) {
+function calendarGrid(cal, selDate, cellExtra, hasFn, gridOpts) {
+    gridOpts = gridOpts || {};
     const { y, m } = cal;
     const first = new Date(y, m, 1);
     const startDow = first.getDay();
@@ -1813,10 +1817,12 @@ function calendarGrid(cal, selDate, cellExtra, hasFn) {
     // 앞 공백
     for (let i = 0; i < startDow; i++) cells += `<div class="cal-cell empty"></div>`;
     // 날짜
+    let workoutDays = 0;   // [B][E] edit by smsong : 이 달의 운동한 날 수
     for (let d = 1; d <= daysInMonth; d++) {
         const ds = `${y}-${pad(m + 1)}-${pad(d)}`;
         const cls = ['cal-cell'];
-        if (hasFn && hasFn(ds)) cls.push('has');
+        const has = hasFn && hasFn(ds);
+        if (has) { cls.push('has'); workoutDays++; }
         if (ds === today) cls.push('today');
         if (ds === selDate) cls.push('selected');
         cells += `<div class="${cls.join(' ')}" data-date="${ds}">
@@ -1824,17 +1830,84 @@ function calendarGrid(cal, selDate, cellExtra, hasFn) {
         </div>`;
     }
 
+    // [B] edit by smsong : 이 달의 운동일/휴식일 카운트.
+    //   휴식 = 그 달의 전체 일수 - 운동한 날. 단, "미래"는 아직 오지 않았으므로 휴식에서 제외한다.
+    //   (이번 달이면 오늘까지, 지난 달이면 말일까지, 다음 달 이후면 0 → 휴식 0)
+    let elapsed = daysInMonth;
+    const tY = new Date().getFullYear(), tM = new Date().getMonth(), tD = new Date().getDate();
+    if (y > tY || (y === tY && m > tM)) elapsed = 0;                 // 미래 달
+    else if (y === tY && m === tM) elapsed = tD;                     // 이번 달 → 오늘까지
+    const restDays = Math.max(0, elapsed - workoutDays);
+    const countHtml = gridOpts.showCounts
+        ? `<div class="cal-counts">
+               <span class="cal-cnt work"><i class="dot-w"></i>운동 <b class="tabnum">${workoutDays}</b></span>
+               <span class="cal-cnt rest"><i class="dot-r"></i>휴식 <b class="tabnum">${restDays}</b></span>
+           </div>`
+        : '';
+    // [E] edit by smsong
+
     return `
     <div class="cal-head">
-        <div class="cal-title tabnum">${y}년 ${m + 1}월</div>
+        <!-- [B][E] edit by smsong : 제목을 누르면 년/월 선택 → 원하는 달로 바로 이동 -->
+        <button class="cal-title tabnum" type="button" data-cal-pick aria-label="년월 선택">
+            ${y}년 ${m + 1}월 ${icon('chevD')}
+        </button>
         <div class="cal-nav">
             <button data-cal-prev>${icon('chevL')}</button>
             <button data-cal-today>${icon('dot')}</button>
             <button data-cal-next>${icon('chevR')}</button>
         </div>
     </div>
+    ${countHtml}
     <div class="cal-grid">${cells}</div>`;
 }
+
+// [B] edit by smsong : 년/월 선택 시트.
+//   달력 제목을 눌러 원하는 년도·월을 골라 즉시 이동한다(좌우 화살표 반복 이동 불필요).
+//   년도 범위는 기록이 있는 가장 이른 해 ~ (올해+1) 로 잡되, 현재 보고 있는 해도 포함한다.
+function openMonthPicker(calState, rerender) {
+    const now = new Date();
+    const years = [];
+    let minY = now.getFullYear();
+    state.sessions.forEach(s => { const yy = parseInt(String(s.date).slice(0, 4), 10); if (yy && yy < minY) minY = yy; });
+    if (calState.y < minY) minY = calState.y;
+    const maxY = Math.max(now.getFullYear() + 1, calState.y);
+    for (let yy = maxY; yy >= minY; yy--) years.push(yy);
+
+    // 임시 선택 상태(적용 전까지 calState 는 건드리지 않는다)
+    let selY = calState.y, selM = calState.m;
+    const MONTHS = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+
+    const render = () => `
+        <div class="mp-wrap">
+            <div class="mp-years" id="mpYears">
+                ${years.map(yy => `<button class="mp-year ${yy === selY ? 'on' : ''}" data-y="${yy}" type="button">${yy}년</button>`).join('')}
+            </div>
+            <div class="mp-months" id="mpMonths">
+                ${MONTHS.map((mn, i) => `<button class="mp-month ${i === selM ? 'on' : ''}" data-m="${i}" type="button">${mn}</button>`).join('')}
+            </div>
+            <button class="btn grad block mp-go" id="mpGo" type="button">이동</button>
+        </div>`;
+
+    Sheet1.open(render(), { title: '년 · 월 선택' });
+    wire();   // open 이 동기적으로 DOM 을 채우므로 바로 배선
+
+    function wire() {
+        const yWrap = document.getElementById('mpYears');
+        const mWrap = document.getElementById('mpMonths');
+        if (yWrap) yWrap.querySelectorAll('.mp-year').forEach(b => b.onclick = () => {
+            selY = parseInt(b.dataset.y, 10);
+            yWrap.querySelectorAll('.mp-year').forEach(x => x.classList.toggle('on', x === b));
+        });
+        if (mWrap) mWrap.querySelectorAll('.mp-month').forEach(b => b.onclick = () => {
+            selM = parseInt(b.dataset.m, 10);
+            mWrap.querySelectorAll('.mp-month').forEach(x => x.classList.toggle('on', x === b));
+        });
+        const go = document.getElementById('mpGo');
+        if (go) go.onclick = () => { calState.y = selY; calState.m = selM; closeSheet(); rerender(); };
+    }
+}
+// [E] edit by smsong
 
 function bindCalendar(kind) {
     const root = document.getElementById(kind === 'workout' ? 'view-workout' : 'view-diet');
@@ -1851,6 +1924,10 @@ function bindCalendar(kind) {
         if (kind === 'workout') ui.workoutSel = todayStr(); else ui.dietSel = todayStr();
         rerender();
     };
+    // [B][E] edit by smsong : 제목(년월) 탭 → 년/월 선택 시트. 좌우 화살표 없이도 원하는 달로 바로 이동.
+    const pick = root.querySelector('[data-cal-pick]');
+    if (pick) pick.onclick = () => openMonthPicker(calState, rerender);
+    // [E] edit by smsong
     root.querySelectorAll('.cal-cell[data-date]').forEach(c => c.onclick = () => {
         if (kind === 'workout') ui.workoutSel = c.dataset.date; else ui.dietSel = c.dataset.date;
         rerender();
@@ -2778,7 +2855,8 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         return ((s && s.workouts) || []).filter(w => w.exercise === exercise && (inc || !w.assisted));
     };
     const dateCap = stat => stat ? `${fmtKoreanFull(stat.date)}${stat.startTime ? ' ' + stat.startTime : ''}` : '기록 없음';
-    const shortCap = stat => stat ? `${labelMd(stat.date)}${stat.startTime ? ' ' + stat.startTime : ''}` : '—';
+    // [B][E] edit by smsong : 세트 비교 열 헤더 날짜에도 년도 포함(YYYY.M.D)
+    const shortCap = stat => stat ? `${labelYmd(stat.date)}${stat.startTime ? ' ' + stat.startTime : ''}` : '—';
 
     const listHtml = stat => {
         const ws = setsOf(stat);
@@ -2805,25 +2883,21 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         <div class="cmpx-meta">
             <div class="cmpx-meta-top">
                 <div class="cmpx-ex">${esc(exercise)}</div>
-                <!-- [B] edit by smsong : AI 분석 버튼(아이콘 전용). 이 종목의 전체 이력을 근거로 추세/근성장·근손실/미래를 분석. -->
-                <button class="ibtn sm cmpx-ai" type="button" id="cmpxAiBtn"
-                        title="AI 성장 분석" aria-label="AI 성장 분석">${icon('spark')}</button>
+                <!-- [B] edit by smsong : 헤더 우측 액션 — 보조 보기 토글 + AI 분석 (둘 다 아이콘 전용) -->
+                <div class="cmpx-actions">
+                    <button class="ibtn sm cmpx-assist-btn ${inc ? 'on' : ''}" type="button" id="cmpxAssistBtn"
+                            title="${inc ? '보조 포함 (탭하면 제외)' : '보조 제외 (탭하면 포함)'}"
+                            aria-pressed="${inc ? 'true' : 'false'}" aria-label="보조 보기 전환">${icon('people')}</button>
+                    <button class="ibtn sm cmpx-ai" type="button" id="cmpxAiBtn"
+                            title="AI 성장 분석" aria-label="AI 성장 분석">${icon('spark')}</button>
+                </div>
                 <!-- [E] edit by smsong -->
             </div>
-            <div class="cmpx-sub">${esc(dateCap(prevStat))} <b>→</b> ${esc(dateCap(lastStat))}${isBw ? ' · 맨몸' : ''}${inc ? '' : ' · 보조 제외'}</div>
+            <div class="cmpx-sub">${esc(dateCap(prevStat))} <b>→</b> ${esc(dateCap(lastStat))}${isBw ? ' · 맨몸' : ''} · ${inc ? '보조 포함' : '보조 제외'}</div>
         </div>
 
         <!-- [B][E] edit by smsong : AI 분석 결과가 채워질 영역(처음엔 비어 있음) -->
         <div id="cmpxAiResult"></div>
-
-        <!-- [B] edit by smsong : 비교 폼에서도 보조 포함/제외를 바로 전환.
-             켜고 끌 때마다 두 기록의 지표(최고 무게/횟수/세트/볼륨)와 세트 목록을 다시 계산해 그린다. -->
-        <label class="check-row cmpx-assist">
-            <input type="checkbox" id="cmpxAssist" ${inc ? 'checked' : ''}>
-            <span class="box">${icon('check')}</span>
-            <span>보조 보기 <span class="lbl-sub">${inc ? '보조 받은 세트까지 포함' : '혼자 든 세트만'}</span></span>
-        </label>
-        <!-- [E] edit by smsong -->
 
         <div class="cmpx-legend">
             <span class="cmpx-lg prev">비교</span>
@@ -2864,18 +2938,17 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         </div>
     `, { title: `${exercise} 비교`, full: keepFull });
 
-    // [B] edit by smsong : 보조 보기 전환.
+    // [B] edit by smsong : 보조 보기 전환(아이콘 버튼).
     //   지표 값 자체가 보조 포함 여부에 따라 달라지므로, 같은 세션 id 를 기준으로 다시 집계해
     //   폼을 새로 연다. 보조를 빼면 그 세션의 세트가 하나도 안 남을 수 있어 그 경우엔 되돌린다.
-    //   [B][E] edit by smsong : 재오픈 시 현재 확대 상태(keepFull)를 넘겨 폼 크기를 유지한다(req 3).
-    const caChk = document.getElementById('cmpxAssist');
-    if (caChk) caChk.onchange = () => {
-        const next = caChk.checked;
+    //   재오픈 시 확대 상태·AI 결과·접힘 상태를 그대로 이어받는다.
+    const caBtn = document.getElementById('cmpxAssistBtn');
+    if (caBtn) caBtn.onclick = () => {
+        const next = !inc;   // 현재 상태를 뒤집는다
         const ss = exerciseSessionStats(exercise, next);
         const l = ss.find(s => String(s.id) === String(lastStat.id));
-        if (!l) { caChk.checked = inc; return toast('보조를 빼면 이 기록에 남는 세트가 없어요'); }
+        if (!l) return toast('보조를 빼면 이 기록에 남는 세트가 없어요');
         const p = prevStat ? (ss.find(s => String(s.id) === String(prevStat.id)) || null) : null;
-        // [B][E] edit by smsong : 재오픈 전에 현재 AI 결과·접힘 상태를 캡처해 그대로 이어받는다(결과 유지)
         const card = document.getElementById('aiCard');
         openCompareSheet(exercise, p, l, Object.assign({}, opts, {
             includeAssisted: next,
@@ -2925,6 +2998,8 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
             if (btn) btn.setAttribute('aria-expanded', 'false');
         }
         wireAiToggle();
+        // [B][E] edit by smsong : 결과가 이미 있으면 생성 버튼 비활성화(중복 생성 방지)
+        if (aiBtn) { aiBtn.disabled = true; aiBtn.title = 'AI 분석 완료'; aiBtn.classList.add('done'); }
     }
 
     if (aiBtn && aiOut) aiBtn.onclick = async () => {
@@ -2937,11 +3012,12 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
             opts.aiCollapsed = false;
             aiOut.innerHTML = aiResultHtml(res);
             wireAiToggle();
+            // [B][E] edit by smsong : 생성 완료 → 버튼은 비활성 유지(중복 생성 방지)
+            aiBtn.title = 'AI 분석 완료'; aiBtn.classList.add('done');
         } catch (err) {
+            aiBtn.disabled = false;   // 실패 시엔 재시도할 수 있게 되돌린다
             if (err && err.auth) return;
             aiOut.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
-        } finally {
-            aiBtn.disabled = false;
         }
     };
     // [E] edit by smsong
@@ -4008,7 +4084,8 @@ function icon(name) {
         // [B] edit by smsong : 고정색(#06121f) → currentColor (버튼 글자색 = --on-grad 를 따라감)
         plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`,
         // [E] edit by smsong
-        dumbbell: `<svg viewBox="0 0 24 24" ${s}><path d="M6.5 6.5 17.5 17.5"/><path d="M4 8l-1 1a1.4 1.4 0 0 0 0 2l1 1"/><path d="M8 4 7 5a1.4 1.4 0 0 0 0 2l1 1"/><path d="M20 16l1-1a1.4 1.4 0 0 0 0-2l-1-1"/><path d="M16 20l1-1a1.4 1.4 0 0 0 0-2l-1-1"/></svg>`,
+        // [B][E] edit by smsong : 가로 덤벨 — 가운데 손잡이 + 양쪽 원판(안/바깥) + 끝 캡
+        dumbbell: `<svg viewBox="0 0 24 24" ${s}><path d="M9 12h6"/><path d="M6.5 8.5v7M4 10v4"/><path d="M17.5 8.5v7M20 10v4"/></svg>`,
         layers: `<svg viewBox="0 0 24 24" ${s}><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>`,
         flame: `<svg viewBox="0 0 24 24" ${s}><path d="M12 3c1 3 4 4 4 8a4 4 0 0 1-8 0c0-1 .5-2 1-2.5C9 10 12 9 12 3Z"/></svg>`,
         utensils: `<svg viewBox="0 0 24 24" ${s}><path d="M11 3v18M8 3v6a3 3 0 0 0 3 3"/><path d="M17 3c-1.5 0-2.5 2-2.5 5s1 4 2.5 4 2.5-1 2.5-4-1-5-2.5-5Z"/><path d="M17 12v9"/></svg>`,
@@ -4032,6 +4109,8 @@ function icon(name) {
         x: `<svg viewBox="0 0 24 24" ${s}><path d="M6 6l12 12M18 6 6 18"/></svg>`,
         minus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg>`,
         // [B][E] edit by smsong : AI 분석(스파클)
+        // [B][E] edit by smsong : 보조(파트너) — 두 사람
+        people: `<svg viewBox="0 0 24 24" ${s}><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6"/><path d="M17.5 14.4A5.5 5.5 0 0 1 20.5 20"/></svg>`,
         spark: `<svg viewBox="0 0 24 24" ${s}><path d="M12 3l1.6 4.3a4 4 0 0 0 2.4 2.4L20.5 11l-4.5 1.3a4 4 0 0 0-2.4 2.4L12 19l-1.6-4.3a4 4 0 0 0-2.4-2.4L3.5 11 8 9.7a4 4 0 0 0 2.4-2.4Z"/><path d="M19 3v3M20.5 4.5h-3"/></svg>`,
         // [B][E] edit by smsong : 상세보기(눈) — 아이콘 전용 버튼에서 사용
         eye: `<svg viewBox="0 0 24 24" ${s}><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.8"/></svg>`,
