@@ -21,6 +21,9 @@ public class AiAnalysisRequestDTO {
 
     private String exercise;
     private boolean bodyweightExercise;   // 맨몸 종목이면 무게/볼륨 대신 횟수 중심
+    // [B][E] edit by smsong : 무게/볼륨의 단위. "" (맨몸) | "kg" | "lbs".
+    //   lbs 로 입력된 종목은 프런트가 값을 lbs 로 환산해 보내며, 분석/조언도 lbs 기준으로 한다.
+    private String weightUnit;
     private boolean includeAssisted;
 
     private SessionStat compareFrom;      // 비교 대상(이전). null 가능

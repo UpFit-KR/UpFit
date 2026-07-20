@@ -622,6 +622,18 @@ function exerciseIsBodyweight(exercise) {
     orderedSessions().forEach(s => (s.workouts || []).forEach(w => { if (w.exercise === exercise) ws.push(w); }));
     return ws.length > 0 && ws.every(w => w.bodyweight);
 }
+// [B] edit by smsong : 이 종목이 주로 lbs 로 입력됐는지 판정.
+//   무게가 있는(맨몸 아님) 세트 중 origLbs 를 가진 비율이 절반 이상이면 lbs 종목으로 본다.
+//   → AI 분석을 이 종목의 표기 단위(lbs)에 맞춰 수행하기 위한 판단 근거.
+function exerciseUsesLbs(exercise) {
+    let weighted = 0, lbsCnt = 0;
+    orderedSessions().forEach(s => (s.workouts || []).forEach(w => {
+        if (w.exercise !== exercise || w.bodyweight) return;
+        weighted++;
+        if (w.origLbs != null) lbsCnt++;
+    }));
+    return weighted > 0 && lbsCnt * 2 >= weighted;
+}
 // [E] edit by smsong
 
 /**
@@ -2943,6 +2955,19 @@ function buildAiPayload(exercise, prevStat, lastStat, includeAssisted, isBw) {
     //   너무 길면(수백 세션) 토큰이 커지므로 최근 60세션으로 제한한다(장기 추세 판단엔 충분).
     const allHist = exerciseSessionStats(exercise, includeAssisted);
     const histSrc = allHist.length > 60 ? allHist.slice(allHist.length - 60) : allHist;
+    // [B] edit by smsong : 이 종목이 lbs 로 입력됐으면 무게/볼륨을 lbs 기준으로 보낸다
+    //   → AI 가 사용자에게 익숙한 단위(lbs)로 분석·조언하게 한다. 맨몸이면 단위 무의미.
+    const useLbs = !isBw && exerciseUsesLbs(exercise);
+    const unit = isBw ? '' : (useLbs ? 'lbs' : 'kg');
+    // 최고 무게를 단위에 맞춰 변환: lbs 종목이면 원본 lbs(topLbs) 우선, 없으면 kg→lbs 환산
+    const wConv = (kg, topLbs) => {
+        if (kg == null) return null;
+        if (!useLbs) return kg;
+        return (topLbs != null) ? topLbs : kgToLbs(kg);
+    };
+    const vConv = (volKg) => (volKg == null) ? null : (useLbs ? Math.round(volKg * LB_PER_KG) : volKg);
+    // [E] edit by smsong
+
     const hist = histSrc.map(s => {
         // 그 세션의 보조 세트 수, 컨디션/시간까지 함께 실어 보낸다
         const sess = sessionById(s.id);
@@ -2951,9 +2976,9 @@ function buildAiPayload(exercise, prevStat, lastStat, includeAssisted, isBw) {
             .reduce((a, w) => a + (w.sets || 0), 0) : 0;
         return {
             date: s.date, time: s.startTime || '',
-            topWeight: isBw ? null : s.topWeight,
+            topWeight: isBw ? null : wConv(s.topWeight, s.topLbs),
             totalReps: s.totalReps, totalSets: s.totalSets,
-            volume: isBw ? null : s.volume,
+            volume: isBw ? null : vConv(s.volume),
             condition: sess ? sess.condition : null,
             durationMin: sess ? sessionDuration(sess) : null,
             assistedSets: assistedSets
@@ -2961,9 +2986,9 @@ function buildAiPayload(exercise, prevStat, lastStat, includeAssisted, isBw) {
     });
     const toStat = st => st ? {
         date: st.date, time: st.startTime || '',
-        topWeight: isBw ? null : st.topWeight,
+        topWeight: isBw ? null : wConv(st.topWeight, st.topLbs),
         totalReps: st.totalReps, totalSets: st.totalSets,
-        volume: isBw ? null : st.volume,
+        volume: isBw ? null : vConv(st.volume),
         condition: (sessionById(st.id) || {}).condition,
         durationMin: sessionById(st.id) ? sessionDuration(sessionById(st.id)) : null
     } : null;
@@ -2976,6 +3001,7 @@ function buildAiPayload(exercise, prevStat, lastStat, includeAssisted, isBw) {
     return {
         exercise: exercise,
         bodyweightExercise: !!isBw,
+        weightUnit: unit,   // [B][E] edit by smsong : '' | 'kg' | 'lbs' — 무게/볼륨의 단위
         includeAssisted: !!includeAssisted,
         compareFrom: toStat(prevStat),
         compareTo: toStat(lastStat),

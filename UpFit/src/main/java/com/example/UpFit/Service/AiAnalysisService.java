@@ -61,6 +61,8 @@ public class AiAnalysisService {
         "[분석 지침]",
         "- 반드시 제공된 history(과거→현재 전체)를 근거로 추세를 판단한다. compareFrom/compareTo 두 점만 보고",
         "  단정하지 말 것.",
+        "- 무게/볼륨은 사용자 데이터에 명시된 단위(kg 또는 lbs)를 그대로 사용한다. lbs 로 기록된 종목은",
+        "  분석 서술·수치·권장 무게를 모두 lbs 로 제시하고, 임의로 kg 으로 환산하지 않는다.",
         "- 데이터가 2~3개로 적으면 confidence 를 낮추고 cautions 에 한계를 명시한다.",
         "- 과장·단정 금지. 의학적 조언이 아니라 트레이닝 관점의 해석임을 유지한다.",
         "- 한국어로, 간결하고 실용적으로 작성한다.",
@@ -226,15 +228,26 @@ public class AiAnalysisService {
 
     // 사용자 데이터를 사람이 읽기 쉬운(=모델이 이해하기 쉬운) 텍스트로 직렬화
     private String buildUserPrompt(AiAnalysisRequestDTO r) {
+        // [B] edit by smsong : 무게 단위. 값들은 이미 이 단위로 환산돼 들어온다.
+        String unit = (r.getWeightUnit() == null || r.getWeightUnit().isBlank()) ? "kg" : r.getWeightUnit();
+        boolean lbs = "lbs".equalsIgnoreCase(unit);
+        // [E] edit by smsong
         StringBuilder sb = new StringBuilder();
         sb.append("분석 대상 종목: ").append(nz(r.getExercise())).append("\n");
         sb.append("종목 유형: ").append(r.isBodyweightExercise() ? "맨몸(무게 없음, 횟수/세트 중심)" : "웨이트(무게 있음)").append("\n");
+        // [B] edit by smsong : 이 종목의 무게/볼륨 단위를 명시하고, 그 단위로 분석·조언하도록 지시
+        if (!r.isBodyweightExercise()) {
+            sb.append("무게/볼륨 단위: ").append(unit);
+            if (lbs) sb.append(" (사용자가 lbs 로 기록한 종목이므로, 분석·수치·권장 무게를 모두 lbs 로 제시할 것. kg 로 환산하지 말 것)");
+            sb.append("\n");
+        }
+        // [E] edit by smsong
         sb.append("보조 세트 ").append(r.isIncludeAssisted() ? "포함" : "제외").append(" 기준으로 집계됨\n\n");
 
         if (r.getCompareFrom() != null || r.getCompareTo() != null) {
             sb.append("[사용자가 지금 화면에서 비교 중인 두 시점]\n");
-            sb.append("이전: ").append(statLine(r.getCompareFrom())).append("\n");
-            sb.append("최근: ").append(statLine(r.getCompareTo())).append("\n\n");
+            sb.append("이전: ").append(statLine(r.getCompareFrom(), unit)).append("\n");
+            sb.append("최근: ").append(statLine(r.getCompareTo(), unit)).append("\n\n");
         }
 
         sb.append("[이 종목의 전체 세션 이력 — 과거→현재]\n");
@@ -244,7 +257,7 @@ public class AiAnalysisService {
         } else {
             int i = 1;
             for (AiAnalysisRequestDTO.SessionStat s : hist) {
-                sb.append(i++).append(") ").append(statLine(s)).append("\n");
+                sb.append(i++).append(") ").append(statLine(s, unit)).append("\n");
             }
         }
 
@@ -256,19 +269,20 @@ public class AiAnalysisService {
         }
 
         sb.append("\n위 데이터를 근거로 시스템 지침의 JSON 스키마에 맞춰 분석 결과만 출력하세요.");
+        if (lbs) sb.append(" (무게·볼륨은 반드시 lbs 단위로 서술하세요.)");
         return sb.toString();
     }
 
-    private String statLine(AiAnalysisRequestDTO.SessionStat s) {
+    private String statLine(AiAnalysisRequestDTO.SessionStat s, String unit) {
         if (s == null) return "(없음)";
         StringBuilder b = new StringBuilder();
         b.append(nz(s.getDate()));
         if (s.getTime() != null && !s.getTime().isBlank()) b.append(" ").append(s.getTime());
         b.append(" — ");
-        if (s.getTopWeight() != null) b.append("최고 ").append(fmt(s.getTopWeight())).append("kg, ");
+        if (s.getTopWeight() != null) b.append("최고 ").append(fmt(s.getTopWeight())).append(unit).append(", ");
         if (s.getTotalReps() != null) b.append("총 ").append(s.getTotalReps()).append("회, ");
         if (s.getTotalSets() != null) b.append(s.getTotalSets()).append("세트, ");
-        if (s.getVolume() != null) b.append("볼륨 ").append(fmt(s.getVolume())).append("kg");
+        if (s.getVolume() != null) b.append("볼륨 ").append(fmt(s.getVolume())).append(unit);
         if (s.getCondition() != null) b.append(", 컨디션 ").append(s.getCondition());
         if (s.getDurationMin() != null) b.append(", ").append(s.getDurationMin()).append("분");
         if (s.getAssistedSets() != null && s.getAssistedSets() > 0) b.append(", 보조 ").append(s.getAssistedSets()).append("세트");
