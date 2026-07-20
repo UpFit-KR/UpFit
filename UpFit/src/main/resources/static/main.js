@@ -1306,15 +1306,19 @@ function renderChange() {
                 </div>`;
             }
         }
-        // [B] edit by smsong : 비교할 이전 기록이 없는 종목(첫 기록만)에서도 보조 토글은 노출한다.
-        //   위 growth-cmp-head 는 cands 가 있을 때만 그려지므로, 없을 땐 단독 줄로 보조 버튼만 배치.
+        // [B] edit by smsong : 비교할 이전 기록이 없는 종목(첫 기록만)에서도
+        //   보조 토글과 "이 기록 상세보기"를 노출한다.
+        //   위 growth-cmp-head 는 cands 가 있을 때만 그려지므로, 없을 땐 여기서 단독 줄로 배치.
+        //   상세보기는 비교 대상이 없으므로 그 종목의 "첫(=최근) 기록" 자체를 연다.
         else {
             html += `<div class="growth-cmp-head only-assist">
-                <span class="growth-cmp-cap">보조 세트 보기</span>
+                <span class="growth-cmp-cap">첫 기록 · 비교 대상 없음</span>
                 <div class="growth-cmp-acts">
                     <button class="ibtn sm cmpx-assist-btn ${ui.changeAssist ? 'on' : ''}" id="growthAssistBtn" type="button"
                             title="${ui.changeAssist ? '보조 포함 (탭하면 제외)' : '보조 제외 (탭하면 포함)'}"
                             aria-pressed="${ui.changeAssist ? 'true' : 'false'}" aria-label="보조 보기 전환">${icon('people')}</button>
+                    <button class="ibtn sm" id="growthCmpOpen" type="button"
+                            title="이 기록의 운동 상세보기" aria-label="이 기록의 운동 상세보기">${icon('eye')}</button>
                 </div>
             </div>`;
         }
@@ -1443,13 +1447,21 @@ function renderChange() {
     };
     // [E] edit by smsong
 
-    // [B] edit by smsong : 선택한 비교 날짜의 운동 기록 상세 열기 (아이콘 전용 버튼)
+    // [B] edit by smsong : 상세보기 — 비교 대상이 선택돼 있으면 그 날짜를, 없으면(첫 기록만 있는 종목)
+    //   그 종목의 최근(첫) 기록 자체를 연다.
     const gcOpen = document.getElementById('growthCmpOpen');
     if (gcOpen) gcOpen.onclick = () => {
-        const s = sessionById(ui.changeGrowthCmpId);
+        let s = ui.changeGrowthCmpId ? sessionById(ui.changeGrowthCmpId) : null;
+        if (!s) {
+            // 비교 대상이 없으면 이 종목의 최근 기록을 연다
+            const ss = exerciseSessionStats(ui.changeExercise, ui.changeAssist);
+            const latest = ss.length ? ss[ss.length - 1] : null;
+            if (latest) s = sessionById(latest.id);
+        }
         if (!s) return toast('기록을 찾을 수 없어요');
         openSessionEditor(s.id, s.date, 'view');
     };
+    // [E] edit by smsong
 
     // [B] edit by smsong : 지표 행 탭 → 두 기록의 운동 리스트를 한 폼에서 나란히 비교
     document.querySelectorAll('#view-change .cmp-row.tap').forEach(r => r.onclick = () => {
