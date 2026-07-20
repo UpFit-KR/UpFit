@@ -208,9 +208,8 @@ body {
 button { font-family: var(--font); cursor: pointer; }
 .tabnum { font-variant-numeric: tabular-nums; }
 
-/* 네비 활성 아이콘 그라데이션 (main.html 의 <linearGradient id="navgrad">) */
-#navgrad .navgrad-a { stop-color: var(--accent); }
-#navgrad .navgrad-b { stop-color: var(--accent-2); }
+/* [B][E] edit by smsong : 네비 활성 아이콘 그라데이션(#navgrad) 규칙 제거 —
+   외부 SVG 참조 방식이 iOS 에서 아이콘을 깨뜨려 currentColor 단색으로 대체함 */
 
 /* ---------- 앱 셸 ---------- */
 .app {
@@ -589,8 +588,14 @@ button { font-family: var(--font); cursor: pointer; }
     transition: color 0.15s;
 }
 .nav-item svg { width: 22px; height: 22px; transition: transform 0.18s cubic-bezier(.22,1,.36,1); }
+/* [B] edit by smsong : 활성 아이콘 색.
+   기존엔 stroke: url(#navgrad) 로 외부(0크기) SVG 의 그라데이션을 참조했는데,
+   iOS/WebKit(PWA)에서 탭 전환·리렌더 시 이 참조가 깨져 아이콘 획이 사라지는 버그가 있었다.
+   → 외부 SVG 참조를 제거하고 currentColor(단색 accent)로 칠한다. 아이콘이 stroke="currentColor"
+     이므로 color 만 지정하면 되고, 참조가 없어 렌더가 항상 안정적이다. */
 .nav-item.active { color: var(--accent); }
-.nav-item.active svg { stroke: url(#navgrad); }
+.nav-item.active svg { stroke: currentColor; }
+/* [E] edit by smsong */
 /* [B] edit by smsong : 활성 탭 상단에 그라데이션 인디케이터 바 → 지금 어느 메뉴인지 확실히 */
 .nav-item:not(.nav-center).active::after {
     content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);

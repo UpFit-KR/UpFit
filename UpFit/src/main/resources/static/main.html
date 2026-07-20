@@ -22,20 +22,12 @@
     <script src="auth.js?v=1.0.3"></script>
     <!-- [E] edit by smsong -->
 
-    <link rel="stylesheet" href="main.css?v=2.8.0">
+    <link rel="stylesheet" href="main.css?v=2.8.1">
 </head>
 <body>
-<!-- 아이콘 그라데이션 정의 (활성 네비 아이콘용) -->
-<!-- [B] edit by smsong : stop-color 를 CSS 변수로 제어 → 테마별 색상 자동 반영 -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <defs>
-        <linearGradient id="navgrad" x1="0" y1="0" x2="1" y2="1">
-            <stop class="navgrad-a" offset="0%"/>
-            <stop class="navgrad-b" offset="100%"/>
-        </linearGradient>
-    </defs>
-</svg>
-<!-- [E] edit by smsong -->
+<!-- [B][E] edit by smsong : 활성 네비 아이콘용 외부 SVG 그라데이션(#navgrad)은 제거했다.
+     0크기 SVG 의 그라데이션을 stroke 로 참조하면 iOS/WebKit 에서 탭 전환 시 아이콘이 깨져,
+     CSS currentColor 단색으로 대체함(main.css .nav-item.active). -->
 
 <!-- [B][E] edit by smsong : 배경 전용 고정 레이어 (하단 세이프에어리어까지 덮음) -->
 <div class="app-bg" aria-hidden="true"></div>
@@ -138,6 +130,6 @@
 <div id="toast"></div>
 
 <script src="config.js?v=1.0.1"></script>
-<script src="main.js?v=2.8.0"></script>
+<script src="main.js?v=2.8.1"></script>
 </body>
 </html>
