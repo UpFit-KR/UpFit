@@ -3441,135 +3441,8 @@ function parseWorkoutText(text, opts) {
 }
 // [E] edit by smsong
 
-// [B] edit by smsong — 마이그레이션 종목명 통일
-//   목표: 띄어쓰기·어순·가벼운 오타가 달라도 같은 운동은 하나의 종목으로 합친다.
-//     예) "플랫 벤치프레스" = "플랫 밴치프레스" = "플랫벤치프레스" = "벤치프레스 플랫"
-//     예) "원 암 언더그립 하이로우" = "원암 언더그립 하이로우" = "언더그립 원암 하이로우" ...
-//   대표 이름(canonical) 우선순위:
-//     1) EX_CANON_OVERRIDES 에 등록된 기준 이름(맞춤법 기준을 직접 고정하고 싶을 때)
-//     2) 이미 등록된 기존 종목(중복 종목이 새로 생기는 것을 방지)
-//     3) 그 외에는 "가장 마지막에 입력된" 이름
-//   ── 맞춤법이 확실한 기준 이름은 아래 목록에 추가하세요. 비슷한 표기는 자동으로 이 이름으로 통일됩니다.
-const EX_CANON_OVERRIDES = [
-    '플랫 벤치프레스'
-];
-
-// 공백/구분기호 제거 → 압축 문자열
-function exCompact(name) {
-    return String(name || '').replace(/\s+/g, '').replace(/[·・,.\-_/|+()[\]:：!?~]/g, '');
-}
-// 음절을 정렬한 시그니처 (띄어쓰기·어순 무시). "플랫벤치프레스" 와 "벤치프레스플랫" 이 같아진다.
-function exSig(name) {
-    return exCompact(name).split('').sort().join('');
-}
-// 레벤슈타인 편집거리 (오타 허용용)
-function exLev(a, b) {
-    const m = a.length, n = b.length;
-    if (!m) return n; if (!n) return m;
-    let prev = new Array(n + 1);
-    for (let j = 0; j <= n; j++) prev[j] = j;
-    for (let i = 1; i <= m; i++) {
-        let cur = [i];
-        for (let j = 1; j <= n; j++) {
-            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
-        }
-        prev = cur;
-    }
-    return prev[n];
-}
-// 길이에 따른 오타 허용 폭
-function exFuzzyAllow(len) { return len <= 3 ? 0 : len <= 9 ? 1 : 2; }
-
-// days 안 모든 운동의 종목명을 그룹핑해 대표 이름으로 치환한다.
-function imCanonicalizeExerciseNames(days) {
-    // 1) 종목 발생 수집 (전역 순서 = 날짜·항목 순서, 클수록 최근)
-    const bySig = new Map();   // sig -> { sig, len, names: Map(name -> {count, lastOrder, existing}) }
-    function bucket(name) {
-        const sig = exSig(name);
-        let g = bySig.get(sig);
-        if (!g) { g = { sig: sig, len: exCompact(name).length, names: new Map() }; bySig.set(sig, g); }
-        return g;
-    }
-    function addName(name, order, existing) {
-        if (!name) return;
-        const g = bucket(name);
-        const rec = g.names.get(name) || { count: 0, lastOrder: -1, existing: false };
-        if (!existing) rec.count++;
-        if (order > rec.lastOrder) rec.lastOrder = order;
-        rec.existing = rec.existing || !!existing;
-        g.names.set(name, rec);
-    }
-    let order = 0;
-    days.forEach(d => (d.items || []).forEach(it => addName(it.exercise, order++, false)));
-    // 기존 종목도 앵커로 포함 → 마이그레이션 종목이 기존 것과 비슷하면 기존 이름으로 흡수
-    (state.exercises || []).forEach(n => addName(n, -1, true));
-    if (!bySig.size) return;
-
-    // 2) 시그니처 그룹을 오타 허용으로 병합 (union-find)
-    const groups = Array.from(bySig.values());
-    const parent = groups.map((_, i) => i);
-    const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-    const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[b] = a; };
-    for (let i = 0; i < groups.length; i++) {
-        for (let j = i + 1; j < groups.length; j++) {
-            const allow = exFuzzyAllow(Math.max(groups[i].len, groups[j].len));
-            if (allow > 0 && exLev(groups[i].sig, groups[j].sig) <= allow) union(i, j);
-        }
-    }
-
-    // 3) 병합 그룹별 이름 집계
-    const merged = new Map();   // root -> Map(name -> {count, lastOrder, existing})
-    groups.forEach((g, i) => {
-        const r = find(i);
-        let m = merged.get(r);
-        if (!m) { m = new Map(); merged.set(r, m); }
-        g.names.forEach((rec, name) => {
-            const cur = m.get(name) || { count: 0, lastOrder: -1, existing: false };
-            cur.count += rec.count; cur.lastOrder = Math.max(cur.lastOrder, rec.lastOrder);
-            cur.existing = cur.existing || rec.existing;
-            m.set(name, cur);
-        });
-    });
-
-    // override 시그니처 미리 계산
-    const overrides = EX_CANON_OVERRIDES.map(o => ({ name: o, sig: exSig(o), len: exCompact(o).length }));
-
-    // 4) 대표 이름 결정 → rawName -> canonical
-    const nameToCanon = new Map();
-    merged.forEach(m => {
-        const entries = Array.from(m.entries());   // [name, rec]
-        let canon = null;
-
-        // (1) override — 그룹의 어떤 이름이든 기준 이름과 (오타 허용 내) 일치하면 그 기준으로
-        for (const ov of overrides) {
-            const hit = entries.some(([name]) => {
-                const s = exSig(name);
-                const allow = exFuzzyAllow(Math.max(ov.len, exCompact(name).length));
-                return s === ov.sig || (allow > 0 && exLev(s, ov.sig) <= allow);
-            });
-            if (hit) { canon = ov.name; break; }
-        }
-        // (2) 기존 종목 우선 (여럿이면 최근 것)
-        if (!canon) {
-            const ex = entries.filter(([, r]) => r.existing).sort((a, b) => b[1].lastOrder - a[1].lastOrder);
-            if (ex.length) canon = ex[0][0];
-        }
-        // (3) 가장 마지막에 입력된 이름 (동률이면 더 자주 쓴 이름)
-        if (!canon) {
-            entries.sort((a, b) => (b[1].lastOrder - a[1].lastOrder) || (b[1].count - a[1].count));
-            canon = entries[0][0];
-        }
-        entries.forEach(([name]) => nameToCanon.set(name, canon));
-    });
-
-    // 5) 실제 종목명 치환
-    days.forEach(d => (d.items || []).forEach(it => {
-        const c = nameToCanon.get(it.exercise);
-        if (c) it.exercise = c;
-    }));
-}
-// [E] edit by smsong
+// [B][E] edit by smsong : 마이그레이션 종목명 통일(띄어쓰기/어순/오타를 같은 종목으로 병합) 기능은 제거했다.
+//   입력된 종목명은 이제 손대지 않고 적힌 그대로 저장한다 → "플랫 벤치프레스"와 "플랫 밴치프레스"는 서로 다른 종목.
 
 // ============================================================
 //  [B] edit by smsong — 운동 기록 가져오기 시트
@@ -3761,7 +3634,7 @@ function openImportSheet(defaultDate) {
             restCount += r.restCount;
         });
         parsed = { days: imMergeDays(days), warnings: warnings, restCount: restCount };
-        imCanonicalizeExerciseNames(parsed.days);   // [B][E] edit by smsong : 종목명 통일(띄어쓰기/어순/오타)
+        // [B][E] edit by smsong : 종목명 통일(띄어쓰기/어순/오타 병합) 제거 → 적힌 그대로 저장한다
         preview();
     }
 
