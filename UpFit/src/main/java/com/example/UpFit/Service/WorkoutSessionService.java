@@ -311,6 +311,8 @@ public class WorkoutSessionService {
         e.setBodyweight(bw);
         // [B][E] edit by smsong : 보조 여부. null 이 오면 false 로 굳혀 저장한다(조회 시 분기 불필요)
         e.setAssisted(Boolean.TRUE.equals(d.getAssisted()));
+        // [B][E] edit by smsong : lbs 원본. 맨몸이거나 값이 없으면 보관하지 않는다(kg 환산 표기로 대체).
+        e.setOrigLbs((bw || d.getOrigLbs() == null || d.getOrigLbs() <= 0) ? null : d.getOrigLbs());
         e.setWeight(bw ? 0 : Math.max(0, d.getWeight()));
         e.setReps(d.getReps());
         e.setSets(d.getSets());

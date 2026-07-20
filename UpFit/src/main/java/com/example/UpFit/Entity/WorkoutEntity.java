@@ -43,6 +43,12 @@ public class WorkoutEntity {
     //   (변화 탭의 "보조 보기" 체크박스로 포함/제외를 전환).
     //   기존 데이터(null)는 보조 아님으로 취급한다 → Boolean.TRUE.equals() 로만 판정할 것.
     private Boolean assisted;
+
+    // [B] edit by smsong - 사용자가 파운드(lbs)로 입력했을 때의 원래 값.
+    //   앱은 무게를 kg 으로만 계산/저장하지만(반올림), 상세 화면에서 "사용자가 실제로 넣었던 lbs"를
+    //   그대로 병기하기 위해 원본을 보관한다. kg 으로 입력했거나 맨몸이면 null.
+    //   null 이면 화면에서 kg → lbs 환산값으로 대체 표기한다.
+    private Double origLbs;
     // [E] edit by smsong
 
     // 같은 세션 안에서의 표시 순서(오름차순).

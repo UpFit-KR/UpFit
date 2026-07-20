@@ -203,12 +203,13 @@ async function apiUserUpdate(userDto) {
 function partsToArr(s) { return (s ? String(s).split(',') : []).map(x => x.trim()).filter(Boolean); }
 
 // [B] edit by smsong : 운동 부위(bodyParts)는 운동이 아니라 운동 기록(세션)이 보유한다.
-//   [B][E] edit by smsong : 보조(assisted) 추가 — 파트너가 밀어준 세트인지. 서버는 null 을 false 로 굳혀 준다.
+//   [B][E] edit by smsong : 보조(assisted) + lbs 원본(origLbs) 추가.
 function fromWorkoutDTO(d) {
     return {
         id: d.id, sessionId: d.sessionId,
         exercise: d.exercise, weight: d.weight, reps: d.reps, sets: d.sets,
         memo: d.memo || '', bodyweight: !!d.bodyweight, assisted: !!d.assisted,
+        origLbs: (d.origLbs == null ? null : d.origLbs),   // 사용자가 lbs 로 입력했던 원래 값
         sortOrder: d.sortOrder == null ? null : d.sortOrder
     };
 }
@@ -216,7 +217,8 @@ function toWorkoutDTO(w) {
     return {
         id: (w.id == null ? null : w.id),     // id 유지 → 서버가 수정/신규를 구분
         exercise: w.exercise, weight: w.weight, reps: w.reps, sets: w.sets,
-        memo: w.memo || '', bodyweight: !!w.bodyweight, assisted: !!w.assisted
+        memo: w.memo || '', bodyweight: !!w.bodyweight, assisted: !!w.assisted,
+        origLbs: (w.origLbs == null ? null : w.origLbs)
     };
 }
 // [E] edit by smsong
@@ -342,6 +344,9 @@ const ui = {
     workoutSel: todayStr(),
     dietSel: todayStr(),
     changeExercise: null,
+    // [B][E] edit by smsong : 홈 — 오늘 기록이 없을 때 보여줄 "최근 3일"의 부위 필터.
+    //   null = 전체(부위 무관). 부위 칩을 고르면 그 부위가 포함된 날짜만 추린다.
+    homePart: null,
     changePeriod: '1m',  // [B][E] edit by smsong : 변화 탭 그래프 기간(1d/1w/1m/6m/1y)
     changeGrowthCmpId: null,  // [B][E] edit by smsong : 종목별 성장 분석에서 최근 세션과 비교할 "이전 세션"의 id (null=직전 자동)
     // [B][E] edit by smsong : 종목별 성장 분석 — 보조(파트너 스팟) 세트 포함 여부.
@@ -705,17 +710,61 @@ function renderHome() {
     </div>`;
 
     // [B] edit by smsong : 오늘의 운동 기록(세션) 요약 — 시간/컨디션이 한눈에
+    //   [B][E] edit by smsong : 오늘 기록이 없으면 "최근 3일"을 대신 보여주므로 부제도 그에 맞춘다
     html += `
     <div class="section">
         <div class="section-head">
-            <h2>오늘 운동</h2>
-            <span class="sub">${dur != null ? '총 ' + fmtDur(dur) : '기록 없음'}${cond != null ? ' · 컨디션 ' + cond : ''}</span>
+            <h2>${sessionsByDate(t).length ? '오늘 운동' : '최근 운동'}</h2>
+            <span class="sub">${dur != null ? '총 ' + fmtDur(dur) : '오늘 기록 없음 · 최근 3일'}${cond != null ? ' · 컨디션 ' + cond : ''}</span>
         </div>`;
     const todaySessions = sessionsByDate(t);
     if (todaySessions.length) {
         html += `<div class="sess-list">${todaySessions.map(s => sessionCardHtml(s, false)).join('')}</div>`;
     } else {
-        html += `<div class="card">${emptyBlock('dumbbell', '오늘 운동 기록이 없어요', '운동 탭에서 오늘의 기록을 시작하세요')}</div>`;
+        // [B] edit by smsong : 오늘 기록이 없으면 빈 화면으로 끝내지 않는다.
+        //   부위를 골라 "가장 최근 3일"의 기록을 불러와 보여준다 → 오늘 뭘 할지 바로 참고할 수 있다.
+        //   · 부위 칩은 실제 기록이 있는 부위만 노출 (없는 부위를 눌러 빈 결과를 보는 일이 없도록)
+        //   · 날짜는 오늘을 제외한 최근순. 고른 부위가 포함된 날짜만 추려 위에서 3일.
+        //   · 카드는 sessionCardHtml 을 그대로 쓴다 → #appMain 의 클릭 위임(data-open-session)이
+        //     이미 상세 시트를 열어주므로 별도 핸들러가 필요 없다.
+        const partsWithData = BODY_PARTS.filter(p => state.sessions.some(s => (s.bodyParts || []).indexOf(p) >= 0));
+        if (ui.homePart && partsWithData.indexOf(ui.homePart) < 0) ui.homePart = null;   // 기록이 사라진 부위는 해제
+
+        const pastDates = [...new Set(state.sessions.map(s => s.date))]
+            .filter(d => d !== t)
+            .sort((a, b) => a < b ? 1 : -1);
+        const hitDates = pastDates
+            .filter(d => !ui.homePart || dayBodyParts(d).indexOf(ui.homePart) >= 0)
+            .slice(0, 3);
+
+        if (!pastDates.length) {
+            html += `<div class="card">${emptyBlock('dumbbell', '오늘 운동 기록이 없어요', '운동 탭에서 오늘의 기록을 시작하세요')}</div>`;
+        } else {
+            html += `<div class="home-recent-note">오늘 기록이 아직 없어요. 부위를 골라 최근 기록을 확인해 보세요.</div>`;
+            html += `<div class="chip-row home-parts" id="homeParts">
+                <button class="chip sm ${ui.homePart ? '' : 'active'}" data-hp="" type="button">전체</button>
+                ${partsWithData.map(p => `<button class="chip sm ${ui.homePart === p ? 'active' : ''}" data-hp="${esc(p)}" type="button">${esc(p)}</button>`).join('')}
+            </div>`;
+
+            if (hitDates.length) {
+                html += hitDates.map(date => {
+                    const parts = dayBodyParts(date);
+                    const dur = durationOfDate(date);
+                    return `
+                    <div class="day-group">
+                        <div class="day-head">
+                            <div class="d-date">${fmtKorean(date)}</div>
+                            <div class="d-sum tabnum">기록 ${sessionsByDate(date).length} · 볼륨 ${volumeOfDate(date)} kg${dur != null ? ' · ' + fmtDur(dur) : ''}</div>
+                        </div>
+                        ${parts.length ? `<div class="day-parts">부위 · ${parts.join(' · ')}</div>` : ''}
+                        <div class="sess-list">${sessionsByDate(date).map(s => sessionCardHtml(s, false)).join('')}</div>
+                    </div>`;
+                }).join('');
+            } else {
+                html += `<div class="card">${emptyBlock('dumbbell', `'${ui.homePart}' 기록이 없어요`, '다른 부위를 골라보세요')}</div>`;
+            }
+        }
+        // [E] edit by smsong
     }
     html += `</div>`;
     // [E] edit by smsong
@@ -770,13 +819,23 @@ function renderHome() {
 
     document.getElementById('view-home').innerHTML = html;
 
+    // [B] edit by smsong : 홈 — 최근 3일 부위 필터 칩. 고른 부위로 다시 추려 그린다(홈만 재렌더).
+    document.querySelectorAll('#homeParts .chip').forEach(c => c.onclick = () => {
+        ui.homePart = c.dataset.hp || null;   // 빈 값 = 전체
+        renderHome();
+    });
+    // [E] edit by smsong
+
     // [B] edit by smsong : 최근 성장 → 종목 탭 시 "최근 vs 직전" 비교 폼
-    //   홈은 보조 필터를 두지 않으므로 기록 전체(보조 포함)를 기준으로 비교한다.
+    //   [B][E] edit by smsong : 보조 보기 설정은 변화 탭과 공유(ui.changeAssist)한다(req 4).
+    //     홈에서 열어도 마지막으로 고른 보조 설정을 그대로 따르고, 여기서 바꾸면 변화 탭에도 반영된다.
     document.querySelectorAll('#view-home .watch-row.tap').forEach(el => el.onclick = () => {
         const ex = el.dataset.cmpEx;
-        const ss = exerciseSessionStats(ex);
+        let ss = exerciseSessionStats(ex, ui.changeAssist);
+        // 현재 보조 설정으로 그릴 게 없으면(보조 세트만 있는 종목) 포함으로 완화해서 보여준다
+        if (!ss.length && exerciseSessionStats(ex, true).length) { ui.changeAssist = true; ss = exerciseSessionStats(ex, true); }
         if (!ss.length) return;
-        openCompareSheet(ex, ss.length > 1 ? ss[ss.length - 2] : null, ss[ss.length - 1], { includeAssisted: true });
+        openCompareSheet(ex, ss.length > 1 ? ss[ss.length - 2] : null, ss[ss.length - 1], { includeAssisted: ui.changeAssist });
     });
     // [E] edit by smsong
 }
@@ -1006,8 +1065,15 @@ function sessionCardHtml(s, draggable) {
 // 운동은 항상 서버에 저장된 상태이므로 식별자로 w.id 를 그대로 쓴다.
 function workoutRowHtml(w, sessionId) {
     const vol = volumeOf(w);
-    const prev = prevExerciseVolume(w.exercise, sessionId);
-    const weightTxt = w.bodyweight ? '맨몸' : `${w.weight}kg`;
+    // [B] edit by smsong : 무게 표시 — kg 은 항상 유지하고, lbs 를 괄호로 함께 보여준다.
+    //   · origLbs 가 있으면(사용자가 lbs 로 입력한 값) 그 "원래 값"을 그대로 병기한다.
+    //   · 없으면(kg 입력) kg → lbs 환산값을 대신 보여준다.
+    //   맨몸은 무게가 없으므로 그대로 "맨몸".
+    const lbsShown = w.bodyweight ? null : (w.origLbs != null ? w.origLbs : kgToLbs(w.weight));
+    const weightTxt = w.bodyweight
+        ? '맨몸'
+        : `${w.weight}kg <span class="rec-lbs">(${lbsShown}lbs)</span>`;
+    // [E] edit by smsong
     // 부위 태그는 세션 카드/세션 폼에만 표시 → 운동 행에는 맨몸/보조 표시만 남긴다
     const tags = [];
     if (w.bodyweight) tags.push(`<span class="bw">맨몸</span>`);
@@ -1017,7 +1083,12 @@ function workoutRowHtml(w, sessionId) {
     <div class="rec" data-reorder-id="${w.id}">
         <div class="drag-handle" title="드래그하여 순서 변경">${icon('grip')}</div>
         <div class="rec-main">
-            <div class="rec-title">${esc(w.exercise)} ${deltaChip(vol, prev, 'kg')}</div>
+            <!-- [B] edit by smsong : 종목명 탭 → 상세를 닫고 변화 탭으로 이동해 이 종목의 성장 분석을 자동 조회.
+                 유지/증가/감소 칩은 제거(요구사항). data-open-growth 는 위임 핸들러가 처리한다. -->
+            <div class="rec-title">
+                <button class="rec-ex-link" type="button" data-open-growth="${esc(w.exercise)}">${esc(w.exercise)}${icon('chevR')}</button>
+            </div>
+            <!-- [E] edit by smsong -->
             <div class="rec-detail tabnum">${weightTxt} × ${w.reps}회 × ${w.sets}세트${w.memo ? ' · ' + esc(w.memo) : ''}</div>
             ${tags.length ? `<div class="rec-tags">${tags.join('')}</div>` : ''}
         </div>
@@ -2252,6 +2323,9 @@ function openSessionEditor(sessionId, date, mode) {
 
             <div class="se-head">
                 <h4>운동 <span class="cnt tabnum" id="seCount">0</span></h4>
+                <!-- [B][E] edit by smsong : 운동 개수와 총 볼륨 사이에 총 세트 수를 표시.
+                     .se-head 가 space-between 이라 세 번째 항목을 끼우면 자연스럽게 가운데로 온다. -->
+                <span class="se-head-sum tabnum" id="seSets"></span>
                 <span class="se-head-sum tabnum" id="seVol"></span>
             </div>
             <div class="reorder-list se-list" id="seList"></div>
@@ -2417,6 +2491,8 @@ function openSessionEditor(sessionId, date, mode) {
             ? list.map(w => workoutRowHtml(w, sid)).join('')
             : `<div class="se-empty">아직 운동이 없어요. 위 ＋ 버튼으로 추가하세요.</div>`;
         const cntEl = document.getElementById('seCount'); if (cntEl) cntEl.textContent = list.length;
+        // [B][E] edit by smsong : 총 세트 = 세션 안 모든 운동의 세트 합계 (sessionSets)
+        const setEl = document.getElementById('seSets'); if (setEl) setEl.textContent = list.length ? `세트 ${sessionSets(s)}` : '';
         const volEl = document.getElementById('seVol'); if (volEl) volEl.textContent = list.length ? `볼륨 ${sessionVolume(s)} kg` : '';
 
         enableDragReorder(el, async ids => {
@@ -2439,6 +2515,12 @@ function openSessionEditor(sessionId, date, mode) {
                 paintList(); render(); toast('운동을 수정했어요');
             });
         });
+        // [B] edit by smsong : 종목명 탭 → 상세 시트를 닫고 변화 탭으로 이동, 그 종목의 성장 분석을 자동 조회
+        el.querySelectorAll('[data-open-growth]').forEach(b => b.onclick = ev => {
+            ev.stopPropagation();
+            openGrowthFor(b.dataset.openGrowth);
+        });
+        // [E] edit by smsong
     }
 }
 // [E] edit by smsong
@@ -2535,17 +2617,24 @@ function openWorkoutSheet(initial, onApply) {
     const wWeight = document.getElementById('wWeight');
     const wWeightLbs = document.getElementById('wWeightLbs');
     // [B] edit by smsong : lbs 입력 → kg 자동 변환(양방향 동기화). 저장 값은 항상 kg.
+    //   추가로 "마지막으로 lbs 로 직접 입력했는지"를 기억한다(lbsInput). 그래야 저장 시
+    //   사용자가 넣은 원본 lbs 를 함께 보관해 상세 화면에 그대로 병기할 수 있다.
+    //   수정 진입 시 기존 origLbs 가 있으면 그 값을 살려 채운다.
+    let lbsInput = editing && !initial.bodyweight && initial.origLbs != null ? initial.origLbs : null;
+    if (lbsInput != null) wWeightLbs.value = lbsInput;
     let syncing = false;
     wWeightLbs.addEventListener('input', () => {
         if (syncing) return; syncing = true;
         const lbs = parseFloat(wWeightLbs.value);
         wWeight.value = isNaN(lbs) ? '' : lbsToKg(lbs);
+        lbsInput = isNaN(lbs) ? null : lbs;   // lbs 를 직접 입력 → 원본 보관 대상
         syncing = false;
     });
     wWeight.addEventListener('input', () => {
         if (syncing) return; syncing = true;
         const kg = parseFloat(wWeight.value);
         wWeightLbs.value = isNaN(kg) ? '' : kgToLbs(kg);
+        lbsInput = null;   // kg 을 직접 입력 → lbs 원본은 무의미(환산 표기로 대체)
         syncing = false;
     });
     // [E] edit by smsong
@@ -2555,6 +2644,7 @@ function openWorkoutSheet(initial, onApply) {
             prevWeight = wWeight.value;
             wWeight.value = '0'; wWeight.disabled = true;
             wWeightLbs.value = ''; wWeightLbs.disabled = true;
+            lbsInput = null;   // [B][E] edit by smsong : 맨몸이면 lbs 원본 폐기
         } else {
             wWeight.disabled = false; wWeight.value = prevWeight;
             wWeightLbs.disabled = false;
@@ -2581,7 +2671,9 @@ function openWorkoutSheet(initial, onApply) {
                 exercise, weight, reps, sets,
                 memo: document.getElementById('wMemo').value.trim(),
                 bodyweight,
-                assisted: document.getElementById('wAssisted').checked   // [B][E] edit by smsong
+                assisted: document.getElementById('wAssisted').checked,   // [B][E] edit by smsong
+                // [B][E] edit by smsong : lbs 로 입력했다면 원본 lbs 를 함께 저장(맨몸이면 무의미 → null)
+                origLbs: bodyweight ? null : lbsInput
             });
             Sheet2.close();
         } catch (err) { btn.disabled = false; toast(errMsg(err, '저장에 실패했어요')); }
@@ -2604,6 +2696,18 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
     if (!lastStat) return toast('비교할 기록이 없어요');
     const inc = opts.includeAssisted !== false;   // false = 보조 세트 제외 상태로 비교
     const isBw = exerciseIsBodyweight(exercise);
+
+    // [B] edit by smsong : 보조 보기 설정을 변화 탭과 "하나의 값"으로 공유한다(req 4).
+    //   비교 폼에서 보조를 켜고/끄면 그대로 ui.changeAssist 에 반영 → 폼을 닫고 변화 탭으로 가면
+    //   같은 상태가 유지되고, 반대로 변화 탭에서 바꾼 값이 비교 폼 진입 시에도 그대로 들어온다.
+    ui.changeAssist = inc;
+    // [E] edit by smsong
+
+    // [B] edit by smsong : 재오픈 시 전체보기(크게보기) 상태 유지(req 3).
+    //   보조 토글은 폼을 새로 여는 방식이라, 이 값을 넘기지 않으면 확대돼 있던 폼이 원래 크기로 돌아간다.
+    //   opts.full 로 이어받고, 최초 진입 땐 지금 열려 있는 시트의 확대 상태를 읽어 온다.
+    const keepFull = (opts.full != null) ? opts.full : (Sheet1.isOpen() ? Sheet1.isFull() : false);
+    // [E] edit by smsong
 
     // 맨몸 종목은 무게/볼륨이 항상 0 → 횟수·세트만 비교한다(그래프와 같은 규칙)
     const metrics = isBw
@@ -2650,6 +2754,15 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
             <div class="cmpx-sub">${esc(dateCap(prevStat))} <b>→</b> ${esc(dateCap(lastStat))}${isBw ? ' · 맨몸' : ''}${inc ? '' : ' · 보조 제외'}</div>
         </div>
 
+        <!-- [B] edit by smsong : 비교 폼에서도 보조 포함/제외를 바로 전환.
+             켜고 끌 때마다 두 기록의 지표(최고 무게/횟수/세트/볼륨)와 세트 목록을 다시 계산해 그린다. -->
+        <label class="check-row cmpx-assist">
+            <input type="checkbox" id="cmpxAssist" ${inc ? 'checked' : ''}>
+            <span class="box">${icon('check')}</span>
+            <span>보조 보기 <span class="lbl-sub">${inc ? '보조 받은 세트까지 포함' : '혼자 든 세트만'}</span></span>
+        </label>
+        <!-- [E] edit by smsong -->
+
         <div class="cmpx-legend">
             <span class="cmpx-lg prev">비교</span>
             <span class="cmpx-lg last">최근</span>
@@ -2682,7 +2795,22 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
                 ${listHtml(lastStat)}
             </div>
         </div>
-    `, { title: `${exercise} 비교` });
+    `, { title: `${exercise} 비교`, full: keepFull });
+
+    // [B] edit by smsong : 보조 보기 전환.
+    //   지표 값 자체가 보조 포함 여부에 따라 달라지므로, 같은 세션 id 를 기준으로 다시 집계해
+    //   폼을 새로 연다. 보조를 빼면 그 세션의 세트가 하나도 안 남을 수 있어 그 경우엔 되돌린다.
+    //   [B][E] edit by smsong : 재오픈 시 현재 확대 상태(keepFull)를 넘겨 폼 크기를 유지한다(req 3).
+    const caChk = document.getElementById('cmpxAssist');
+    if (caChk) caChk.onchange = () => {
+        const next = caChk.checked;
+        const ss = exerciseSessionStats(exercise, next);
+        const l = ss.find(s => String(s.id) === String(lastStat.id));
+        if (!l) { caChk.checked = inc; return toast('보조를 빼면 이 기록에 남는 세트가 없어요'); }
+        const p = prevStat ? (ss.find(s => String(s.id) === String(prevStat.id)) || null) : null;
+        openCompareSheet(exercise, p, l, Object.assign({}, opts, { includeAssisted: next, full: Sheet1.isFull() }));
+    };
+    // [E] edit by smsong
 
     // 각 열의 아이콘 버튼 → 그 날의 운동 기록 상세(조회 모드)로 이동
     document.querySelectorAll('#sheet [data-open-sess]').forEach(b => b.onclick = () => {
@@ -3022,6 +3150,28 @@ function resetScrollTop() {
 // [E] edit by smsong
 document.querySelectorAll('.nav-item').forEach(btn => btn.onclick = () => activateTab(btn.dataset.tab, true));
 
+// [B] edit by smsong : 특정 종목의 성장 분석으로 바로 이동.
+//   운동 상세(1차/2차 시트)에서 종목명을 눌렀을 때 → 열린 시트를 모두 닫고 변화 탭으로 이동해
+//   그 종목이 선택된 상태로 성장 분석을 자동 조회한다.
+function openGrowthFor(exercise) {
+    if (!exercise) return;
+    // 이 종목에 (현재 보조 설정 기준) 그릴 데이터가 없으면, 보조 포함으로 한 번 더 확인해 본다.
+    let hasData = exerciseSessionStats(exercise, ui.changeAssist).length > 0;
+    if (!hasData && exerciseSessionStats(exercise, true).length > 0) {
+        ui.changeAssist = true;     // 보조 세트만 있는 종목이면 자동으로 보조 포함으로 전환해 보여준다
+        hasData = true;
+    }
+    ui.changeExercise = exercise;
+    ui.changeGrowthCmpId = null;    // 비교 대상은 직전으로 초기화
+    // 열려 있을 수 있는 시트(운동 입력 2차 → 상세 1차)를 모두 닫는다
+    try { Sheet2.close(); } catch (_) {}
+    try { closeSheet(); } catch (_) {}
+    render();                        // 변화 탭 내용을 최신 상태로 그려둔다
+    activateTab('change', true);
+    if (!hasData) toast('이 종목은 아직 분석할 기록이 부족해요');
+}
+// [E] edit by smsong
+
 // ============================================================
 //  [B] edit by smsong — 운동 기록 텍스트 파서
 //    기존에 텍스트로 남기던 기록을 그대로 읽어 세션+운동으로 변환한다.
@@ -3137,10 +3287,11 @@ function imMatchDate(rest, ctx) {
     return null;
 }
 
-// 운동 줄 → { exercise, weight, reps, sets, bodyweight, memo } | { failed:true, ... } | null
+// 운동 줄 → { exercise, weight, reps, sets, bodyweight, assisted, origLbs, memo } | { failed:true, ... } | null
 function imParseItem(rest, groups, unit) {
     let weight = null, failed = false;
     let assisted = false;   // [B][E] edit by smsong : "(보조)" 괄호가 있으면 true
+    let origLbs = null;     // [B][E] edit by smsong : lbs 로 해석된 경우 원본 lbs 값 보관
     const memo = [];
 
     groups.forEach(g => {
@@ -3148,9 +3299,10 @@ function imParseItem(rest, groups, unit) {
         if (w) {
             const v = Number(w[1]);
             const u = (w[2] || '').toLowerCase();
-            if (u.indexOf('kg') === 0 || u.indexOf('킬로') === 0) weight = v;          // 명시 kg
-            else if (u) weight = lbsToKg(v);                                           // 명시 lbs/파운드
-            else weight = (unit === 'kg') ? v : lbsToKg(v);                            // 단위 없음 → 옵션
+            if (u.indexOf('kg') === 0 || u.indexOf('킬로') === 0) { weight = v; origLbs = null; }       // 명시 kg
+            else if (u) { weight = lbsToKg(v); origLbs = v; }                                          // 명시 lbs/파운드
+            else if (unit === 'kg') { weight = v; origLbs = null; }                                    // 단위 없음 → kg 옵션
+            else { weight = lbsToKg(v); origLbs = v; }                                                 // 단위 없음 → lbs 옵션
             return;
         }
         // [B][E] edit by smsong : 보조 표기는 메모가 아니라 운동의 속성으로 승격
@@ -3186,6 +3338,7 @@ function imParseItem(rest, groups, unit) {
         sets: sets,
         bodyweight: bodyweight,
         assisted: assisted,   // [B][E] edit by smsong : toWorkoutDTO 가 그대로 실어 보낸다
+        origLbs: bodyweight ? null : origLbs,   // [B][E] edit by smsong : lbs 원본(맨몸/kg 입력이면 null)
         memo: memo.join(' ')
     };
 }
