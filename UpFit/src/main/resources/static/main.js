@@ -2848,7 +2848,13 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         const l = ss.find(s => String(s.id) === String(lastStat.id));
         if (!l) { caChk.checked = inc; return toast('보조를 빼면 이 기록에 남는 세트가 없어요'); }
         const p = prevStat ? (ss.find(s => String(s.id) === String(prevStat.id)) || null) : null;
-        openCompareSheet(exercise, p, l, Object.assign({}, opts, { includeAssisted: next, full: Sheet1.isFull() }));
+        // [B][E] edit by smsong : 재오픈 전에 현재 AI 결과·접힘 상태를 캡처해 그대로 이어받는다(결과 유지)
+        const card = document.getElementById('aiCard');
+        openCompareSheet(exercise, p, l, Object.assign({}, opts, {
+            includeAssisted: next,
+            full: Sheet1.isFull(),
+            aiCollapsed: !!(card && card.classList.contains('collapsed'))
+        }));
     };
     // [E] edit by smsong
 
@@ -2864,13 +2870,29 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
     //   Gemini 가 추세/근성장·근손실/회복/미래를 분석하게 한다. 결과는 아래 영역에 카드로 렌더.
     const aiBtn = document.getElementById('cmpxAiBtn');
     const aiOut = document.getElementById('cmpxAiResult');
+
+    // 재오픈(보조 토글 등) 시 이전 AI 결과를 그대로 복원한다 → 결과가 사라지지 않는다.
+    if (aiOut && opts.aiResult) {
+        aiOut.innerHTML = aiResultHtml(opts.aiResult);
+        if (opts.aiCollapsed) {   // 접힌 상태였다면 접힘도 복원
+            const card = document.getElementById('aiCard');
+            const btn = document.getElementById('aiToggle');
+            if (card) card.classList.add('collapsed');
+            if (btn) btn.setAttribute('aria-expanded', 'false');
+        }
+        wireAiToggle();
+    }
+
     if (aiBtn && aiOut) aiBtn.onclick = async () => {
         aiBtn.disabled = true;
         aiOut.innerHTML = aiLoadingHtml();
         try {
             const payload = buildAiPayload(exercise, prevStat, lastStat, inc, isBw);
             const res = await api.aiAnalyze(payload);
+            opts.aiResult = res;              // [B][E] edit by smsong : 결과 보관 → 재오픈 시 유지
+            opts.aiCollapsed = false;
             aiOut.innerHTML = aiResultHtml(res);
+            wireAiToggle();
         } catch (err) {
             if (err && err.auth) return;
             aiOut.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
@@ -2953,21 +2975,40 @@ function aiResultHtml(r) {
         ? `<div class="ai-sec ${cls}">${arr.map(x => `<div class="ai-li">${ico ? icon(ico) : ''}<span>${esc(x)}</span></div>`).join('')}</div>`
         : '';
 
-    return `<div class="ai-card">
+    return `<div class="ai-card" id="aiCard">
         <div class="ai-head">
             <span class="ai-badge">${icon('spark')} AI 분석</span>
-            ${conf != null ? `<span class="ai-conf">확신도 <b class="tabnum">${conf}</b></span>` : ''}
+            <div class="ai-head-right">
+                ${conf != null ? `<span class="ai-conf">확신도 <b class="tabnum">${conf}</b></span>` : ''}
+                <!-- [B][E] edit by smsong : AI 결과 접기/펴기 (아이콘 전용) -->
+                <button class="ai-toggle" id="aiToggle" type="button" aria-expanded="true"
+                        title="접기/펴기" aria-label="접기/펴기">${icon('chevD')}</button>
+            </div>
         </div>
-        ${r.headline ? `<div class="ai-headline">${esc(r.headline)}</div>` : ''}
-        <div class="ai-tags">
-            ${tr[0] ? `<span class="ai-tag trend-${tr[1]}">${esc(tr[0])}</span>` : ''}
-            ${vd[0] ? `<span class="ai-tag verdict-${vd[1]}">${esc(vd[0])}</span>` : ''}
+        <!-- 접히는 본문 -->
+        <div class="ai-collapse" id="aiCollapse">
+            ${r.headline ? `<div class="ai-headline">${esc(r.headline)}</div>` : ''}
+            <div class="ai-tags">
+                ${tr[0] ? `<span class="ai-tag trend-${tr[1]}">${esc(tr[0])}</span>` : ''}
+                ${vd[0] ? `<span class="ai-tag verdict-${vd[1]}">${esc(vd[0])}</span>` : ''}
+            </div>
+            ${(r.analysis && r.analysis.length) ? `<div class="ai-sec ai-body">${r.analysis.map(p => `<p>${esc(p)}</p>`).join('')}</div>` : ''}
+            ${(r.recommendations && r.recommendations.length) ? `<div class="ai-sub-h">${icon('chevR')} 이렇게 해보세요</div>${list(r.recommendations, 'ai-recos', 'check')}` : ''}
+            ${(r.cautions && r.cautions.length) ? `<div class="ai-sub-h muted">참고</div>${list(r.cautions, 'ai-cautions', null)}` : ''}
+            <div class="ai-foot">AI 해석은 트레이닝 관점의 참고용이며, 의학적 조언이 아니에요.</div>
         </div>
-        ${(r.analysis && r.analysis.length) ? `<div class="ai-sec ai-body">${r.analysis.map(p => `<p>${esc(p)}</p>`).join('')}</div>` : ''}
-        ${(r.recommendations && r.recommendations.length) ? `<div class="ai-sub-h">${icon('chevR')} 이렇게 해보세요</div>${list(r.recommendations, 'ai-recos', 'check')}` : ''}
-        ${(r.cautions && r.cautions.length) ? `<div class="ai-sub-h muted">참고</div>${list(r.cautions, 'ai-cautions', null)}` : ''}
-        <div class="ai-foot">AI 해석은 트레이닝 관점의 참고용이며, 의학적 조언이 아니에요.</div>
     </div>`;
+}
+// 접기/펴기 버튼 배선 (결과를 그린 직후 호출)
+function wireAiToggle() {
+    const card = document.getElementById('aiCard');
+    const btn = document.getElementById('aiToggle');
+    const body = document.getElementById('aiCollapse');
+    if (!card || !btn || !body) return;
+    btn.onclick = () => {
+        const collapsed = card.classList.toggle('collapsed');
+        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    };
 }
 // [E] edit by smsong
 

@@ -1529,7 +1529,8 @@ textarea.input.im-text {
 @keyframes aiBar { 0% { transform: translateX(-110%); } 100% { transform: translateX(300%); } }
 
 /* 헤더 */
-.ai-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ai-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; transition: margin .22s ease; }
+.ai-card.collapsed .ai-head { margin-bottom: 0; }
 .ai-badge {
     display: inline-flex; align-items: center; gap: 5px;
     font-size: 11px; font-weight: 800; color: var(--accent);
@@ -1538,6 +1539,30 @@ textarea.input.im-text {
 .ai-badge svg { width: 13px; height: 13px; }
 .ai-conf { font-size: 11px; color: var(--text-mute); font-weight: 700; }
 .ai-conf b { color: var(--text); }
+/* [B] edit by smsong : AI 결과 접기/펴기 */
+.ai-head-right { display: flex; align-items: center; gap: 8px; }
+.ai-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 8px;
+    background: var(--ink-800); border: 1px solid var(--line);
+    color: var(--text-dim); cursor: pointer; padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+.ai-toggle svg { width: 15px; height: 15px; transition: transform .22s ease; }
+.ai-card.collapsed .ai-toggle svg { transform: rotate(-90deg); }   /* 접히면 화살표 회전 */
+/* 접히는 본문 — 높이 애니메이션 */
+.ai-collapse {
+    overflow: hidden;
+    max-height: 2000px;
+    opacity: 1;
+    transition: max-height .3s ease, opacity .22s ease, margin .22s ease;
+}
+.ai-card.collapsed .ai-collapse {
+    max-height: 0;
+    opacity: 0;
+    margin-top: -8px;   /* 헤더 아래 여백 흡수 */
+}
+/* [E] edit by smsong */
 
 .ai-headline { font-size: 14.5px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.4; margin-bottom: 8px; }
 
