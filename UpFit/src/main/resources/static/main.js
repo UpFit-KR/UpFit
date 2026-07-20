@@ -2120,6 +2120,8 @@ function createSheet(sheetId, backdropId) {
     //   opts.isDirty 가 없으면 본문의 입력요소/칩 상태를 열 때 스냅샷 떠두고 비교해 자동 판정한다.
     let dirtyFn = null;
     let baseSnap = '';
+    // [B][E] edit by smsong : 현재 시트의 닫기 동작(기본=requestClose, 또는 opts.onRequestClose 로 오버라이드)
+    let curCloseHandler = null;
     // [E] edit by smsong
 
     function body() { return sheet.querySelector('.sheet-body'); }
@@ -2236,7 +2238,11 @@ function createSheet(sheetId, backdropId) {
             if (opts.onFull) opts.onFull(next);
         };
         const xb = sheet.querySelector('[data-sheet-x]');
-        if (xb) xb.onclick = requestClose;
+        // [B] edit by smsong : opts.onRequestClose 가 있으면 닫기(X)를 그 콜백으로 가로챈다.
+        //   (예: 비교 폼에서 연 세션 상세 → 닫으면 비교 폼으로 복귀)
+        if (xb) xb.onclick = opts.onRequestClose ? opts.onRequestClose : requestClose;
+        // 배경 탭/ESC 도 같은 콜백을 타도록 현재 핸들러를 교체 저장한다.
+        curCloseHandler = opts.onRequestClose || requestClose;
         // [E] edit by smsong
         backdrop.classList.add('open');
         requestAnimationFrame(() => sheet.classList.add('open'));
@@ -2265,9 +2271,12 @@ function createSheet(sheetId, backdropId) {
     function isFull() { return full; }
     // [E] edit by smsong
 
-    // [B][E] edit by smsong : 배경 탭 / ESC 도 "작성 중" 확인을 거친다
-    backdrop.onclick = requestClose;
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen) requestClose(); });
+    // [B] edit by smsong : 배경 탭 / ESC → 현재 시트의 닫기 동작(오버라이드 가능)을 탄다.
+    //   기본은 requestClose(작성 중 확인), 세션 상세를 비교 폼에서 열었을 땐 비교 폼 복귀 콜백.
+    function invokeClose() { (curCloseHandler || requestClose)(); }
+    backdrop.onclick = invokeClose;
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen) invokeClose(); });
+    // [E] edit by smsong
 
     return { open, close, requestClose, isOpen: () => isOpen, setFull, isFull, isDirty };
 }
@@ -2294,7 +2303,10 @@ function requestCloseSheet() { Sheet1.requestClose(); }
 //      · workouts : 이 기록에 담긴 운동 목록(추가/수정/삭제/드래그). 세션과 운동을 분리해 본다.
 //    개별 운동 입력 폼은 2차 시트(openWorkoutSheet)로 분리(1차 위에 겹침).
 // ============================================================
-function openSessionEditor(sessionId, date, mode) {
+function openSessionEditor(sessionId, date, mode, editorOpts) {
+    editorOpts = editorOpts || {};
+    // [B][E] edit by smsong : onBack 이 있으면 상세 폼의 닫기가 그 콜백(=비교 폼 복귀)을 실행한다.
+    const onBack = typeof editorOpts.onBack === 'function' ? editorOpts.onBack : null;
     const isNew = !sessionId;
     let curMode = isNew ? 'new' : (mode || 'view');
     let sid = sessionId || null;
@@ -2360,7 +2372,9 @@ function openSessionEditor(sessionId, date, mode) {
             title: '운동 기록',
             full: fullView,
             onFull: v => { fullView = v; },
-            isDirty: () => false
+            isDirty: () => false,
+            // [B][E] edit by smsong : 비교 폼에서 열렸으면(onBack), 닫기 시 비교 폼으로 복귀
+            onRequestClose: onBack ? (() => onBack()) : null
         });
 
         document.getElementById('seEdit').onclick = () => { curMode = 'edit'; renderMode(); };
@@ -2858,11 +2872,21 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
     };
     // [E] edit by smsong
 
-    // 각 열의 아이콘 버튼 → 그 날의 운동 기록 상세(조회 모드)로 이동
+    // 각 열의 아이콘 버튼 → 그 날의 운동 기록 상세(조회 모드)로 이동.
+    // [B][E] edit by smsong : 상세 폼을 닫으면 이 비교 폼으로 복귀한다(onBack).
+    //   복귀 시 현재 상태(보조 포함/확대/AI 결과/접힘)를 그대로 넘겨 동일 화면으로 되돌린다.
     document.querySelectorAll('#sheet [data-open-sess]').forEach(b => b.onclick = () => {
         const s = sessionById(b.dataset.openSess);
         if (!s) return toast('기록을 찾을 수 없어요');
-        openSessionEditor(s.id, s.date, 'view');
+        const card = document.getElementById('aiCard');
+        const backOpts = Object.assign({}, opts, {
+            includeAssisted: inc,
+            full: Sheet1.isFull(),
+            aiCollapsed: !!(card && card.classList.contains('collapsed'))
+        });
+        openSessionEditor(s.id, s.date, 'view', {
+            onBack: () => openCompareSheet(exercise, prevStat, lastStat, backOpts)
+        });
     });
 
     // [B] edit by smsong : AI 성장 분석.
