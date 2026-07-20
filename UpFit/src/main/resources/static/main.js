@@ -2812,20 +2812,6 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
     };
     // [E] edit by smsong
 
-    // [B] edit by smsong : 보조 보기 전환.
-    //   지표 값 자체가 보조 포함 여부에 따라 달라지므로, 같은 세션 id 를 기준으로 다시 집계해
-    //   폼을 새로 연다. 보조를 빼면 그 세션의 세트가 하나도 안 남을 수 있어 그 경우엔 되돌린다.
-    const caChk = document.getElementById('cmpxAssist');
-    if (caChk) caChk.onchange = () => {
-        const next = caChk.checked;
-        const ss = exerciseSessionStats(exercise, next);
-        const l = ss.find(s => String(s.id) === String(lastStat.id));
-        if (!l) { caChk.checked = inc; return toast('보조를 빼면 이 기록에 남는 세트가 없어요'); }
-        const p = prevStat ? (ss.find(s => String(s.id) === String(prevStat.id)) || null) : null;
-        openCompareSheet(exercise, p, l, Object.assign({}, opts, { includeAssisted: next }));
-    };
-    // [E] edit by smsong
-
     // 각 열의 아이콘 버튼 → 그 날의 운동 기록 상세(조회 모드)로 이동
     document.querySelectorAll('#sheet [data-open-sess]').forEach(b => b.onclick = () => {
         const s = sessionById(b.dataset.openSess);

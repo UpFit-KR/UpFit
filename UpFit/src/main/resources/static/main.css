@@ -1455,6 +1455,41 @@ textarea.input.im-text {
 }
 /* [E] edit by smsong */
 
+/* 비교 폼 안의 "보조 보기" 토글 — 제목 바로 아래라 위 여백만 정리 */
+.check-row.cmpx-assist { margin: 0 0 12px; }
+
+/* [B][E] edit by smsong : 운동 개수 / 총 세트 / 총 볼륨 세 항목이 한 줄에 균형 있게 놓이도록.
+   .se-head 는 space-between 이므로 가운데 항목(총 세트)이 자연스럽게 중앙에 온다. */
+.se-head #seSets { margin-left: auto; margin-right: auto; }
+
+/* [B] edit by smsong — 홈: 오늘 기록이 없을 때의 "최근 3일" 블록 */
+.home-recent-note {
+    font-size: 12.5px; color: var(--text-mute); font-weight: 600;
+    margin: -4px 2px 10px; line-height: 1.5;
+}
+.chip-row.home-parts { margin-bottom: 14px; }
+/* 최근 3일의 첫 날짜 헤더가 칩 줄에 너무 붙지 않도록 */
+.chip-row.home-parts + .day-group { margin-top: 2px; }
+/* [E] edit by smsong */
+
+/* [B] edit by smsong — 운동 상세 행: 종목명 링크(→변화 탭) · lbs 병기 */
+.rec-title .rec-ex-link {
+    display: inline-flex; align-items: center; gap: 3px;
+    background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+    font-size: 14.5px; font-weight: 800; letter-spacing: -0.2px;
+    color: var(--text); text-align: left; line-height: 1.25;
+    -webkit-tap-highlight-color: transparent;
+}
+.rec-title .rec-ex-link svg {
+    width: 14px; height: 14px; color: var(--text-mute);
+    transition: transform .15s;
+}
+.rec-title .rec-ex-link:active { color: var(--accent); }
+.rec-title .rec-ex-link:active svg { transform: translateX(2px); color: var(--accent); }
+/* lbs 환산값 — kg 뒤에 옅게 병기 (kg 표기는 그대로 유지) */
+.rec-detail .rec-lbs { color: var(--text-mute); font-weight: 600; }
+/* [E] edit by smsong */
+
 /* ---------- 토스트 ---------- */
 #toast {
     position: fixed; bottom: calc(var(--nav-h) + 24px); left: 50%;
