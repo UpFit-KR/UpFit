@@ -1385,9 +1385,10 @@ textarea.input.im-text {
 }
 
 /* 성장 분석의 "보조 보기" 토글 — 카드 안이라 위 여백만 조정 */
-.check-row.growth-assist { margin: 2px 0 14px; }
+/* [B][E] edit by smsong : 비교할 날짜 줄의 우측 버튼 묶음(보조 토글 + 상세보기) */
+.growth-cmp-acts { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
 
-/* 캡션 + 아이콘 버튼 한 줄 (최근 기록과 비교할 날짜 / 상세보기) */
+/* 캡션 + 아이콘 버튼 한 줄 (최근 기록과 비교할 날짜 / 보조·상세보기) */
 .growth-cmp-head {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     margin-bottom: 7px;

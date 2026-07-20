@@ -1240,14 +1240,8 @@ function renderChange() {
         <div class="section-head"><h2>종목별 성장 분석</h2></div>
         <div class="card">`;
 
-    // [B] edit by smsong : 보조(파트너 스팟) 세트 포함 여부 토글.
-    //   디폴트는 해제 = 보조 미포함(혼자 든 기록만). 체크하면 보조 세트까지 합쳐 다시 그린다.
-    //   비교 카드·그래프·종목 목록이 모두 이 값을 함께 따른다.
-    html += `<label class="check-row growth-assist">
-        <input type="checkbox" id="growthAssist" ${ui.changeAssist ? 'checked' : ''}>
-        <span class="box">${icon('check')}</span>
-        <span>보조 보기 <span class="lbl-sub">${ui.changeAssist ? '보조 받은 세트까지 포함' : '혼자 든 세트만'}</span></span>
-    </label>`;
+    // [B][E] edit by smsong : 보조 보기 토글은 아래 "비교할 날짜" 줄의 상세보기 버튼 옆으로 이동(아이콘 전용).
+    //   비교 카드·그래프·종목 목록이 모두 ui.changeAssist 값을 함께 따른다.
     // [E] edit by smsong
 
     if (exsWithData.length) {
@@ -1289,8 +1283,15 @@ function renderChange() {
             //   프로젝트 공통 아이콘 버튼(.ibtn.sm)을 그대로 쓴다.
             html += `<div class="growth-cmp-head">
                 <span class="growth-cmp-cap">최근 기록과 비교할 날짜</span>
-                <button class="ibtn sm" id="growthCmpOpen" type="button"
-                        title="선택한 날짜의 운동 상세보기" aria-label="선택한 날짜의 운동 상세보기">${icon('eye')}</button>
+                <div class="growth-cmp-acts">
+                    <!-- [B] edit by smsong : 보조 보기 토글(아이콘 전용). 비교 폼과 동일한 방식.
+                         켜짐(on)이면 강조. ui.changeAssist 를 뒤집어 다시 그린다. -->
+                    <button class="ibtn sm cmpx-assist-btn ${ui.changeAssist ? 'on' : ''}" id="growthAssistBtn" type="button"
+                            title="${ui.changeAssist ? '보조 포함 (탭하면 제외)' : '보조 제외 (탭하면 포함)'}"
+                            aria-pressed="${ui.changeAssist ? 'true' : 'false'}" aria-label="보조 보기 전환">${icon('people')}</button>
+                    <button class="ibtn sm" id="growthCmpOpen" type="button"
+                            title="선택한 날짜의 운동 상세보기" aria-label="선택한 날짜의 운동 상세보기">${icon('eye')}</button>
+                </div>
             </div>`;
             // [E] edit by smsong
             html += `<div class="seg growth-cmp-seg" id="growthCmpTabs">${
@@ -1304,6 +1305,18 @@ function renderChange() {
                     }</select>
                 </div>`;
             }
+        }
+        // [B] edit by smsong : 비교할 이전 기록이 없는 종목(첫 기록만)에서도 보조 토글은 노출한다.
+        //   위 growth-cmp-head 는 cands 가 있을 때만 그려지므로, 없을 땐 단독 줄로 보조 버튼만 배치.
+        else {
+            html += `<div class="growth-cmp-head only-assist">
+                <span class="growth-cmp-cap">보조 세트 보기</span>
+                <div class="growth-cmp-acts">
+                    <button class="ibtn sm cmpx-assist-btn ${ui.changeAssist ? 'on' : ''}" id="growthAssistBtn" type="button"
+                            title="${ui.changeAssist ? '보조 포함 (탭하면 제외)' : '보조 제외 (탭하면 포함)'}"
+                            aria-pressed="${ui.changeAssist ? 'true' : 'false'}" aria-label="보조 보기 전환">${icon('people')}</button>
+                </div>
+            </div>`;
         }
         // [E] edit by smsong
 
@@ -1420,13 +1433,15 @@ function renderChange() {
     const gcSel = document.getElementById('growthCmpSelect');
     if (gcSel) gcSel.onchange = () => { ui.changeGrowthCmpId = gcSel.value; renderChange(); };
 
-    // [B] edit by smsong : 보조 보기 토글 — 켜고 끌 때마다 카드/그래프 전체를 다시 그린다
-    const gaChk = document.getElementById('growthAssist');
-    if (gaChk) gaChk.onchange = () => {
-        ui.changeAssist = gaChk.checked;
-        ui.changeGrowthCmpId = null;   // 대상 세션 구성이 달라지므로 비교 대상은 직전으로 초기화
+    // [B] edit by smsong : 보조 보기 토글(아이콘 버튼) — 켜고 끌 때마다 카드/그래프 전체를 다시 그린다.
+    //   현재 상태를 뒤집는다. 대상 세션 구성이 달라지므로 비교 대상은 직전으로 초기화.
+    const gaBtn = document.getElementById('growthAssistBtn');
+    if (gaBtn) gaBtn.onclick = () => {
+        ui.changeAssist = !ui.changeAssist;
+        ui.changeGrowthCmpId = null;
         renderChange();
     };
+    // [E] edit by smsong
 
     // [B] edit by smsong : 선택한 비교 날짜의 운동 기록 상세 열기 (아이콘 전용 버튼)
     const gcOpen = document.getElementById('growthCmpOpen');
