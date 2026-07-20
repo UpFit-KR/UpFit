@@ -59,8 +59,9 @@ public class AiAnalysisService {
         "   조정하면 어떤 결과가 기대되는지 구체적으로 제시한다(예: '이번 주는 볼륨 10% 낮춰 회복 후 재도전').",
         "",
         "[분석 지침]",
-        "- 반드시 제공된 history(과거→현재 전체)를 근거로 추세를 판단한다. compareFrom/compareTo 두 점만 보고",
-        "  단정하지 말 것.",
+        "- 분석 관점(사용자 프롬프트 첫 줄의 [분석 관점])을 최우선으로 따른다:",
+        "  · trend(전체 추세)  → history 전체 흐름으로 장기 추세를 판단한다.",
+        "  · compare(두 시점)  → 제시된 두 시점의 변화를 핵심으로 분석하고, history 는 맥락으로만 쓴다.",
         "- 무게/볼륨은 사용자 데이터에 명시된 단위(kg 또는 lbs)를 그대로 사용한다. lbs 로 기록된 종목은",
         "  분석 서술·수치·권장 무게를 모두 lbs 로 제시하고, 임의로 kg 으로 환산하지 않는다.",
         "- 데이터가 2~3개로 적으면 confidence 를 낮추고 cautions 에 한계를 명시한다.",
@@ -231,8 +232,20 @@ public class AiAnalysisService {
         // [B] edit by smsong : 무게 단위. 값들은 이미 이 단위로 환산돼 들어온다.
         String unit = (r.getWeightUnit() == null || r.getWeightUnit().isBlank()) ? "kg" : r.getWeightUnit();
         boolean lbs = "lbs".equalsIgnoreCase(unit);
+        // 분석 관점: compare(두 시점 집중) / trend(전체 추세). 기본은 trend.
+        boolean compareMode = "compare".equalsIgnoreCase(nz(r.getAnalysisMode()));
         // [E] edit by smsong
         StringBuilder sb = new StringBuilder();
+        // [B] edit by smsong : 분석 관점을 맨 앞에서 명확히 지시
+        if (compareMode) {
+            sb.append("[분석 관점] 아래 '비교 중인 두 시점'을 직접 비교하는 것이 핵심 과제다.\n");
+            sb.append("두 시점 사이에 무게/횟수/세트/볼륨이 어떻게 달라졌는지, 그것이 근성장·정체·근손실 중\n");
+            sb.append("무엇을 시사하는지 구체적으로 판단하라. 전체 이력은 '맥락'으로만 참고한다.\n\n");
+        } else {
+            sb.append("[분석 관점] 이 종목의 '전체 이력'을 바탕으로 장기적인 성장 추세를 판단하는 것이 핵심 과제다.\n");
+            sb.append("특정 두 시점 비교가 아니라, 흐름 전반이 상승인지 정체인지 하락인지와 그 이유를 종합하라.\n\n");
+        }
+        // [E] edit by smsong
         sb.append("분석 대상 종목: ").append(nz(r.getExercise())).append("\n");
         sb.append("종목 유형: ").append(r.isBodyweightExercise() ? "맨몸(무게 없음, 횟수/세트 중심)" : "웨이트(무게 있음)").append("\n");
         // [B] edit by smsong : 이 종목의 무게/볼륨 단위를 명시하고, 그 단위로 분석·조언하도록 지시
@@ -244,13 +257,16 @@ public class AiAnalysisService {
         // [E] edit by smsong
         sb.append("보조 세트 ").append(r.isIncludeAssisted() ? "포함" : "제외").append(" 기준으로 집계됨\n\n");
 
-        if (r.getCompareFrom() != null || r.getCompareTo() != null) {
-            sb.append("[사용자가 지금 화면에서 비교 중인 두 시점]\n");
+        // [B] edit by smsong : compare 모드에서만 두 시점을 '핵심 비교 대상'으로 제시
+        if (compareMode && (r.getCompareFrom() != null || r.getCompareTo() != null)) {
+            sb.append("[★ 비교 중인 두 시점 — 이 둘의 변화가 분석의 핵심]\n");
             sb.append("이전: ").append(statLine(r.getCompareFrom(), unit)).append("\n");
             sb.append("최근: ").append(statLine(r.getCompareTo(), unit)).append("\n\n");
         }
+        // [E] edit by smsong
 
-        sb.append("[이 종목의 전체 세션 이력 — 과거→현재]\n");
+        sb.append(compareMode ? "[참고용 — 이 종목의 전체 세션 이력(과거→현재)]\n"
+                              : "[이 종목의 전체 세션 이력 — 과거→현재]\n");
         List<AiAnalysisRequestDTO.SessionStat> hist = r.getHistory();
         if (hist == null || hist.isEmpty()) {
             sb.append("(이력 없음)\n");
@@ -269,6 +285,8 @@ public class AiAnalysisService {
         }
 
         sb.append("\n위 데이터를 근거로 시스템 지침의 JSON 스키마에 맞춰 분석 결과만 출력하세요.");
+        if (compareMode) sb.append(" (headline 과 analysis 는 두 시점의 '변화'를 중심으로 서술하세요.)");
+        else sb.append(" (headline 과 analysis 는 전체 '추세'를 중심으로 서술하세요.)");
         if (lbs) sb.append(" (무게·볼륨은 반드시 lbs 단위로 서술하세요.)");
         return sb.toString();
     }

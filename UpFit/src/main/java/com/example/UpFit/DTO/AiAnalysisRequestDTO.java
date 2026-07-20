@@ -20,6 +20,10 @@ import java.util.List;
 public class AiAnalysisRequestDTO {
 
     private String exercise;
+    // [B][E] edit by smsong : 분석 관점.
+    //   "trend"   → 이 종목의 전체 이력 추세 분석(변화 탭). compareFrom/To 없음.
+    //   "compare" → 지금 비교 중인 두 시점 집중 분석(비교 상세). compareFrom/To 사용.
+    private String analysisMode;
     private boolean bodyweightExercise;   // 맨몸 종목이면 무게/볼륨 대신 횟수 중심
     // [B][E] edit by smsong : 무게/볼륨의 단위. "" (맨몸) | "kg" | "lbs".
     //   lbs 로 입력된 종목은 프런트가 값을 lbs 로 환산해 보내며, 분석/조언도 lbs 기준으로 한다.

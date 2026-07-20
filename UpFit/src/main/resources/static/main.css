@@ -1543,6 +1543,9 @@ textarea.input.im-text {
 
 #cmpxAiResult:empty { display: none; }
 #cmpxAiResult { margin: 12px 0 4px; }
+/* [B][E] edit by smsong : 변화 탭 전체추세 AI 결과 영역 */
+#growthAiResult:empty { display: none; }
+#growthAiResult { margin: 10px 0 4px; }
 
 .ai-card {
     border: 1px solid var(--line); border-radius: var(--radius-lg);

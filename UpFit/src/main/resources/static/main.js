@@ -1289,6 +1289,9 @@ function renderChange() {
                     <button class="ibtn sm cmpx-assist-btn ${ui.changeAssist ? 'on' : ''}" id="growthAssistBtn" type="button"
                             title="${ui.changeAssist ? '보조 포함 (탭하면 제외)' : '보조 제외 (탭하면 포함)'}"
                             aria-pressed="${ui.changeAssist ? 'true' : 'false'}" aria-label="보조 보기 전환">${icon('people')}</button>
+                    <!-- [B][E] edit by smsong : 이 종목 "전체 추세" AI 분석 버튼 -->
+                    <button class="ibtn sm cmpx-ai" id="growthAiBtn" type="button"
+                            title="AI 성장 분석" aria-label="AI 성장 분석">${icon('spark')}</button>
                     <button class="ibtn sm" id="growthCmpOpen" type="button"
                             title="선택한 날짜의 운동 상세보기" aria-label="선택한 날짜의 운동 상세보기">${icon('eye')}</button>
                 </div>
@@ -1317,6 +1320,9 @@ function renderChange() {
                     <button class="ibtn sm cmpx-assist-btn ${ui.changeAssist ? 'on' : ''}" id="growthAssistBtn" type="button"
                             title="${ui.changeAssist ? '보조 포함 (탭하면 제외)' : '보조 제외 (탭하면 포함)'}"
                             aria-pressed="${ui.changeAssist ? 'true' : 'false'}" aria-label="보조 보기 전환">${icon('people')}</button>
+                    <!-- [B][E] edit by smsong : 이 종목 "전체 추세" AI 분석 버튼 -->
+                    <button class="ibtn sm cmpx-ai" id="growthAiBtn" type="button"
+                            title="AI 성장 분석" aria-label="AI 성장 분석">${icon('spark')}</button>
                     <button class="ibtn sm" id="growthCmpOpen" type="button"
                             title="이 기록의 운동 상세보기" aria-label="이 기록의 운동 상세보기">${icon('eye')}</button>
                 </div>
@@ -1325,6 +1331,8 @@ function renderChange() {
         // [E] edit by smsong
 
         html += `<div class="cmp-meta">최근 ${fmtKorean(last.date)}${last.startTime ? ' ' + last.startTime : ''}${prev ? ` · ${fmtKorean(prev.date)}${prev.startTime ? ' ' + prev.startTime : ''} 대비` : ' · 첫 기록'}${isBw ? ' · 맨몸' : ''}</div>`;
+        // [B][E] edit by smsong : 이 종목 전체 추세 AI 분석 결과가 채워질 영역(처음엔 비어 있음)
+        html += `<div id="growthAiResult"></div>`;
         // [B] edit by smsong : 맨몸 종목은 무게/볼륨이 항상 0 → 횟수·세트만 비교/추이로 보여준다
         // [B][E] edit by smsong : 각 지표 행을 누르면 두 기록의 운동 리스트를 나란히 비교하는 폼이 열린다(data-cmp-k)
         if (isBw) {
@@ -1461,6 +1469,56 @@ function renderChange() {
         if (!s) return toast('기록을 찾을 수 없어요');
         openSessionEditor(s.id, s.date, 'view');
     };
+    // [E] edit by smsong
+
+    // [B] edit by smsong : 변화 탭 AI — 이 종목의 "전체 추세"를 분석(trend 모드).
+    //   결과는 종목+보조설정 키로 캐시(ui.changeAiCache)해, 재렌더(기간 변경 등) 시에도 유지한다.
+    //   비교 상세의 AI(두 시점 비교)와는 관점이 다르다.
+    const aiKey = `${ui.changeExercise}||${ui.changeAssist ? 'A' : 'N'}`;
+    const gAiBtn = document.getElementById('growthAiBtn');
+    const gAiOut = document.getElementById('growthAiResult');
+    ui.changeAiCache = ui.changeAiCache || {};
+    // 캐시된 결과가 있으면 복원
+    if (gAiOut && ui.changeAiCache[aiKey]) {
+        gAiOut.innerHTML = aiResultHtml(ui.changeAiCache[aiKey]);
+        if (ui.changeAiCollapsed) {
+            const card = gAiOut.querySelector('.ai-card');
+            const tg = gAiOut.querySelector('.ai-toggle');
+            if (card) card.classList.add('collapsed');
+            if (tg) tg.setAttribute('aria-expanded', 'false');
+        }
+        wireAiToggle(gAiOut);
+        if (gAiBtn) { gAiBtn.disabled = true; gAiBtn.title = 'AI 분석 완료'; gAiBtn.classList.add('done'); }
+    }
+    if (gAiBtn && gAiOut) gAiBtn.onclick = async () => {
+        gAiBtn.disabled = true;
+        gAiOut.innerHTML = aiLoadingHtml();
+        try {
+            const bw = exerciseIsBodyweight(ui.changeExercise);
+            // trend 모드 : 전체 이력 추세. 두 시점(prev/last)은 보내지 않는다.
+            const payload = buildAiPayload(ui.changeExercise, null, null, ui.changeAssist, bw, 'trend');
+            const res = await api.aiAnalyze(payload);
+            ui.changeAiCache[aiKey] = res;
+            ui.changeAiCollapsed = false;
+            gAiOut.innerHTML = aiResultHtml(res);
+            wireAiToggle(gAiOut);
+            wireGrowthAiCollapse(gAiOut);
+            gAiBtn.title = 'AI 분석 완료'; gAiBtn.classList.add('done');
+        } catch (err) {
+            gAiBtn.disabled = false;
+            if (err && err.auth) return;
+            gAiOut.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
+        }
+    };
+    // 접기 상태를 ui.changeAiCollapsed 에 저장 → 재렌더(기간 변경 등) 후에도 유지
+    function wireGrowthAiCollapse(container) {
+        const tg = container.querySelector('.ai-toggle');
+        if (tg) tg.addEventListener('click', () => {
+            const card = container.querySelector('.ai-card');
+            ui.changeAiCollapsed = !!(card && card.classList.contains('collapsed'));
+        });
+    }
+    if (gAiOut && ui.changeAiCache[aiKey]) wireGrowthAiCollapse(gAiOut);
     // [E] edit by smsong
 
     // [B] edit by smsong : 지표 행 탭 → 두 기록의 운동 리스트를 한 폼에서 나란히 비교
@@ -2976,7 +3034,7 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         const l = ss.find(s => String(s.id) === String(lastStat.id));
         if (!l) return toast('보조를 빼면 이 기록에 남는 세트가 없어요');
         const p = prevStat ? (ss.find(s => String(s.id) === String(prevStat.id)) || null) : null;
-        const card = document.getElementById('aiCard');
+        const card = document.querySelector('#cmpxAiResult .ai-card');
         openCompareSheet(exercise, p, l, Object.assign({}, opts, {
             includeAssisted: next,
             full: Sheet1.isFull(),
@@ -2994,7 +3052,7 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
     document.querySelectorAll('#sheet [data-open-sess]').forEach(b => b.onclick = () => {
         const s = sessionById(b.dataset.openSess);
         if (!s) return toast('기록을 찾을 수 없어요');
-        const card = document.getElementById('aiCard');
+        const card = document.querySelector('#cmpxAiResult .ai-card');
         const curFull = Sheet1.isFull();
         openSessionEditor(s.id, s.date, 'view', {
             full: curFull,   // 비교 폼의 현재 확대 상태로 상세를 연다
@@ -3019,12 +3077,12 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
     if (aiOut && opts.aiResult) {
         aiOut.innerHTML = aiResultHtml(opts.aiResult);
         if (opts.aiCollapsed) {   // 접힌 상태였다면 접힘도 복원
-            const card = document.getElementById('aiCard');
-            const btn = document.getElementById('aiToggle');
+            const card = aiOut.querySelector('.ai-card');
+            const btn = aiOut.querySelector('.ai-toggle');
             if (card) card.classList.add('collapsed');
             if (btn) btn.setAttribute('aria-expanded', 'false');
         }
-        wireAiToggle();
+        wireAiToggle(aiOut);
         // [B][E] edit by smsong : 결과가 이미 있으면 생성 버튼 비활성화(중복 생성 방지)
         if (aiBtn) { aiBtn.disabled = true; aiBtn.title = 'AI 분석 완료'; aiBtn.classList.add('done'); }
     }
@@ -3033,12 +3091,12 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         aiBtn.disabled = true;
         aiOut.innerHTML = aiLoadingHtml();
         try {
-            const payload = buildAiPayload(exercise, prevStat, lastStat, inc, isBw);
+            const payload = buildAiPayload(exercise, prevStat, lastStat, inc, isBw, 'compare');
             const res = await api.aiAnalyze(payload);
             opts.aiResult = res;              // [B][E] edit by smsong : 결과 보관 → 재오픈 시 유지
             opts.aiCollapsed = false;
             aiOut.innerHTML = aiResultHtml(res);
-            wireAiToggle();
+            wireAiToggle(aiOut);
             // [B][E] edit by smsong : 생성 완료 → 버튼은 비활성 유지(중복 생성 방지)
             aiBtn.title = 'AI 분석 완료'; aiBtn.classList.add('done');
         } catch (err) {
@@ -3053,7 +3111,12 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
 
 // [B] edit by smsong — AI 분석 페이로드 구성 / 로딩·결과 렌더
 //   페이로드는 "해당 종목 전체 이력"을 담는다(기간 필터 없음) → 모델이 장기 추세까지 본다.
-function buildAiPayload(exercise, prevStat, lastStat, includeAssisted, isBw) {
+// [B] edit by smsong : AI 분석 페이로드 구성.
+//   mode 로 분석 관점을 나눈다:
+//     · 'trend'   (변화 탭)   : 이 종목의 "전체 이력" 추세 분석. 특정 두 시점 비교는 하지 않는다.
+//     · 'compare' (비교 상세) : 지금 화면에서 비교 중인 "두 시점(prev↔last)"을 집중 분석. 이력은 맥락용.
+function buildAiPayload(exercise, prevStat, lastStat, includeAssisted, isBw, mode) {
+    mode = (mode === 'compare') ? 'compare' : 'trend';
     // 이 종목의 전체 세션 통계(보조 설정 반영) — 과거→현재 순.
     //   너무 길면(수백 세션) 토큰이 커지므로 최근 60세션으로 제한한다(장기 추세 판단엔 충분).
     const allHist = exerciseSessionStats(exercise, includeAssisted);
@@ -3103,11 +3166,13 @@ function buildAiPayload(exercise, prevStat, lastStat, includeAssisted, isBw) {
 
     return {
         exercise: exercise,
+        analysisMode: mode,   // [B][E] edit by smsong : 'trend'(전체 추세) | 'compare'(두 시점 비교)
         bodyweightExercise: !!isBw,
         weightUnit: unit,   // [B][E] edit by smsong : '' | 'kg' | 'lbs' — 무게/볼륨의 단위
         includeAssisted: !!includeAssisted,
-        compareFrom: toStat(prevStat),
-        compareTo: toStat(lastStat),
+        // 비교 모드에서만 두 시점을 실어 보낸다. 추세 모드는 전체 이력(history)만으로 판단.
+        compareFrom: mode === 'compare' ? toStat(prevStat) : null,
+        compareTo: mode === 'compare' ? toStat(lastStat) : null,
         history: hist,
         bodyweightSeries: bw
     };
@@ -3136,18 +3201,21 @@ function aiResultHtml(r) {
         ? `<div class="ai-sec ${cls}">${arr.map(x => `<div class="ai-li">${ico ? icon(ico) : ''}<span>${esc(x)}</span></div>`).join('')}</div>`
         : '';
 
-    return `<div class="ai-card" id="aiCard">
+    // [B] edit by smsong : 고정 id 대신 클래스 사용.
+    //   변화 탭(전체 추세)과 비교 상세(두 시점)의 AI 카드가 동시에 존재할 수 있어 id 중복을 피한다.
+    //   접기/펴기 배선은 wireAiToggle(container) 이 컨테이너 스코프에서 클래스로 찾아 처리한다.
+    return `<div class="ai-card">
         <div class="ai-head">
             <span class="ai-badge">${icon('spark')} AI 분석</span>
             <div class="ai-head-right">
                 ${conf != null ? `<span class="ai-conf">확신도 <b class="tabnum">${conf}</b></span>` : ''}
-                <!-- [B][E] edit by smsong : AI 결과 접기/펴기 (아이콘 전용) -->
-                <button class="ai-toggle" id="aiToggle" type="button" aria-expanded="true"
+                <!-- AI 결과 접기/펴기 (아이콘 전용) -->
+                <button class="ai-toggle" type="button" aria-expanded="true"
                         title="접기/펴기" aria-label="접기/펴기">${icon('chevD')}</button>
             </div>
         </div>
         <!-- 접히는 본문 -->
-        <div class="ai-collapse" id="aiCollapse">
+        <div class="ai-collapse">
             ${r.headline ? `<div class="ai-headline">${esc(r.headline)}</div>` : ''}
             <div class="ai-tags">
                 ${tr[0] ? `<span class="ai-tag trend-${tr[1]}">${esc(tr[0])}</span>` : ''}
@@ -3160,12 +3228,16 @@ function aiResultHtml(r) {
         </div>
     </div>`;
 }
-// 접기/펴기 버튼 배선 (결과를 그린 직후 호출)
-function wireAiToggle() {
-    const card = document.getElementById('aiCard');
-    const btn = document.getElementById('aiToggle');
-    const body = document.getElementById('aiCollapse');
-    if (!card || !btn || !body) return;
+// 접기/펴기 버튼 배선 (결과를 그린 직후 호출).
+// [B][E] edit by smsong : container 를 주면 그 안에서, 없으면 문서 전체에서 .ai-card 를 찾는다.
+//   AI 카드가 여러 곳(변화 탭/비교 상세)에 동시에 있을 수 있어 클래스+스코프로 처리한다.
+function wireAiToggle(container) {
+    const scope = container || document;
+    const card = scope.querySelector('.ai-card');
+    if (!card) return;
+    const btn = card.querySelector('.ai-toggle');
+    const body = card.querySelector('.ai-collapse');
+    if (!btn || !body) return;
     btn.onclick = () => {
         const collapsed = card.classList.toggle('collapsed');
         btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
