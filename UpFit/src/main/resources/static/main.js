@@ -3962,12 +3962,16 @@ if (window.UpFitTheme) {
     } catch (err) {
         if (err && err.auth) return;    // invalidSession() 이 이미 login.html 로 보냄
         console.error('초기 로드 실패:', err);
-        // [B] edit by smsong : 샘플 시드/데모 폴백 없음 — 빈 상태로 표시하고 사유만 안내
-        state = blankState();
-        applyCurrentUser();
-        loadLocalExtras();
-        render();
-        toast('데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요');
+        // [B] edit by smsong : 데이터를 불러오지 못하면 빈 상태로 두지 않고
+        //   세션을 정리(로그아웃)한 뒤 로그인 페이지로 보낸다.
+        //   invalidSession() = 토큰 제거 + 안내 alert + login.html 이동.
+        try {
+            Auth.invalidSession('데이터를 불러오지 못했어요.\n다시 로그인해 주세요.');
+        } catch (_) {
+            // 혹시 auth 모듈 호출이 실패해도 최소한 로그인 페이지로는 이동
+            try { Auth.logout && Auth.logout(); } catch (_) {}
+            window.location.replace('login.html');
+        }
         return;
         // [E] edit by smsong
     }
