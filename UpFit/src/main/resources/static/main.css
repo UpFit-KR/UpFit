@@ -1490,6 +1490,87 @@ textarea.input.im-text {
 .rec-detail .rec-lbs { color: var(--text-mute); font-weight: 600; }
 /* [E] edit by smsong */
 
+/* ============================================================
+   [B] edit by smsong — AI 성장 분석 (비교 폼 내부)
+   ============================================================ */
+/* 종목명 줄에 AI 버튼을 오른쪽 끝으로 */
+.cmpx-meta-top { display: flex; align-items: center; gap: 8px; }
+.cmpx-meta-top .cmpx-ex { flex: 1; min-width: 0; }
+/* AI 버튼 — 그라데이션 강조(다른 아이콘 버튼과 구분) */
+.ibtn.sm.cmpx-ai {
+    flex: 0 0 auto; color: #fff;
+    background: var(--grad); border-color: transparent;
+    box-shadow: 0 2px 10px var(--home-glow);
+}
+.ibtn.sm.cmpx-ai:disabled { opacity: .55; }
+.ibtn.sm.cmpx-ai svg { width: 16px; height: 16px; }
+
+#cmpxAiResult:empty { display: none; }
+#cmpxAiResult { margin: 12px 0 4px; }
+
+.ai-card {
+    border: 1px solid var(--line); border-radius: var(--radius-lg);
+    background: var(--ink-850); padding: 14px 14px 12px;
+    animation: aiIn .28s ease both;
+}
+@keyframes aiIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* 로딩 */
+.ai-loading { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 22px 14px; }
+.ai-loading .ai-spark { width: 34px; height: 34px; color: var(--accent); animation: aiPulse 1.1s ease-in-out infinite; }
+.ai-loading .ai-spark svg { width: 100%; height: 100%; }
+@keyframes aiPulse { 0%,100% { transform: scale(.9) rotate(-6deg); opacity: .7; } 50% { transform: scale(1.12) rotate(6deg); opacity: 1; } }
+.ai-loading-txt { font-size: 12.5px; color: var(--text-dim); font-weight: 700; }
+.ai-bar { width: 120px; height: 4px; border-radius: 2px; background: var(--ink-750); overflow: hidden; }
+.ai-bar i { display: block; width: 40%; height: 100%; border-radius: 2px; background: var(--grad); animation: aiBar 1.1s ease-in-out infinite; }
+@keyframes aiBar { 0% { transform: translateX(-110%); } 100% { transform: translateX(300%); } }
+
+/* 헤더 */
+.ai-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ai-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 800; color: var(--accent);
+    background: var(--grad-soft); padding: 4px 9px; border-radius: 999px;
+}
+.ai-badge svg { width: 13px; height: 13px; }
+.ai-conf { font-size: 11px; color: var(--text-mute); font-weight: 700; }
+.ai-conf b { color: var(--text); }
+
+.ai-headline { font-size: 14.5px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.4; margin-bottom: 8px; }
+
+/* 판정 태그 */
+.ai-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ai-tag { font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 999px; }
+.ai-tag.trend-up, .ai-tag.verdict-growth { background: var(--up-bg); color: var(--up); }
+.ai-tag.trend-down, .ai-tag.verdict-loss { background: var(--down-bg); color: var(--down); }
+.ai-tag.trend-flat, .ai-tag.verdict-maintain { background: var(--ink-800); color: var(--text-dim); }
+.ai-tag.trend-mixed, .ai-tag.verdict-unclear { background: var(--flat-bg); color: var(--flat); }
+
+/* 본문 */
+.ai-body p { font-size: 13px; line-height: 1.62; color: var(--text-dim); margin: 0 0 8px; }
+.ai-body p:last-child { margin-bottom: 0; }
+
+.ai-sub-h {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 12px; font-weight: 800; margin: 12px 0 6px; color: var(--text);
+}
+.ai-sub-h.muted { color: var(--text-mute); }
+.ai-sub-h svg { width: 14px; height: 14px; color: var(--accent); }
+
+.ai-sec .ai-li {
+    display: flex; align-items: flex-start; gap: 6px;
+    font-size: 12.5px; line-height: 1.55; color: var(--text-dim);
+    padding: 4px 0;
+}
+.ai-sec .ai-li svg { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 2px; color: var(--accent-2); }
+.ai-cautions .ai-li { color: var(--text-mute); }
+
+.ai-foot { font-size: 10.5px; color: var(--text-mute); margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line-soft); line-height: 1.5; }
+
+.ai-card.ai-err { display: flex; align-items: center; gap: 8px; color: var(--down); font-size: 12.5px; font-weight: 700; }
+.ai-card.ai-err svg { width: 18px; height: 18px; flex: 0 0 auto; }
+/* [E] edit by smsong */
+
 /* ---------- 토스트 ---------- */
 #toast {
     position: fixed; bottom: calc(var(--nav-h) + 24px); left: 50%;

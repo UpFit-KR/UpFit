@@ -167,6 +167,8 @@ const api = {
     listExercises: ()   => apiReq('GET',    `/exercise/${UID}`),
     addExercise:   (nm) => apiReq('POST',   `/exercise/${UID}`, { name: nm }),
     delExercise:   (id) => apiReq('DELETE', `/exercise/${UID}/${id}`),
+    // [B][E] edit by smsong : AI 성장 분석 — 프런트가 구성한 페이로드를 백엔드(Gemini)로 전달
+    aiAnalyze:     (payload) => apiReq('POST', `/ai/analyze/${UID}`, payload),
     // [B] edit by smsong : 내 정보(신체 정보 포함) 조회/수정 — 키/현재 체중/목표 체중을 DB에 영속화
     getMe:      ()      => apiReq('GET', `/user/uid/${UID}`),
     updateMe:   (dto)   => apiUserUpdate(dto)
@@ -2750,9 +2752,18 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
 
     openSheet(`
         <div class="cmpx-meta">
-            <div class="cmpx-ex">${esc(exercise)}</div>
+            <div class="cmpx-meta-top">
+                <div class="cmpx-ex">${esc(exercise)}</div>
+                <!-- [B] edit by smsong : AI 분석 버튼(아이콘 전용). 이 종목의 전체 이력을 근거로 추세/근성장·근손실/미래를 분석. -->
+                <button class="ibtn sm cmpx-ai" type="button" id="cmpxAiBtn"
+                        title="AI 성장 분석" aria-label="AI 성장 분석">${icon('spark')}</button>
+                <!-- [E] edit by smsong -->
+            </div>
             <div class="cmpx-sub">${esc(dateCap(prevStat))} <b>→</b> ${esc(dateCap(lastStat))}${isBw ? ' · 맨몸' : ''}${inc ? '' : ' · 보조 제외'}</div>
         </div>
+
+        <!-- [B][E] edit by smsong : AI 분석 결과가 채워질 영역(처음엔 비어 있음) -->
+        <div id="cmpxAiResult"></div>
 
         <!-- [B] edit by smsong : 비교 폼에서도 보조 포함/제외를 바로 전환.
              켜고 끌 때마다 두 기록의 지표(최고 무게/횟수/세트/볼륨)와 세트 목록을 다시 계산해 그린다. -->
@@ -2818,6 +2829,116 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         if (!s) return toast('기록을 찾을 수 없어요');
         openSessionEditor(s.id, s.date, 'view');
     });
+
+    // [B] edit by smsong : AI 성장 분석.
+    //   이 종목의 "전체" 세션 이력 + 지금 비교 중인 두 시점 + 체중 추이를 백엔드로 보내
+    //   Gemini 가 추세/근성장·근손실/회복/미래를 분석하게 한다. 결과는 아래 영역에 카드로 렌더.
+    const aiBtn = document.getElementById('cmpxAiBtn');
+    const aiOut = document.getElementById('cmpxAiResult');
+    if (aiBtn && aiOut) aiBtn.onclick = async () => {
+        aiBtn.disabled = true;
+        aiOut.innerHTML = aiLoadingHtml();
+        try {
+            const payload = buildAiPayload(exercise, prevStat, lastStat, inc, isBw);
+            const res = await api.aiAnalyze(payload);
+            aiOut.innerHTML = aiResultHtml(res);
+        } catch (err) {
+            if (err && err.auth) return;
+            aiOut.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
+        } finally {
+            aiBtn.disabled = false;
+        }
+    };
+    // [E] edit by smsong
+}
+// [E] edit by smsong
+
+// [B] edit by smsong — AI 분석 페이로드 구성 / 로딩·결과 렌더
+//   페이로드는 "해당 종목 전체 이력"을 담는다(기간 필터 없음) → 모델이 장기 추세까지 본다.
+function buildAiPayload(exercise, prevStat, lastStat, includeAssisted, isBw) {
+    // 이 종목의 전체 세션 통계(보조 설정 반영) — 과거→현재 순.
+    //   너무 길면(수백 세션) 토큰이 커지므로 최근 60세션으로 제한한다(장기 추세 판단엔 충분).
+    const allHist = exerciseSessionStats(exercise, includeAssisted);
+    const histSrc = allHist.length > 60 ? allHist.slice(allHist.length - 60) : allHist;
+    const hist = histSrc.map(s => {
+        // 그 세션의 보조 세트 수, 컨디션/시간까지 함께 실어 보낸다
+        const sess = sessionById(s.id);
+        const assistedSets = sess ? (sess.workouts || [])
+            .filter(w => w.exercise === exercise && w.assisted)
+            .reduce((a, w) => a + (w.sets || 0), 0) : 0;
+        return {
+            date: s.date, time: s.startTime || '',
+            topWeight: isBw ? null : s.topWeight,
+            totalReps: s.totalReps, totalSets: s.totalSets,
+            volume: isBw ? null : s.volume,
+            condition: sess ? sess.condition : null,
+            durationMin: sess ? sessionDuration(sess) : null,
+            assistedSets: assistedSets
+        };
+    });
+    const toStat = st => st ? {
+        date: st.date, time: st.startTime || '',
+        topWeight: isBw ? null : st.topWeight,
+        totalReps: st.totalReps, totalSets: st.totalSets,
+        volume: isBw ? null : st.volume,
+        condition: (sessionById(st.id) || {}).condition,
+        durationMin: sessionById(st.id) ? sessionDuration(sessionById(st.id)) : null
+    } : null;
+
+    // 체중 추이(있으면) — 근성장/근손실 판단 보조. 최근 40개로 제한.
+    const bwAll = (state.bodyLogs || []).slice().sort((a, b) => a.date < b.date ? -1 : 1);
+    const bw = (bwAll.length > 40 ? bwAll.slice(bwAll.length - 40) : bwAll)
+        .map(b => ({ date: b.date, weight: b.weight }));
+
+    return {
+        exercise: exercise,
+        bodyweightExercise: !!isBw,
+        includeAssisted: !!includeAssisted,
+        compareFrom: toStat(prevStat),
+        compareTo: toStat(lastStat),
+        history: hist,
+        bodyweightSeries: bw
+    };
+}
+
+function aiLoadingHtml() {
+    return `<div class="ai-card ai-loading">
+        <div class="ai-spark">${icon('spark')}</div>
+        <div class="ai-loading-txt">AI가 전체 기록을 분석하고 있어요…</div>
+        <div class="ai-bar"><i></i></div>
+    </div>`;
+}
+
+function aiResultHtml(r) {
+    if (!r) return '';
+    const trendMap = { up: ['상승 추세', 'up'], down: ['하락 추세', 'down'], flat: ['보합', 'flat'], mixed: ['혼조', 'mixed'] };
+    const verdictMap = {
+        growth: ['근성장 신호', 'growth'], loss: ['근손실 우려', 'loss'],
+        maintain: ['유지', 'maintain'], unclear: ['판단 유보', 'unclear']
+    };
+    const tr = trendMap[r.trend] || ['', ''];
+    const vd = verdictMap[r.verdict] || ['', ''];
+    const conf = (r.confidence == null) ? null : Math.max(0, Math.min(100, r.confidence));
+
+    const list = (arr, cls, ico) => (arr && arr.length)
+        ? `<div class="ai-sec ${cls}">${arr.map(x => `<div class="ai-li">${ico ? icon(ico) : ''}<span>${esc(x)}</span></div>`).join('')}</div>`
+        : '';
+
+    return `<div class="ai-card">
+        <div class="ai-head">
+            <span class="ai-badge">${icon('spark')} AI 분석</span>
+            ${conf != null ? `<span class="ai-conf">확신도 <b class="tabnum">${conf}</b></span>` : ''}
+        </div>
+        ${r.headline ? `<div class="ai-headline">${esc(r.headline)}</div>` : ''}
+        <div class="ai-tags">
+            ${tr[0] ? `<span class="ai-tag trend-${tr[1]}">${esc(tr[0])}</span>` : ''}
+            ${vd[0] ? `<span class="ai-tag verdict-${vd[1]}">${esc(vd[0])}</span>` : ''}
+        </div>
+        ${(r.analysis && r.analysis.length) ? `<div class="ai-sec ai-body">${r.analysis.map(p => `<p>${esc(p)}</p>`).join('')}</div>` : ''}
+        ${(r.recommendations && r.recommendations.length) ? `<div class="ai-sub-h">${icon('chevR')} 이렇게 해보세요</div>${list(r.recommendations, 'ai-recos', 'check')}` : ''}
+        ${(r.cautions && r.cautions.length) ? `<div class="ai-sub-h muted">참고</div>${list(r.cautions, 'ai-cautions', null)}` : ''}
+        <div class="ai-foot">AI 해석은 트레이닝 관점의 참고용이며, 의학적 조언이 아니에요.</div>
+    </div>`;
 }
 // [E] edit by smsong
 
@@ -3782,6 +3903,8 @@ function icon(name) {
         collapse: `<svg viewBox="0 0 24 24" ${s}><path d="M3 10h6V4"/><path d="M10 10 3 3"/><path d="M21 14h-6v6"/><path d="m14 14 7 7"/></svg>`,
         x: `<svg viewBox="0 0 24 24" ${s}><path d="M6 6l12 12M18 6 6 18"/></svg>`,
         minus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg>`,
+        // [B][E] edit by smsong : AI 분석(스파클)
+        spark: `<svg viewBox="0 0 24 24" ${s}><path d="M12 3l1.6 4.3a4 4 0 0 0 2.4 2.4L20.5 11l-4.5 1.3a4 4 0 0 0-2.4 2.4L12 19l-1.6-4.3a4 4 0 0 0-2.4-2.4L3.5 11 8 9.7a4 4 0 0 0 2.4-2.4Z"/><path d="M19 3v3M20.5 4.5h-3"/></svg>`,
         // [B][E] edit by smsong : 상세보기(눈) — 아이콘 전용 버튼에서 사용
         eye: `<svg viewBox="0 0 24 24" ${s}><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.8"/></svg>`,
         // [B][E] edit by smsong : 기록 가져오기(붙여넣기)
