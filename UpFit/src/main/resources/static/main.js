@@ -603,6 +603,16 @@ function totalWorkoutCount() { return state.sessions.reduce((a, s) => a + (s.wor
 const LB_PER_KG = 2.2046226218;
 function lbsToKg(lbs) { return Math.round(lbs / LB_PER_KG); }
 function kgToLbs(kg) { return Math.round(kg * LB_PER_KG); }
+// [B] edit by smsong : "실제 든 무게"의 lbs 병기 텍스트.
+//   · origLbs(사용자가 lbs 로 입력한 원본)가 있으면 그 값을, 없으면 kg→lbs 환산값을 쓴다.
+//   · 프로젝트 전체에서 무게를 보여줄 때 동일하게 사용 → 표기가 어긋나지 않는다.
+//   반환: "(220lbs)" 형태의 span 문자열. kg 표기는 호출부가 그대로 유지한다.
+function lbsSpan(kg, origLbs) {
+    if (kg == null) return '';
+    const lbs = (origLbs != null) ? origLbs : kgToLbs(kg);
+    return `<span class="rec-lbs">(${lbs}lbs)</span>`;
+}
+// [E] edit by smsong
 // 맨몸 종목 판정: 해당 종목의 모든 운동이 맨몸이면 true → 횟수 그래프로 전환
 function exerciseIsBodyweight(exercise) {
     const ws = [];
@@ -627,13 +637,14 @@ function exerciseSessionStats(exercise, includeAssisted) {
         const ws = (s.workouts || []).filter(w => w.exercise === exercise && (withAssist || !w.assisted));
         if (!ws.length) return;
         let top = 0, reps = 0, sets = 0, vol = 0;
+        let topLbs = null;   // [B][E] edit by smsong : 최고 무게를 낸 세트의 lbs 원본(있으면)
         ws.forEach(w => {
-            top = Math.max(top, w.weight || 0);
+            if ((w.weight || 0) > top) { top = w.weight || 0; topLbs = (w.origLbs != null ? w.origLbs : null); }
             reps += (w.reps || 0) * (w.sets || 0);   // 총 반복수 = 횟수 × 세트
             sets += (w.sets || 0);
             vol += volumeOf(w);
         });
-        out.push({ id: s.id, date: s.date, startTime: s.startTime, topWeight: top, totalReps: reps, totalSets: sets, volume: vol });
+        out.push({ id: s.id, date: s.date, startTime: s.startTime, topWeight: top, topLbs: topLbs, totalReps: reps, totalSets: sets, volume: vol });
     });
     return out;
 }
@@ -1084,14 +1095,10 @@ function sessionCardHtml(s, draggable) {
 // 운동은 항상 서버에 저장된 상태이므로 식별자로 w.id 를 그대로 쓴다.
 function workoutRowHtml(w, sessionId) {
     const vol = volumeOf(w);
-    // [B] edit by smsong : 무게 표시 — kg 은 항상 유지하고, lbs 를 괄호로 함께 보여준다.
-    //   · origLbs 가 있으면(사용자가 lbs 로 입력한 값) 그 "원래 값"을 그대로 병기한다.
-    //   · 없으면(kg 입력) kg → lbs 환산값을 대신 보여준다.
-    //   맨몸은 무게가 없으므로 그대로 "맨몸".
-    const lbsShown = w.bodyweight ? null : (w.origLbs != null ? w.origLbs : kgToLbs(w.weight));
+    // [B] edit by smsong : 무게 표시 — kg 은 항상 유지하고, lbs 를 괄호로 함께 보여준다(공용 헬퍼).
     const weightTxt = w.bodyweight
         ? '맨몸'
-        : `${w.weight}kg <span class="rec-lbs">(${lbsShown}lbs)</span>`;
+        : `${w.weight}kg ${lbsSpan(w.weight, w.origLbs)}`;
     // [E] edit by smsong
     // 부위 태그는 세션 카드/세션 폼에만 표시 → 운동 행에는 맨몸/보조 표시만 남긴다
     const tags = [];
@@ -1303,7 +1310,7 @@ function renderChange() {
             html += chartLegend([[C_WEIGHT, '총 횟수 (회)'], [C_VOL, '총 세트']]);
         } else {
             html += `<div class="cmp-list">
-                <div class="cmp-row tap" data-cmp-k="topWeight"><span class="cmp-k">최고 무게</span><div class="cmp-right"><span class="cmp-v tabnum">${last.topWeight}kg</span>${deltaChip(last.topWeight, prev ? prev.topWeight : null, 'kg')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
+                <div class="cmp-row tap" data-cmp-k="topWeight"><span class="cmp-k">최고 무게</span><div class="cmp-right"><span class="cmp-v tabnum">${last.topWeight}kg ${lbsSpan(last.topWeight, last.topLbs)}</span>${deltaChip(last.topWeight, prev ? prev.topWeight : null, 'kg')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
                 <div class="cmp-row tap" data-cmp-k="totalReps"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
                 <div class="cmp-row tap" data-cmp-k="totalSets"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
                 <div class="cmp-row tap" data-cmp-k="volume"><span class="cmp-k">총 볼륨</span><div class="cmp-right"><span class="cmp-v tabnum">${last.volume}kg</span>${deltaChip(last.volume, prev ? prev.volume : null, 'kg')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
@@ -2751,7 +2758,7 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         if (!ws.length) return `<div class="cmpx-empty">기록 없음</div>`;
         return ws.map(w => `
             <div class="cmpx-set">
-                <div class="cmpx-set-main tabnum">${w.bodyweight ? '맨몸' : w.weight + 'kg'} × ${w.reps}회 × ${w.sets}세트</div>
+                <div class="cmpx-set-main tabnum">${w.bodyweight ? '맨몸' : `${w.weight}kg ${lbsSpan(w.weight, w.origLbs)}`} × ${w.reps}회 × ${w.sets}세트</div>
                 <div class="cmpx-set-sub">
                     <span class="tabnum">${volumeOf(w)} kg</span>
                     ${w.assisted ? '<span class="as">보조</span>' : ''}
@@ -2801,13 +2808,16 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
                 const pv = prevStat ? prevStat[m.k] : null;
                 const lv = lastStat[m.k];
                 const on = opts.focus === m.k ? ' on' : '';
+                // [B][E] edit by smsong : 최고 무게 행에만 lbs 병기(실제 든 무게). 볼륨/횟수/세트는 제외.
+                const pLbs = (m.k === 'topWeight' && pv != null) ? ' ' + lbsSpan(pv, prevStat ? prevStat.topLbs : null) : '';
+                const lLbs = (m.k === 'topWeight' && lv != null) ? ' ' + lbsSpan(lv, lastStat.topLbs) : '';
                 return `<div class="cmpx-m${on}">
-                    <div class="cmpx-mv prev tabnum">${pv == null ? '—' : pv + m.unit}</div>
+                    <div class="cmpx-mv prev tabnum">${pv == null ? '—' : pv + m.unit + pLbs}</div>
                     <div class="cmpx-mk">
                         <span class="cmpx-mk-t">${m.label}</span>
                         ${deltaChip(lv, pv, m.unit)}
                     </div>
-                    <div class="cmpx-mv last tabnum">${lv}${m.unit}</div>
+                    <div class="cmpx-mv last tabnum">${lv}${m.unit}${lLbs}</div>
                 </div>`;
             }).join('')}
         </div>
