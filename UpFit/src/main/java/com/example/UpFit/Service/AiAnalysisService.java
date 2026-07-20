@@ -65,16 +65,15 @@ public class AiAnalysisService {
         "- 과장·단정 금지. 의학적 조언이 아니라 트레이닝 관점의 해석임을 유지한다.",
         "- 한국어로, 간결하고 실용적으로 작성한다.",
         "",
-        "[출력 형식] — 오직 아래 JSON 만 출력한다. 마크다운/설명/코드펜스 금지.",
-        "{",
-        "  \"headline\": \"한 줄 요약\",",
-        "  \"trend\": \"up|down|flat|mixed\",",
-        "  \"verdict\": \"growth|loss|maintain|unclear\",",
-        "  \"confidence\": 0-100,",
-        "  \"analysis\": [\"문단1\", \"문단2\", ...],",
-        "  \"recommendations\": [\"권장1\", \"권장2\", ...],",
-        "  \"cautions\": [\"주의1\", ...]",
-        "}"
+        "[출력 형식] — 정해진 JSON 스키마로만 응답한다(서버가 구조를 강제함). 마크다운/코드펜스 금지.",
+        "  · headline : 한 줄 요약(40자 이내)",
+        "  · trend    : up | down | flat | mixed 중 하나",
+        "  · verdict  : growth | loss | maintain | unclear 중 하나",
+        "  · confidence : 0~100 정수(데이터가 적으면 낮게)",
+        "  · analysis : 핵심 분석 2~4개(각 항목 2~3문장). 장황하게 늘리지 말 것.",
+        "  · recommendations : 실천 권장 2~3개(각 1~2문장)",
+        "  · cautions : 주의/한계 0~2개",
+        "전체 응답은 간결하게 유지한다(불필요하게 길게 쓰지 말 것)."
     );
 
     public AiAnalysisResponseDTO analyze(AiAnalysisRequestDTO req) {
@@ -99,41 +98,112 @@ public class AiAnalysisService {
         ObjectNode genCfg = body.putObject("generationConfig");
         genCfg.put("responseMimeType", "application/json");
         genCfg.put("temperature", 0.4);
-        genCfg.put("maxOutputTokens", 1400);
+        // [B] edit by smsong : 출력 예산 대폭 상향.
+        //   gemini-2.5-flash 는 thinking 모델이라 maxOutputTokens 안에서 "사고 + 출력"을 함께 쓴다.
+        //   1400 은 사고에 소진돼 정작 JSON 이 중간에 잘렸다(파싱 에러 원인). 8192 로 넉넉히 잡는다.
+        genCfg.put("maxOutputTokens", 8192);
+        // thinking 예산을 제한해 출력이 잘리지 않도록 한다(-1=자동, 0=사고 최소).
+        //   분석 품질을 위해 약간의 사고는 허용(1024). 지원되지 않는 구버전이면 이 필드는 무시된다.
+        ObjectNode thinking = genCfg.putObject("thinkingConfig");
+        thinking.put("thinkingBudget", 1024);
+        // 응답 구조를 스키마로 고정 → 모델이 형식을 벗어나거나 장황해지지 않게 한다.
+        genCfg.set("responseSchema", buildResponseSchema());
+        // [E] edit by smsong
 
         String url = "https://generativelanguage.googleapis.com/v1beta/models/"
                 + props.getModel() + ":generateContent";
 
+        String raw;
         try {
-            String raw = http.post()
+            raw = http.post()
                     .uri(url)
                     .header("x-goog-api-key", props.getApiKey())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(om.writeValueAsString(body))
                     .retrieve()
                     .body(String.class);
+        } catch (Exception e) {
+            log.error("Gemini 호출 실패", e);
+            throw new RuntimeException("AI 분석 서버 호출에 실패했어요. 잠시 후 다시 시도해 주세요.");
+        }
 
+        try {
             return parse(raw);
         } catch (Exception e) {
-            log.error("Gemini 분석 실패", e);
-            throw new RuntimeException("AI 분석에 실패했어요. 잠시 후 다시 시도해 주세요.");
+            // [B][E] edit by smsong : 파싱 실패 시 원문 앞부분을 남겨 원인(잘림/차단/쿼터)을 바로 확인.
+            //   parse() 가 던진 구체적 메시지(잘림/차단 등)는 그대로 사용자에게 전달한다.
+            String head = raw == null ? "null" : raw.substring(0, Math.min(raw.length(), 1500));
+            log.error("Gemini 응답 처리 실패. 원문(일부): {}", head, e);
+            String msg = (e.getMessage() != null && !e.getMessage().isBlank())
+                    ? e.getMessage()
+                    : "AI 분석 결과를 해석하지 못했어요. 잠시 후 다시 시도해 주세요.";
+            throw new RuntimeException(msg);
         }
     }
+
+    // [B] edit by smsong : 응답 JSON 스키마 (Gemini structured output)
+    private ObjectNode buildResponseSchema() {
+        ObjectNode schema = om.createObjectNode();
+        schema.put("type", "OBJECT");
+        ObjectNode p = schema.putObject("properties");
+        p.putObject("headline").put("type", "STRING");
+        p.putObject("trend").put("type", "STRING");
+        p.putObject("verdict").put("type", "STRING");
+        p.putObject("confidence").put("type", "INTEGER");
+        ObjectNode analysis = p.putObject("analysis");
+        analysis.put("type", "ARRAY");
+        analysis.putObject("items").put("type", "STRING");
+        ObjectNode recos = p.putObject("recommendations");
+        recos.put("type", "ARRAY");
+        recos.putObject("items").put("type", "STRING");
+        ObjectNode cautions = p.putObject("cautions");
+        cautions.put("type", "ARRAY");
+        cautions.putObject("items").put("type", "STRING");
+        ArrayNode req = schema.putArray("required");
+        req.add("headline"); req.add("trend"); req.add("verdict"); req.add("analysis");
+        return schema;
+    }
+    // [E] edit by smsong
 
     // 응답에서 model 텍스트(JSON)를 꺼내 DTO 로 파싱
     private AiAnalysisResponseDTO parse(String raw) throws Exception {
         JsonNode root = om.readTree(raw);
-        JsonNode textNode = root.path("candidates").path(0)
-                .path("content").path("parts").path(0).path("text");
-        if (textNode.isMissingNode()) {
-            throw new RuntimeException("AI 응답이 비었습니다");
+
+        // [B] edit by smsong : 프롬프트 차단(안전필터)·쿼터 등 오류를 먼저 걸러 명확히 알린다
+        if (root.has("error")) {
+            String msg = root.path("error").path("message").asText("알 수 없는 오류");
+            throw new RuntimeException("AI 서버 오류: " + msg);
         }
+        JsonNode cand = root.path("candidates").path(0);
+        if (cand.isMissingNode()) {
+            String block = root.path("promptFeedback").path("blockReason").asText("");
+            throw new RuntimeException(block.isEmpty() ? "AI 응답이 비었습니다" : "요청이 차단되었습니다(" + block + ")");
+        }
+        // 응답이 토큰 한도로 잘렸는지 확인 → 잘렸다면 파싱을 시도하지 말고 명확히 안내
+        String finish = cand.path("finishReason").asText("");
+        JsonNode textNode = cand.path("content").path("parts").path(0).path("text");
+        if (textNode.isMissingNode() || textNode.asText().isBlank()) {
+            if ("MAX_TOKENS".equals(finish)) {
+                throw new RuntimeException("분석 내용이 너무 길어 응답이 잘렸어요. 다시 시도해 주세요.");
+            }
+            throw new RuntimeException("AI 응답이 비었습니다(" + (finish.isEmpty() ? "원인 불명" : finish) + ")");
+        }
+
         String jsonText = textNode.asText().trim();
         // 혹시 코드펜스가 섞이면 제거
         if (jsonText.startsWith("```")) {
             jsonText = jsonText.replaceAll("^```[a-zA-Z]*", "").replaceAll("```$", "").trim();
         }
-        JsonNode a = om.readTree(jsonText);
+        JsonNode a;
+        try {
+            a = om.readTree(jsonText);
+        } catch (Exception parseErr) {
+            // [B][E] edit by smsong : 텍스트는 있으나 JSON 이 깨진 경우(대개 MAX_TOKENS 로 중간 잘림)
+            if ("MAX_TOKENS".equals(finish)) {
+                throw new RuntimeException("분석 내용이 너무 길어 응답이 잘렸어요. 다시 시도해 주세요.");
+            }
+            throw parseErr;
+        }
 
         return AiAnalysisResponseDTO.builder()
                 .headline(txt(a, "headline"))

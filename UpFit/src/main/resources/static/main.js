@@ -141,7 +141,22 @@ async function apiReq(method, path, body) {
             Auth.invalidSession();                     // 서버가 거부 → 알림 + login.html
             const e = new Error('AUTH'); e.auth = true; throw e;
         }
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) {
+            // [B][E] edit by smsong : 서버가 내려준 오류 메시지를 최대한 살려 전달한다.
+            //   Spring 기본 오류 응답은 { message, error, ... } 형태. 없으면 상태코드만.
+            let serverMsg = '';
+            try {
+                const t = await res.text();
+                if (t) {
+                    try { const j = JSON.parse(t); serverMsg = j.message || j.error || ''; }
+                    catch (_) { serverMsg = t.slice(0, 200); }
+                }
+            } catch (_) {}
+            const e = new Error(serverMsg || ('HTTP ' + res.status));
+            e.status = res.status;
+            if (serverMsg) e.serverMsg = serverMsg;
+            throw e;
+        }
         const txt = await res.text();
         return txt ? JSON.parse(txt) : null;
     } finally {
@@ -520,6 +535,8 @@ function currentWeight() {
 // 에러 메시지 표준화
 function errMsg(err, fallback) {
     if (err && err.auth) return '로그인이 만료되었어요. 다시 로그인해 주세요';
+    // [B][E] edit by smsong : 서버가 구체적 사유를 내려줬으면 그걸 우선 보여준다(AI 분석 잘림/차단 등)
+    if (err && err.serverMsg) return err.serverMsg;
     return fallback || '문제가 발생했어요';
 }
 
