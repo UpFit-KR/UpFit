@@ -124,9 +124,11 @@ const Busy = (function () {
 });
 // [E] edit by smsong
 
-async function apiReq(method, path, body) {
-    // [B][E] edit by smsong : API 시작 ~ 종료 동안 로딩 폼 표시 + 입력 차단
-    Busy.start();
+async function apiReq(method, path, body, opts) {
+    // [B] edit by smsong : opts.silent 이면 전역 로딩 폼을 띄우지 않는다.
+    //   (AI 분석처럼 자체 로딩 UI 가 따로 있는 요청에서 중복 로딩창을 막기 위함)
+    const silent = !!(opts && opts.silent);
+    if (!silent) Busy.start();   // API 시작 ~ 종료 동안 로딩 폼 표시 + 입력 차단
     try {
         const token = Auth.getToken();
         // 요청 직전에도 만료 확인 (30분 토큰)
@@ -160,7 +162,7 @@ async function apiReq(method, path, body) {
         const txt = await res.text();
         return txt ? JSON.parse(txt) : null;
     } finally {
-        Busy.end();
+        if (!silent) Busy.end();
     }
 }
 // [B] edit by smsong : /workout/* → /session/* 로 전면 교체 (세션 구조)
@@ -182,8 +184,8 @@ const api = {
     listExercises: ()   => apiReq('GET',    `/exercise/${UID}`),
     addExercise:   (nm) => apiReq('POST',   `/exercise/${UID}`, { name: nm }),
     delExercise:   (id) => apiReq('DELETE', `/exercise/${UID}/${id}`),
-    // [B][E] edit by smsong : AI 성장 분석 — 프런트가 구성한 페이로드를 백엔드(Gemini)로 전달
-    aiAnalyze:     (payload) => apiReq('POST', `/ai/analyze/${UID}`, payload),
+    // [B][E] edit by smsong : AI 성장 분석 — 자체 로딩 UI 가 있으므로 전역 로딩 폼은 끈다(silent)
+    aiAnalyze:     (payload) => apiReq('POST', `/ai/analyze/${UID}`, payload, { silent: true }),
     // [B] edit by smsong : 내 정보(신체 정보 포함) 조회/수정 — 키/현재 체중/목표 체중을 DB에 영속화
     getMe:      ()      => apiReq('GET', `/user/uid/${UID}`),
     updateMe:   (dto)   => apiUserUpdate(dto)
@@ -603,14 +605,15 @@ function totalWorkoutCount() { return state.sessions.reduce((a, s) => a + (s.wor
 const LB_PER_KG = 2.2046226218;
 function lbsToKg(lbs) { return Math.round(lbs / LB_PER_KG); }
 function kgToLbs(kg) { return Math.round(kg * LB_PER_KG); }
-// [B] edit by smsong : "사용자가 lbs 로 입력한 무게"에만 lbs 를 병기한다.
-//   · origLbs 가 있을 때만(=lbs 로 입력/마이그레이션된 세트) 그 원본 lbs 를 괄호로 표시.
-//   · kg 으로 입력한 세트는 환산해서 덧붙이지 않는다(빈 문자열).
+// [B] edit by smsong : 무게 표기 텍스트.
+//   · 사용자가 lbs 로 입력한 세트(origLbs 있음) → "290lbs (132kg)" : 입력값 그대로 lbs 를 주표기로.
+//   · kg 로 입력한 세트(origLbs 없음)          → "100kg"          : kg 만.
+//   앱의 계산은 kg 기준이므로 kg 도 괄호로 함께 남긴다.
 //   프로젝트 전체에서 무게를 보여줄 때 동일하게 사용 → 표기가 어긋나지 않는다.
-//   반환: origLbs 있으면 " (150lbs)" 형태(앞 공백 포함), 없으면 "".
-function lbsSpan(kg, origLbs) {
-    if (origLbs == null) return '';
-    return ` <span class="rec-lbs">(${origLbs}lbs)</span>`;
+function weightLabel(kg, origLbs) {
+    if (kg == null) return '';
+    if (origLbs != null) return `${origLbs}lbs <span class="rec-lbs">(${kg}kg)</span>`;
+    return `${kg}kg`;
 }
 // [E] edit by smsong
 // 맨몸 종목 판정: 해당 종목의 모든 운동이 맨몸이면 true → 횟수 그래프로 전환
@@ -1095,11 +1098,8 @@ function sessionCardHtml(s, draggable) {
 // 운동은 항상 서버에 저장된 상태이므로 식별자로 w.id 를 그대로 쓴다.
 function workoutRowHtml(w, sessionId) {
     const vol = volumeOf(w);
-    // [B] edit by smsong : 무게 표시 — kg 은 항상 표시. lbs 로 입력한 세트만 lbs 병기(공용 헬퍼).
-    const weightTxt = w.bodyweight
-        ? '맨몸'
-        : `${w.weight}kg${lbsSpan(w.weight, w.origLbs)}`;
-    // [E] edit by smsong
+    // [B][E] edit by smsong : 무게 표시(공용 헬퍼). lbs 입력 세트는 "290lbs (132kg)", kg 입력은 "100kg".
+    const weightTxt = w.bodyweight ? '맨몸' : weightLabel(w.weight, w.origLbs);
     // 부위 태그는 세션 카드/세션 폼에만 표시 → 운동 행에는 맨몸/보조 표시만 남긴다
     const tags = [];
     if (w.bodyweight) tags.push(`<span class="bw">맨몸</span>`);
@@ -1310,7 +1310,7 @@ function renderChange() {
             html += chartLegend([[C_WEIGHT, '총 횟수 (회)'], [C_VOL, '총 세트']]);
         } else {
             html += `<div class="cmp-list">
-                <div class="cmp-row tap" data-cmp-k="topWeight"><span class="cmp-k">최고 무게</span><div class="cmp-right"><span class="cmp-v tabnum">${last.topWeight}kg${lbsSpan(last.topWeight, last.topLbs)}</span>${deltaChip(last.topWeight, prev ? prev.topWeight : null, 'kg')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
+                <div class="cmp-row tap" data-cmp-k="topWeight"><span class="cmp-k">최고 무게</span><div class="cmp-right"><span class="cmp-v tabnum">${weightLabel(last.topWeight, last.topLbs)}</span>${deltaChip(last.topWeight, prev ? prev.topWeight : null, 'kg')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
                 <div class="cmp-row tap" data-cmp-k="totalReps"><span class="cmp-k">총 횟수</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalReps}회</span>${deltaChip(last.totalReps, prev ? prev.totalReps : null, '회')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
                 <div class="cmp-row tap" data-cmp-k="totalSets"><span class="cmp-k">총 세트</span><div class="cmp-right"><span class="cmp-v tabnum">${last.totalSets}세트</span>${deltaChip(last.totalSets, prev ? prev.totalSets : null, '세트')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
                 <div class="cmp-row tap" data-cmp-k="volume"><span class="cmp-k">총 볼륨</span><div class="cmp-right"><span class="cmp-v tabnum">${last.volume}kg</span>${deltaChip(last.volume, prev ? prev.volume : null, 'kg')}<span class="cmp-chev">${icon('chevR')}</span></div></div>
@@ -2758,7 +2758,7 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         if (!ws.length) return `<div class="cmpx-empty">기록 없음</div>`;
         return ws.map(w => `
             <div class="cmpx-set">
-                <div class="cmpx-set-main tabnum">${w.bodyweight ? '맨몸' : `${w.weight}kg${lbsSpan(w.weight, w.origLbs)}`} × ${w.reps}회 × ${w.sets}세트</div>
+                <div class="cmpx-set-main tabnum">${w.bodyweight ? '맨몸' : weightLabel(w.weight, w.origLbs)} × ${w.reps}회 × ${w.sets}세트</div>
                 <div class="cmpx-set-sub">
                     <span class="tabnum">${volumeOf(w)} kg</span>
                     ${w.assisted ? '<span class="as">보조</span>' : ''}
@@ -2808,16 +2808,18 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
                 const pv = prevStat ? prevStat[m.k] : null;
                 const lv = lastStat[m.k];
                 const on = opts.focus === m.k ? ' on' : '';
-                // [B][E] edit by smsong : 최고 무게 행에만, 그것도 lbs 로 입력한 세트에만 lbs 병기.
-                const pLbs = (m.k === 'topWeight' && pv != null) ? lbsSpan(pv, prevStat ? prevStat.topLbs : null) : '';
-                const lLbs = (m.k === 'topWeight' && lv != null) ? lbsSpan(lv, lastStat.topLbs) : '';
+                // [B][E] edit by smsong : 최고 무게는 무게 헬퍼로 표기(lbs 입력 세트는 "290lbs (132kg)").
+                //   그 외 지표(횟수/세트/볼륨)는 기존처럼 값+단위.
+                const isTop = m.k === 'topWeight';
+                const prevTxt = pv == null ? '—' : (isTop ? weightLabel(pv, prevStat ? prevStat.topLbs : null) : (pv + m.unit));
+                const lastTxt = isTop ? weightLabel(lv, lastStat.topLbs) : (lv + m.unit);
                 return `<div class="cmpx-m${on}">
-                    <div class="cmpx-mv prev tabnum">${pv == null ? '—' : pv + m.unit + pLbs}</div>
+                    <div class="cmpx-mv prev tabnum">${prevTxt}</div>
                     <div class="cmpx-mk">
                         <span class="cmpx-mk-t">${m.label}</span>
                         ${deltaChip(lv, pv, m.unit)}
                     </div>
-                    <div class="cmpx-mv last tabnum">${lv}${m.unit}${lLbs}</div>
+                    <div class="cmpx-mv last tabnum">${lastTxt}</div>
                 </div>`;
             }).join('')}
         </div>
