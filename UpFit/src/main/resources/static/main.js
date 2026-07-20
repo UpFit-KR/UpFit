@@ -2319,7 +2319,8 @@ function openSessionEditor(sessionId, date, mode, editorOpts) {
     };
 
     // [B] edit by smsong : 전체보기 상태. 조회↔수정 전환(재렌더) 사이에도 유지된다.
-    let fullView = false;
+    //   editorOpts.full 로 초기 확대 상태를 받는다(비교 폼이 확대돼 있으면 상세도 확대로 연다).
+    let fullView = !!editorOpts.full;
     // [E] edit by smsong
 
     renderMode();
@@ -2373,8 +2374,8 @@ function openSessionEditor(sessionId, date, mode, editorOpts) {
             full: fullView,
             onFull: v => { fullView = v; },
             isDirty: () => false,
-            // [B][E] edit by smsong : 비교 폼에서 열렸으면(onBack), 닫기 시 비교 폼으로 복귀
-            onRequestClose: onBack ? (() => onBack()) : null
+            // [B][E] edit by smsong : 비교 폼에서 열렸으면(onBack), 닫기 시 그때의 확대 상태를 넘겨 복귀
+            onRequestClose: onBack ? (() => onBack(fullView)) : null
         });
 
         document.getElementById('seEdit').onclick = () => { curMode = 'edit'; renderMode(); };
@@ -2874,18 +2875,25 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
 
     // 각 열의 아이콘 버튼 → 그 날의 운동 기록 상세(조회 모드)로 이동.
     // [B][E] edit by smsong : 상세 폼을 닫으면 이 비교 폼으로 복귀한다(onBack).
-    //   복귀 시 현재 상태(보조 포함/확대/AI 결과/접힘)를 그대로 넘겨 동일 화면으로 되돌린다.
+    //   · 폼 확대 상태를 양방향으로 일치시킨다:
+    //     - 비교 폼이 확대돼 있으면 상세도 확대로 연다(editorOpts.full).
+    //     - 상세에서 확대/축소를 바꾼 뒤 닫으면 그 최종 상태(backFull)로 비교 폼을 복귀시킨다.
+    //   · 보조 포함 여부 / AI 결과 / 접힘 상태도 그대로 복원한다.
     document.querySelectorAll('#sheet [data-open-sess]').forEach(b => b.onclick = () => {
         const s = sessionById(b.dataset.openSess);
         if (!s) return toast('기록을 찾을 수 없어요');
         const card = document.getElementById('aiCard');
-        const backOpts = Object.assign({}, opts, {
-            includeAssisted: inc,
-            full: Sheet1.isFull(),
-            aiCollapsed: !!(card && card.classList.contains('collapsed'))
-        });
+        const curFull = Sheet1.isFull();
         openSessionEditor(s.id, s.date, 'view', {
-            onBack: () => openCompareSheet(exercise, prevStat, lastStat, backOpts)
+            full: curFull,   // 비교 폼의 현재 확대 상태로 상세를 연다
+            onBack: (backFull) => {
+                const backOpts = Object.assign({}, opts, {
+                    includeAssisted: inc,
+                    full: (backFull != null ? backFull : curFull),   // 상세에서 바뀐 확대 상태를 이어받는다
+                    aiCollapsed: !!(card && card.classList.contains('collapsed'))
+                });
+                openCompareSheet(exercise, prevStat, lastStat, backOpts);
+            }
         });
     });
 
