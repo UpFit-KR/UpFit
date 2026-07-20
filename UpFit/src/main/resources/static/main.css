@@ -1543,7 +1543,7 @@ textarea.input.im-text {
 
 .ai-card {
     border: 1px solid var(--line); border-radius: var(--radius-lg);
-    background: var(--ink-850); padding: 14px 14px 12px;
+    background: var(--ink-850); padding: 14px;
     animation: aiIn .28s ease both;
 }
 @keyframes aiIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -1590,7 +1590,10 @@ textarea.input.im-text {
 .ai-card.collapsed .ai-collapse {
     max-height: 0;
     opacity: 0;
-    margin-top: -8px;   /* 헤더 아래 여백 흡수 */
+    margin-top: 0;   /* [B][E] edit by smsong : 접히면 본문 높이 0. 헤더 margin-bottom(0)과 함께
+                        카드 위·아래 패딩(14px)만 남아 상하 여백이 정확히 대칭이 된다. */
+    padding-top: 0;
+    padding-bottom: 0;
 }
 /* [E] edit by smsong */
 
