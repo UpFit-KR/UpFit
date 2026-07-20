@@ -1408,7 +1408,8 @@ textarea.input.im-text {
 /* ---------- 두 기록 비교 폼 (openCompareSheet) ---------- */
 .cmpx-meta { margin-bottom: 12px; }
 .cmpx-meta .cmpx-ex { font-size: 16px; font-weight: 800; letter-spacing: -0.2px; }
-.cmpx-meta .cmpx-sub { font-size: 12px; color: var(--text-mute); margin-top: 3px; line-height: 1.5; }
+/* [B][E] edit by smsong : 날짜(기간) 줄. 이제 액션 버튼과 한 줄에 놓여 세로 중앙 정렬되므로 위 여백 제거 */
+.cmpx-meta .cmpx-sub { font-size: 12px; color: var(--text-mute); line-height: 1.5; }
 .cmpx-meta .cmpx-sub b { color: var(--accent); }
 
 /* 좌=비교(과거) / 우=최근 임을 색으로 각인 */
@@ -1528,6 +1529,8 @@ textarea.input.im-text {
 /* 종목명 줄에 AI 버튼을 오른쪽 끝으로 */
 .cmpx-meta-top { display: flex; align-items: center; gap: 8px; }
 .cmpx-meta-top .cmpx-ex { flex: 1; min-width: 0; }
+/* [B][E] edit by smsong : 날짜 줄이 남는 폭을 차지하고, 액션 버튼은 오른쪽 끝에 붙는다 */
+.cmpx-meta-top .cmpx-sub { flex: 1; min-width: 0; }
 /* AI 버튼 — 그라데이션 강조(다른 아이콘 버튼과 구분) */
 .ibtn.sm.cmpx-ai {
     flex: 0 0 auto; color: #fff;

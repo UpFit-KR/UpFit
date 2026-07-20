@@ -2908,9 +2908,10 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
 
     openSheet(`
         <div class="cmpx-meta">
+            <!-- [B] edit by smsong : 종목명 제목은 시트 헤더("○○ 비교")와 중복이라 제거.
+                 날짜(기간) 줄과 액션 버튼(보조 토글 + AI)을 한 줄에 마주 보게 배치한다. -->
             <div class="cmpx-meta-top">
-                <div class="cmpx-ex">${esc(exercise)}</div>
-                <!-- [B] edit by smsong : 헤더 우측 액션 — 보조 보기 토글 + AI 분석 (둘 다 아이콘 전용) -->
+                <div class="cmpx-sub">${esc(dateCap(prevStat))} <b>→</b> ${esc(dateCap(lastStat))}${isBw ? ' · 맨몸' : ''} · ${inc ? '보조 포함' : '보조 제외'}</div>
                 <div class="cmpx-actions">
                     <button class="ibtn sm cmpx-assist-btn ${inc ? 'on' : ''}" type="button" id="cmpxAssistBtn"
                             title="${inc ? '보조 포함 (탭하면 제외)' : '보조 제외 (탭하면 포함)'}"
@@ -2918,9 +2919,8 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
                     <button class="ibtn sm cmpx-ai" type="button" id="cmpxAiBtn"
                             title="AI 성장 분석" aria-label="AI 성장 분석">${icon('spark')}</button>
                 </div>
-                <!-- [E] edit by smsong -->
             </div>
-            <div class="cmpx-sub">${esc(dateCap(prevStat))} <b>→</b> ${esc(dateCap(lastStat))}${isBw ? ' · 맨몸' : ''} · ${inc ? '보조 포함' : '보조 제외'}</div>
+            <!-- [E] edit by smsong -->
         </div>
 
         <!-- [B][E] edit by smsong : AI 분석 결과가 채워질 영역(처음엔 비어 있음) -->
