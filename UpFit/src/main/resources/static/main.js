@@ -1848,7 +1848,13 @@ function bucketKeyOf(dateStr, unit) {
 }
 // 버킷 키 → x축 라벨
 function bucketLabel(key, unit) {
-    if (unit === 'month') { const m = Number(key.split('-')[1]); return `${m}월`; }
+    if (unit === 'month') {
+        // [B][E] edit by smsong : 1년 그래프에서 작년/올해 같은 달(예: 7월)이 겹쳐 헷갈리지 않도록,
+        //   1월이거나 연도 경계이면 "26.1" 처럼 연도를 함께 표시한다.
+        const [y, m] = key.split('-');
+        const mm = Number(m);
+        return mm === 1 ? `${y.slice(2)}.${mm}월` : `${mm}월`;
+    }
     return labelMd(key);
 }
 // 기간 전체의 버킷 목록(과거 → 현재). 기록 유무와 무관하게 축을 먼저 만든다.
@@ -1893,11 +1899,21 @@ function filterByPeriod(items, dateOf, periodKey) {
 function aggSeries(items, dateOf, valueOf, periodKey, mode, rawLabelOf) {
     const { unit, keys } = periodBuckets(periodKey);
     if (unit === 'raw') {
-        return items.map(it => ({
+        // [B] edit by smsong : raw(1일) 모드는 item 을 그대로 점으로 쓴다.
+        //   반드시 날짜(+시간) 오름차순으로 정렬해야 x축이 시간순으로 나온다.
+        //   (원본이 정렬돼 있지 않으면 점 순서가 뒤섞여 "날짜 매핑이 안 맞는" 것처럼 보였다.)
+        const sorted = items.slice().sort((a, b) => {
+            const da = dateOf(a), db = dateOf(b);
+            if (da !== db) return da < db ? -1 : 1;
+            const ta = (a && a.startTime) || '', tb = (b && b.startTime) || '';
+            return ta < tb ? -1 : ta > tb ? 1 : 0;
+        });
+        return sorted.map(it => ({
             label: rawLabelOf ? rawLabelOf(it) : labelMd(dateOf(it)),
             value: valueOf(it)
         }));
     }
+    // [E] edit by smsong
     const map = {};
     items.forEach(it => {
         const k = bucketKeyOf(dateOf(it), unit);
