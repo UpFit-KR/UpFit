@@ -611,6 +611,20 @@ function dayBodyParts(date) {
     return BODY_PARTS.filter(p => set.has(p));
 }
 function volumeOfDate(date) { return sessionsByDate(date).reduce((a, s) => a + sessionVolume(s), 0); }
+
+// [B] edit by smsong : 각 부위를 "마지막으로 운동한 날"과 "그 뒤로 지난 일수"를 구한다.
+//   홈에서 "어느 부위가 오래 쉬었는지 → 오늘 뭘 할지"를 한눈에 보여주는 데 쓴다.
+function partLastWorkout(part) {
+    const dates = state.sessions
+        .filter(s => (s.bodyParts || []).indexOf(part) >= 0)
+        .map(s => s.date)
+        .sort((a, b) => a < b ? 1 : -1);
+    if (!dates.length) return { date: null, daysAgo: null };
+    const last = dates[0];
+    const ms = parseDate(todayStr()) - parseDate(last);
+    return { date: last, daysAgo: Math.max(0, Math.round(ms / 86400000)) };
+}
+// [E] edit by smsong
 function setsOfDate(date) { return sessionsByDate(date).reduce((a, s) => a + sessionSets(s), 0); }
 function durationOfDate(date) {
     const list = sessionsByDate(date).map(sessionDuration).filter(v => v != null);
@@ -782,62 +796,88 @@ function renderHome() {
         </div>
     </div>`;
 
-    // [B] edit by smsong : 오늘의 운동 기록(세션) 요약 — 시간/컨디션이 한눈에
-    //   [B][E] edit by smsong : 오늘 기록이 없으면 "최근 3일"을 대신 보여주므로 부제도 그에 맞춘다
-    html += `
-    <div class="section">
-        <div class="section-head">
-            <h2>${sessionsByDate(t).length ? '오늘 운동' : '최근 운동'}</h2>
-            <span class="sub">${dur != null ? '총 ' + fmtDur(dur) : '오늘 기록 없음 · 최근 3일'}${cond != null ? ' · 컨디션 ' + cond : ''}</span>
-        </div>`;
+    // [B] edit by smsong : 오늘의 운동 — 히어로 카드.
+    //   · 오늘 기록 O → 오늘 요약(부위·볼륨·세트·컨디션)을 강조 카드 + 세션 목록.
+    //   · 오늘 기록 X → "오늘 어디 할까요?" 부위 선택 + 부위별 휴식일 + 고른 부위 최근 3~5개 기록.
     const todaySessions = sessionsByDate(t);
+    html += `<div class="section">`;
+
     if (todaySessions.length) {
-        html += `<div class="sess-list">${todaySessions.map(s => sessionCardHtml(s, false)).join('')}</div>`;
+        const todayParts = dayBodyParts(t);
+        html += `
+        <div class="today-hero done">
+            <div class="th-top">
+                <div class="th-badge">${icon('check')} 오늘 운동 완료</div>
+                ${cond != null ? `<div class="th-cond" style="color:${condColor(cond)}">컨디션 ${cond}</div>` : ''}
+            </div>
+            <div class="th-parts">${todayParts.length ? todayParts.map(p => `<span class="th-chip">${esc(p)}</span>`).join('') : '<span class="th-chip muted">부위 미지정</span>'}</div>
+            <div class="th-metrics">
+                <div class="thm"><div class="thm-v tabnum">${vol}</div><div class="thm-k">볼륨 kg</div></div>
+                <div class="thm"><div class="thm-v tabnum">${sets}</div><div class="thm-k">세트</div></div>
+                <div class="thm"><div class="thm-v tabnum">${todaySessions.reduce((a, s) => a + (s.workouts || []).length, 0)}</div><div class="thm-k">종목</div></div>
+                <div class="thm"><div class="thm-v tabnum">${dur != null ? fmtDur(dur) : '—'}</div><div class="thm-k">시간</div></div>
+            </div>
+        </div>
+        <div class="sess-list th-sess">${todaySessions.map(s => sessionCardHtml(s, false)).join('')}</div>`;
     } else {
-        // [B] edit by smsong : 오늘 기록이 없으면 빈 화면으로 끝내지 않는다.
-        //   부위를 골라 "가장 최근 3일"의 기록을 불러와 보여준다 → 오늘 뭘 할지 바로 참고할 수 있다.
-        //   · 부위 칩은 실제 기록이 있는 부위만 노출 (없는 부위를 눌러 빈 결과를 보는 일이 없도록)
-        //   · 날짜는 오늘을 제외한 최근순. 고른 부위가 포함된 날짜만 추려 위에서 3일.
-        //   · 카드는 sessionCardHtml 을 그대로 쓴다 → #appMain 의 클릭 위임(data-open-session)이
-        //     이미 상세 시트를 열어주므로 별도 핸들러가 필요 없다.
         const partsWithData = BODY_PARTS.filter(p => state.sessions.some(s => (s.bodyParts || []).indexOf(p) >= 0));
-        if (ui.homePart && partsWithData.indexOf(ui.homePart) < 0) ui.homePart = null;   // 기록이 사라진 부위는 해제
+        if (ui.homePart && partsWithData.indexOf(ui.homePart) < 0) ui.homePart = null;
 
         const pastDates = [...new Set(state.sessions.map(s => s.date))]
             .filter(d => d !== t)
             .sort((a, b) => a < b ? 1 : -1);
-        const hitDates = pastDates
-            .filter(d => !ui.homePart || dayBodyParts(d).indexOf(ui.homePart) >= 0)
-            .slice(0, 3);
 
         if (!pastDates.length) {
-            html += `<div class="card">${emptyBlock('dumbbell', '오늘 운동 기록이 없어요', '운동 탭에서 오늘의 기록을 시작하세요')}</div>`;
+            html += `<div class="today-hero empty">
+                <div class="th-empty-ico">${icon('dumbbell')}</div>
+                <div class="th-empty-t">오늘 운동을 시작해 볼까요?</div>
+                <div class="th-empty-s">운동 탭의 ＋ 버튼으로 첫 기록을 남겨보세요</div>
+            </div>`;
         } else {
-            html += `<div class="home-recent-note">오늘 기록이 아직 없어요. 부위를 골라 최근 기록을 확인해 보세요.</div>`;
-            html += `<div class="chip-row home-parts" id="homeParts">
-                <button class="chip sm ${ui.homePart ? '' : 'active'}" data-hp="" type="button">전체</button>
-                ${partsWithData.map(p => `<button class="chip sm ${ui.homePart === p ? 'active' : ''}" data-hp="${esc(p)}" type="button">${esc(p)}</button>`).join('')}
+            // 부위별 휴식일 오버뷰 (오래 쉰 순) — 오늘 뭘 할지 결정에 직접 도움
+            const rest = partsWithData.map(p => ({ part: p, ...partLastWorkout(p) }))
+                .sort((a, b) => (b.daysAgo ?? -1) - (a.daysAgo ?? -1));
+
+            html += `
+            <div class="today-hero rest">
+                <div class="th-empty-t">오늘, 어디를 해볼까요?</div>
+                <div class="th-empty-s">오래 쉰 부위부터 · 탭하면 최근 기록을 볼 수 있어요</div>
+                <div class="rest-grid">
+                    ${rest.map(r => `
+                        <button class="rest-cell ${ui.homePart === r.part ? 'on' : ''}" data-hp="${esc(r.part)}" type="button">
+                            <span class="rest-part">${esc(r.part)}</span>
+                            <span class="rest-days ${r.daysAgo >= 4 ? 'long' : ''}">${r.daysAgo === 0 ? '오늘' : r.daysAgo === 1 ? '어제' : r.daysAgo + '일 전'}</span>
+                        </button>`).join('')}
+                </div>
             </div>`;
 
+            // 고른 부위(또는 전체)의 최근 3~5개 기록
+            const hitDates = pastDates
+                .filter(d => !ui.homePart || dayBodyParts(d).indexOf(ui.homePart) >= 0)
+                .slice(0, 5);
+            html += `<div class="section-head home-recent-head">
+                <h2>${ui.homePart ? `'${esc(ui.homePart)}' 최근 기록` : '최근 기록'}</h2>
+                <span class="sub">${ui.homePart ? '이 부위 최근 5회' : '최근 5일'}</span>
+                ${ui.homePart ? `<button class="mini-clear" id="homeClear" type="button">전체 보기</button>` : ''}
+            </div>`;
             if (hitDates.length) {
                 html += hitDates.map(date => {
                     const parts = dayBodyParts(date);
-                    const dur = durationOfDate(date);
+                    const ddur = durationOfDate(date);
                     return `
                     <div class="day-group">
                         <div class="day-head">
                             <div class="d-date">${fmtKorean(date)}</div>
-                            <div class="d-sum tabnum">기록 ${sessionsByDate(date).length} · 볼륨 ${volumeOfDate(date)} kg${dur != null ? ' · ' + fmtDur(dur) : ''}</div>
+                            <div class="d-sum tabnum">기록 ${sessionsByDate(date).length} · 볼륨 ${volumeOfDate(date)} kg${ddur != null ? ' · ' + fmtDur(ddur) : ''}</div>
                         </div>
                         ${parts.length ? `<div class="day-parts">부위 · ${parts.join(' · ')}</div>` : ''}
                         <div class="sess-list">${sessionsByDate(date).map(s => sessionCardHtml(s, false)).join('')}</div>
                     </div>`;
                 }).join('');
             } else {
-                html += `<div class="card">${emptyBlock('dumbbell', `'${ui.homePart}' 기록이 없어요`, '다른 부위를 골라보세요')}</div>`;
+                html += `<div class="card">${emptyBlock('dumbbell', `'${esc(ui.homePart)}' 기록이 없어요`, '다른 부위를 골라보세요')}</div>`;
             }
         }
-        // [E] edit by smsong
     }
     html += `</div>`;
     // [E] edit by smsong
@@ -892,11 +932,15 @@ function renderHome() {
 
     document.getElementById('view-home').innerHTML = html;
 
-    // [B] edit by smsong : 홈 — 최근 3일 부위 필터 칩. 고른 부위로 다시 추려 그린다(홈만 재렌더).
-    document.querySelectorAll('#homeParts .chip').forEach(c => c.onclick = () => {
-        ui.homePart = c.dataset.hp || null;   // 빈 값 = 전체
+    // [B] edit by smsong : 홈 — 부위 휴식 셀 탭 → 그 부위 최근 기록으로 추려 다시 그린다.
+    //   같은 부위를 다시 누르면 전체로 해제(토글).
+    document.querySelectorAll('#view-home .rest-cell[data-hp]').forEach(c => c.onclick = () => {
+        const p = c.dataset.hp || null;
+        ui.homePart = (ui.homePart === p) ? null : p;
         renderHome();
     });
+    const homeClear = document.getElementById('homeClear');
+    if (homeClear) homeClear.onclick = () => { ui.homePart = null; renderHome(); };
     // [E] edit by smsong
 
     // [B] edit by smsong : 최근 성장 → 종목 탭 시 "최근 vs 직전" 비교 폼
