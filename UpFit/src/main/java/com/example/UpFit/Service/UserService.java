@@ -5,6 +5,7 @@ import com.example.UpFit.Config.OAuthProperties.*;
 import com.example.UpFit.Config.OAuthProperties.GoogleOAuthProperties;
 import com.example.UpFit.Config.OAuthProperties.KakaoOAuthProperties;
 import com.example.UpFit.Config.OAuthProperties.NaverOAuthProperties;
+import com.example.UpFit.DTO.DeviceConflictDTO;
 import com.example.UpFit.DTO.JWTDTO;
 import com.example.UpFit.DTO.UserDTO;
 import com.example.UpFit.Entity.*;
@@ -40,6 +41,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final UserSessionRepository userSessionRepository;   // [B][E] edit by smsong : 로그인 기기 세션
     private final RestTemplate restTemplate;
     private final KakaoOAuthProperties kakaoOAuthProperties;
     private final NaverOAuthProperties naverOAuthProperties;
@@ -88,6 +90,20 @@ public class UserService {
     }
 
     // 로그인
+    // [B] edit by smsong - 일반 로그인(기기 인식). 다른 기기 세션이 있고 force=false 면 확인 요청(409).
+    public JWTDTO login(com.example.UpFit.DTO.LoginRequestDTO req) {
+        UserEntity userEntity = userRepository.findByUid(req.getUid())
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+        if (!passwordEncoder.matches(req.getPassword(), userEntity.getPassword())) {
+            throw new IllegalArgumentException("비밀번호가 일치하지 않습니다");
+        }
+        String token = issueDeviceSession(req.getUid(), req.getDeviceId(), req.getDeviceName(),
+                req.getUserAgent(), req.isForce());
+        logger.info("로그인 성공(기기: {})", req.getDeviceName());
+        return new JWTDTO(token, UserDTO.entityToDto(userEntity));
+    }
+
+    // 기존 시그니처(내부/OAuth 재사용). 기기 개념 없이 단일 토큰 발급.
     public JWTDTO login(String uid, String password) {
         UserEntity userEntity = userRepository.findByUid(uid)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
@@ -95,18 +111,172 @@ public class UserService {
             throw new IllegalArgumentException("비밀번호가 일치하지 않습니다");
         }
         String token = jwtTokenProvider.generateToken(uid);
-        logger.info("로그인 성공! 새로운 토큰이 발급되었습니다");
         return new JWTDTO(token, UserDTO.entityToDto(userEntity));
     }
 
-    // [B] edit by smsong : 토큰 갱신(로그인 유지). 유효한 토큰 → 같은 사용자로 새 토큰 재발급.
-    //   프론트가 만료 임박 시 호출한다. 만료/무효 토큰이면 예외 → 프론트는 재로그인 유도.
+    // [B] edit by smsong - 토큰 갱신(로그인 유지). 현재 토큰의 기기 세션을 새 토큰으로 교체.
+    //   토큰이 세션 테이블에 없으면(=다른 기기가 강제 로그인으로 밀어냄) 갱신 거부 → 재로그인.
+    @org.springframework.transaction.annotation.Transactional
     public JWTDTO refreshToken(String token) {
-        String newToken = jwtTokenProvider.refreshToken(token);   // 유효성 검사 + 재발급(예외 던짐)
-        String uid = jwtTokenProvider.getUidFromToken(newToken);
+        String uid;
+        try { uid = jwtTokenProvider.getUidFromToken(token); }
+        catch (Exception e) { throw new IllegalArgumentException("유효하지 않은 토큰"); }
+        if (uid == null) throw new IllegalArgumentException("유효하지 않은 토큰");
+
+        UserSessionEntity session = userSessionRepository.findByToken(token).orElse(null);
+        if (session == null) {
+            // 기기 세션이 없다 = 로그아웃됐거나 다른 기기에 밀려남
+            throw new IllegalArgumentException("세션이 종료되었습니다");
+        }
+        String newToken = jwtTokenProvider.generateToken(uid);
+        session.setToken(newToken);
+        session.setLastSeenAt(java.time.LocalDateTime.now());
+        userSessionRepository.save(session);
+
         UserEntity userEntity = userRepository.findByUid(uid)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
         return new JWTDTO(newToken, UserDTO.entityToDto(userEntity));
+    }
+
+    // 현재 기기 로그아웃 — 이 토큰의 세션만 제거(다른 기기는 유지)
+    @org.springframework.transaction.annotation.Transactional
+    public void logoutDevice(String token) {
+        userSessionRepository.findByToken(token).ifPresent(userSessionRepository::delete);
+    }
+
+    // [B] edit by smsong - OAuth 로그인 후 기기 등록(토큰 기반).
+    //   소셜 로그인은 이미 토큰을 발급받은 상태이므로, 그 토큰의 uid 로 기기 세션을 등록한다.
+    //   · 이미 이 토큰이 세션으로 등록돼 있으면(같은 기기 재진입) 그대로 성공.
+    //   · 같은 deviceId 세션이 있으면 토큰만 이 토큰으로 갱신.
+    //   · 다른 기기 세션이 있고 force=false → DeviceConflictException(확인 요청)
+    //   · force=true → 다른 기기 세션 제거 후 이 기기 등록
+    //   반환: 이 기기에 최종적으로 연결된 토큰(대부분 전달받은 token 그대로)
+    @org.springframework.transaction.annotation.Transactional
+    public String registerDevice(String token, String deviceId, String deviceName,
+                                 String userAgent, boolean force) {
+        String uid;
+        try { uid = jwtTokenProvider.getUidFromToken(token); }
+        catch (Exception e) { throw new IllegalArgumentException("유효하지 않은 토큰"); }
+        if (uid == null) throw new IllegalArgumentException("유효하지 않은 토큰");
+        if (deviceId == null || deviceId.isBlank()) {
+            // 기기 ID 없으면 세션 등록 없이 통과(구버전 호환)
+            return token;
+        }
+
+        List<UserSessionEntity> sessions = userSessionRepository.findByUid(uid);
+        UserSessionEntity mine = sessions.stream()
+                .filter(s -> deviceId.equals(s.getDeviceId())).findFirst().orElse(null);
+        List<UserSessionEntity> others = sessions.stream()
+                .filter(s -> !deviceId.equals(s.getDeviceId()))
+                .collect(Collectors.toList());
+
+        // 다른 기기가 있고 강제 아님 + 내 기기 세션이 아직 없음 → 확인 요청
+        if (!others.isEmpty() && !force && mine == null) {
+            List<DeviceConflictDTO.DeviceInfo> infos = others.stream()
+                    .map(s -> DeviceConflictDTO.DeviceInfo.builder()
+                            .deviceName(s.getDeviceName())
+                            .userAgent(s.getUserAgent())
+                            .lastSeenAt(s.getLastSeenAt())
+                            .build())
+                    .collect(Collectors.toList());
+            throw new com.example.UpFit.Exception.DeviceConflictException(
+                    DeviceConflictDTO.builder().requiresConfirmation(true).devices(infos).build());
+        }
+
+        if (force && !others.isEmpty()) {
+            userSessionRepository.deleteAll(others);
+            logger.info("강제 로그인 — 기존 {}개 기기 세션 종료", others.size());
+        }
+
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        if (mine != null) {
+            mine.setToken(token);
+            mine.setLastSeenAt(now);
+            if (deviceName != null && !deviceName.isBlank()) mine.setDeviceName(deviceName);
+            if (userAgent != null) mine.setUserAgent(userAgent);
+            userSessionRepository.save(mine);
+        } else {
+            userSessionRepository.save(UserSessionEntity.builder()
+                    .uid(uid).deviceId(deviceId)
+                    .deviceName(deviceName != null && !deviceName.isBlank() ? deviceName : "내 기기")
+                    .userAgent(userAgent)
+                    .token(token)
+                    .createdAt(now).lastSeenAt(now)
+                    .build());
+        }
+        return token;
+    }
+    // [E] edit by smsong
+
+    // 내 로그인 기기 목록
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public List<DeviceConflictDTO.DeviceInfo> myDevices(String uid) {
+        return userSessionRepository.findByUid(uid).stream()
+                .map(s -> DeviceConflictDTO.DeviceInfo.builder()
+                        .deviceName(s.getDeviceName())
+                        .userAgent(s.getUserAgent())
+                        .lastSeenAt(s.getLastSeenAt())
+                        .build())
+                .collect(Collectors.toList());
+    }
+    // [E] edit by smsong
+
+    // [B] edit by smsong - 기기 세션 발급 핵심 로직.
+    //   · 같은 deviceId 세션이 이미 있으면 → 토큰만 새로 갱신(같은 기기 재로그인, 충돌 아님)
+    //   · 다른 기기 세션이 있고 force=false → DeviceConflictException(확인 요청)
+    //   · force=true 또는 다른 기기 없음 → 다른 기기 세션 모두 제거 후 이 기기 등록
+    @org.springframework.transaction.annotation.Transactional
+    public String issueDeviceSession(String uid, String deviceId, String deviceName,
+                                     String userAgent, boolean force) {
+        if (deviceId == null || deviceId.isBlank()) {
+            // 기기 ID 가 없으면(구버전 클라이언트 등) 기기 관리 없이 단순 토큰 발급
+            return jwtTokenProvider.generateToken(uid);
+        }
+        List<UserSessionEntity> sessions = userSessionRepository.findByUid(uid);
+        UserSessionEntity mine = sessions.stream()
+                .filter(s -> deviceId.equals(s.getDeviceId())).findFirst().orElse(null);
+        List<UserSessionEntity> others = sessions.stream()
+                .filter(s -> !deviceId.equals(s.getDeviceId()))
+                .collect(Collectors.toList());
+
+        // 다른 기기가 있고 강제 로그인이 아니면 → 확인 요청
+        if (!others.isEmpty() && !force && mine == null) {
+            List<DeviceConflictDTO.DeviceInfo> infos = others.stream()
+                    .map(s -> DeviceConflictDTO.DeviceInfo.builder()
+                            .deviceName(s.getDeviceName())
+                            .userAgent(s.getUserAgent())
+                            .lastSeenAt(s.getLastSeenAt())
+                            .build())
+                    .collect(Collectors.toList());
+            throw new com.example.UpFit.Exception.DeviceConflictException(
+                    DeviceConflictDTO.builder().requiresConfirmation(true).devices(infos).build());
+        }
+
+        // 강제 로그인(또는 첫 로그인) → 다른 기기 세션 제거
+        if (force && !others.isEmpty()) {
+            userSessionRepository.deleteAll(others);
+            logger.info("강제 로그인 — 기존 {}개 기기 세션 종료", others.size());
+        }
+
+        String token = jwtTokenProvider.generateToken(uid);
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        if (mine != null) {
+            // 같은 기기 재로그인 → 토큰/이름 갱신
+            mine.setToken(token);
+            mine.setLastSeenAt(now);
+            if (deviceName != null && !deviceName.isBlank()) mine.setDeviceName(deviceName);
+            if (userAgent != null) mine.setUserAgent(userAgent);
+            userSessionRepository.save(mine);
+        } else {
+            userSessionRepository.save(UserSessionEntity.builder()
+                    .uid(uid).deviceId(deviceId)
+                    .deviceName(deviceName != null && !deviceName.isBlank() ? deviceName : "내 기기")
+                    .userAgent(userAgent)
+                    .token(token)
+                    .createdAt(now).lastSeenAt(now)
+                    .build());
+        }
+        return token;
     }
     // [E] edit by smsong
 

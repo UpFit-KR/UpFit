@@ -33,12 +33,64 @@ public class UserController {
         return ResponseEntity.ok(userService.createUser(userDTO));
     }
 
-    // 로그인
-    @Operation(summary = "로그인")
+    // 로그인 (기기 인식)
+    // [B] edit by smsong : 다른 기기에 로그인돼 있고 force=false 면 409 + 기기목록 → 프론트가 확인받아 재요청
+    @Operation(summary = "로그인 (기기 인식)")
     @PostMapping("/login")
-    public ResponseEntity<JWTDTO> login(@RequestBody UserDTO userDTO) {
-        return ResponseEntity.ok(userService.login(userDTO.getUid(), userDTO.getPassword()));
+    public ResponseEntity<?> login(@RequestBody com.example.UpFit.DTO.LoginRequestDTO req,
+                                   @RequestHeader(value = "User-Agent", required = false) String ua) {
+        if (req.getUserAgent() == null) req.setUserAgent(ua);
+        try {
+            return ResponseEntity.ok(userService.login(req));
+        } catch (com.example.UpFit.Exception.DeviceConflictException e) {
+            return ResponseEntity.status(409).body(e.getDetail());
+        }
     }
+
+    // 현재 기기 로그아웃(이 토큰 세션만 제거)
+    @Operation(summary = "로그아웃 (현재 기기)")
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@RequestHeader(value = "Authorization", required = false) String header) {
+        if (header != null && !header.isBlank()) {
+            String token = header.startsWith("Bearer ") ? header.substring(7) : header;
+            userService.logoutDevice(token);
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    // [B] edit by smsong : OAuth 로그인 후 기기 등록. 다른 기기 있고 force=false 면 409 + 기기목록.
+    @Operation(summary = "기기 등록 (OAuth 로그인 후)")
+    @PostMapping("/register-device")
+    public ResponseEntity<?> registerDevice(
+            @RequestHeader(value = "Authorization", required = false) String header,
+            @RequestBody com.example.UpFit.DTO.LoginRequestDTO req,
+            @RequestHeader(value = "User-Agent", required = false) String ua) {
+        if (header == null || header.isBlank()) return ResponseEntity.status(401).build();
+        String token = header.startsWith("Bearer ") ? header.substring(7) : header;
+        if (req.getUserAgent() == null) req.setUserAgent(ua);
+        try {
+            userService.registerDevice(token, req.getDeviceId(), req.getDeviceName(),
+                    req.getUserAgent(), req.isForce());
+            return ResponseEntity.noContent().build();   // 성공(등록 완료)
+        } catch (com.example.UpFit.Exception.DeviceConflictException e) {
+            return ResponseEntity.status(409).body(e.getDetail());
+        } catch (Exception e) {
+            return ResponseEntity.status(401).build();
+        }
+    }
+    // [E] edit by smsong
+
+    // 내 로그인 기기 목록
+    @Operation(summary = "내 로그인 기기 목록")
+    @GetMapping("/devices/{uid}")
+    public ResponseEntity<?> myDevices(@PathVariable("uid") String uid,
+                                       @AuthenticationPrincipal UserDetails userDetails) {
+        if (userDetails == null || !userDetails.getUsername().equals(uid)) {
+            return ResponseEntity.status(403).build();
+        }
+        return ResponseEntity.ok(userService.myDevices(uid));
+    }
+    // [E] edit by smsong
 
     // [B] edit by smsong : 토큰 갱신(로그인 유지). Authorization 헤더의 현재 토큰을 새 토큰으로 교체.
     //   프론트(auth.js)가 만료 임박 시 자동 호출한다. 유효하지 않으면 401 → 재로그인.

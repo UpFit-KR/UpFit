@@ -2045,8 +2045,18 @@ function renderProfile() {
     document.getElementById('profileSetBtn').onclick = openProfileSheet;
     document.getElementById('settingsBtn').onclick = openSettingsSheet;
     // [B] edit by smsong : 실수 방지 — 확인 후에만 로그아웃 (취소 시 아무 동작 안 함)
-    document.getElementById('logoutBtn').onclick = () => {
-        if (confirm('정말 로그아웃 할까요?')) Auth.logout();
+    document.getElementById('logoutBtn').onclick = async () => {
+        if (!confirm('정말 로그아웃 할까요?')) return;
+        // [B][E] edit by smsong : 서버의 이 기기 세션도 제거(기기 목록에서 사라지도록) 후 로컬 정리
+        try {
+            const token = Auth.getToken();
+            if (token) {
+                await fetch(BACKEND_BASE + '/user/logout', {
+                    method: 'POST', headers: { 'Authorization': 'Bearer ' + token }
+                });
+            }
+        } catch (_) {}
+        Auth.logout();
     };
     // [E] edit by smsong
 }
