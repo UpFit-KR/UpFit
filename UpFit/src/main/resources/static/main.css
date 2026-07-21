@@ -1751,9 +1751,17 @@ textarea.input.im-text {
 .mk-shape .mk-ic { width: 26px; height: 26px; display: block; }
 .mk-shape .mk-ic-emoji { font-size: 22px; line-height: 26px; height: 26px; }
 .mk-shape-lbl { font-size: 11px; font-weight: 700; }
-.mk-emojis, .mk-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+.mk-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+/* [B][E] edit by smsong : 이모지가 많아져 스크롤 그리드로. 6열 고정, 최대 높이 후 세로 스크롤. */
+.mk-emojis {
+    display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px;
+    max-height: 232px; overflow-y: auto;
+    padding: 2px; margin: -2px;
+    -webkit-overflow-scrolling: touch;
+}
 .mk-emoji {
-    width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
+    width: 100%; aspect-ratio: 1 / 1; height: auto;
+    border-radius: 12px; border: 1px solid var(--line);
     background: var(--ink-850); font-size: 22px; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
 }
