@@ -914,7 +914,7 @@ function renderHome() {
 }
 
 // ---------- 운동 ----------
-function renderWorkout() {
+function renderWorkout(preserveFilterScroll) {
     let html = `
     <div class="section-head">
         <div class="seg" id="workoutSeg">
@@ -940,11 +940,21 @@ function renderWorkout() {
     html += ui.workoutView === 'calendar' ? workoutCalendarHtml() : workoutListHtml();
     document.getElementById('view-workout').innerHTML = html;
 
-    // [B][E] edit by smsong : 부위 필터 칩 클릭 → 필터 적용 후 다시 렌더
+    // [B] edit by smsong : 부위 필터 칩 클릭 → 필터 적용 후 다시 렌더.
+    //   재렌더로 innerHTML 이 갈리면 가로 스크롤이 0 으로 튀므로, 클릭 직전 scrollLeft 를
+    //   저장해 두고 렌더 직후 복원한다(선택한 칩 위치가 유지됨).
     document.querySelectorAll('#partFilter [data-part]').forEach(b => b.onclick = () => {
+        const pf = document.getElementById('partFilter');
+        const keepScroll = pf ? pf.scrollLeft : 0;
         ui.workoutPartFilter = b.dataset.part || null;
-        renderWorkout();
+        renderWorkout(keepScroll);
     });
+    // 재렌더 시 전달된 스크롤 위치 복원
+    if (typeof preserveFilterScroll === 'number') {
+        const pf = document.getElementById('partFilter');
+        if (pf) pf.scrollLeft = preserveFilterScroll;
+    }
+    // [E] edit by smsong
 
     // 이벤트
     document.getElementById('addSessionBtn').onclick =
@@ -3897,6 +3907,14 @@ function activateTab(tab, remember) {
     });
     // [B][E] edit by smsong : 이전 탭 → 새 탭으로 코멧이 날아가 이동을 각인
     if (fromTab && fromTab !== tab) navComet(fromTab, tab);
+    // [B][E] edit by smsong : 탭을 전환하면 운동 탭 부위 필터는 '전체'로 초기화한다.
+    //   render() 는 탭 전환마다 호출되지 않으므로(뷰는 show/hide 만), 필터가 걸려 있었다면
+    //   여기서 리셋하고 workout 뷰만 다시 그려 '전체'로 되돌린다.
+    if (fromTab && fromTab !== tab && ui.workoutPartFilter) {
+        ui.workoutPartFilter = null;
+        renderWorkout();
+    }
+
     curTab = tab;
 
     // [B] edit by smsong : 탭을 옮기면 항상 맨 위에서 시작하도록 스크롤 초기화.
