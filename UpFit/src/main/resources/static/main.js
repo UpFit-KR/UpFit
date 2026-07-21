@@ -1634,6 +1634,7 @@ function renderChange() {
         type: 'trend',
         refKey: String(ui.changeExercise || ''),
         mode: 'trend',
+        confirmMsg: () => `'${ui.changeExercise}'의 전체 기록을 분석할까요?`,
         loadingMsg: () => `${ui.changeExercise}의 전체 기록을 AI가 분석 중입니다`,
         run: async () => {
             const bw = exerciseIsBodyweight(ui.changeExercise);
@@ -2839,6 +2840,7 @@ function openSessionEditor(sessionId, date, mode, editorOpts) {
                 type: 'session',
                 refKey: String(sCur.id),
                 mode: 'session',
+                confirmMsg: () => `${fmtKorean(sCur.date)} 운동을 분석할까요?`,
                 loadingMsg: () => `${fmtKorean(sCur.date)} 운동을 AI가 분석 중입니다`,
                 run: async () => {
                     const sNow = sess() || sCur;
@@ -3365,6 +3367,11 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         type: 'compare',
         refKey: cmpRefKey,
         mode: 'compare',
+        confirmMsg: () => {
+            const dFrom = prevStat ? labelYmd(prevStat.date) : '첫 기록';
+            const dTo = lastStat ? labelYmd(lastStat.date) : '';
+            return `${dFrom}와 ${dTo} 운동을 비교하여 분석할까요?`;
+        },
         loadingMsg: () => {
             const dFrom = prevStat ? labelYmd(prevStat.date) : '첫 기록';
             const dTo = lastStat ? labelYmd(lastStat.date) : '';
@@ -3599,7 +3606,7 @@ function wireAiToggle(container) {
 //   opts = { btn, out, type, refKey, mode, loadingMsg, run() }
 //     · run() : 실제 분석을 호출해 결과(res)를 반환하는 async 함수(서버 저장까지 수행)
 async function mountAiSection(opts) {
-    const { btn, out, type, refKey, mode, loadingMsg, run } = opts;
+    const { btn, out, type, refKey, mode, loadingMsg, confirmMsg, run } = opts;
     if (!btn || !out) return;
     let hasResult = false;
 
@@ -3638,15 +3645,24 @@ async function mountAiSection(opts) {
 
     btn.onclick = () => {
         if (btn.dataset.regen === '1') {
-            // 재생성: 이전 결과가 사라진다는 확인
+            // [B][E] edit by smsong : 재생성 — 이전 결과가 사라진다는 확인.
+            //   기능별 확인 메시지(confirmMsg) 뒤에 재생성 경고를 덧붙인다.
             openConfirm({
                 title: 'AI 분석 다시 생성',
-                message: '다시 생성하면 이전에 생성된 AI 분석 결과는 사라지고\n새로운 결과로 대체됩니다.\n\n계속할까요?',
+                message: `${confirmMsg ? confirmMsg() + '\n\n' : ''}다시 생성하면 이전 AI 분석 결과는 사라지고 새 결과로 대체됩니다.`,
                 okText: '다시 생성',
+                cancelText: '취소',
                 onOk: doRun
             });
         } else {
-            doRun();
+            // [B][E] edit by smsong : 최초 생성 — 기능별 확인 메시지로 "예/취소"를 묻는다.
+            openConfirm({
+                title: 'AI 분석',
+                message: confirmMsg ? confirmMsg() : 'AI 분석을 시작할까요?',
+                okText: '예',
+                cancelText: '취소',
+                onOk: doRun
+            });
         }
     };
 
