@@ -4,6 +4,8 @@ import com.example.UpFit.Config.GeminiProperties;
 import com.example.UpFit.DTO.AiAnalysisRequestDTO;
 import com.example.UpFit.DTO.AiAnalysisResponseDTO;
 import com.example.UpFit.DTO.AiSessionRequestDTO;
+import com.example.UpFit.Entity.AiResultEntity;
+import com.example.UpFit.Repository.AiResultRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -13,10 +15,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 // [B] edit by smsong - AI 운동 분석 서비스 (Gemini).
 //   역할:
@@ -31,6 +36,7 @@ public class AiAnalysisService {
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
 
     private final GeminiProperties props;
+    private final AiResultRepository aiResultRepository;   // [B][E] edit by smsong : AI 결과 저장/조회
     private final ObjectMapper om = new ObjectMapper();
     private final RestClient http = RestClient.create();
 
@@ -124,6 +130,44 @@ public class AiAnalysisService {
         // 종목 분석(추세/비교)은 성장 스키마로 호출
         return callGemini(SYSTEM_KNOWLEDGE, userPrompt, buildResponseSchema());
     }
+
+    // [B] edit by smsong - AI 결과 저장/조회/삭제 (uid + type + refKey 로 1건).
+    //   type: trend|compare|session
+    @Transactional(readOnly = true)
+    public AiAnalysisResponseDTO getSaved(String uid, String type, String refKey) {
+        Optional<AiResultEntity> found = aiResultRepository.findByUidAndTypeAndRefKey(uid, type, refKey);
+        if (found.isEmpty()) return null;
+        try {
+            return om.readValue(found.get().getResultJson(), AiAnalysisResponseDTO.class);
+        } catch (Exception e) {
+            log.warn("저장된 AI 결과 파싱 실패 (uid={}, type={}, refKey={})", uid, type, refKey, e);
+            return null;
+        }
+    }
+
+    @Transactional
+    public void saveResult(String uid, String type, String refKey, AiAnalysisResponseDTO result) {
+        if (refKey == null || refKey.isBlank()) return;   // 키 없으면 저장 생략
+        try {
+            String json = om.writeValueAsString(result);
+            AiResultEntity e = aiResultRepository.findByUidAndTypeAndRefKey(uid, type, refKey)
+                    .orElseGet(() -> AiResultEntity.builder()
+                            .uid(uid).type(type).refKey(refKey)
+                            .createdAt(LocalDateTime.now()).build());
+            e.setResultJson(json);
+            e.setUpdatedAt(LocalDateTime.now());
+            if (e.getCreatedAt() == null) e.setCreatedAt(LocalDateTime.now());
+            aiResultRepository.save(e);
+        } catch (Exception ex) {
+            log.warn("AI 결과 저장 실패 (uid={}, type={}, refKey={})", uid, type, refKey, ex);
+        }
+    }
+
+    @Transactional
+    public void deleteResult(String uid, String type, String refKey) {
+        aiResultRepository.deleteByUidAndTypeAndRefKey(uid, type, refKey);
+    }
+    // [E] edit by smsong
 
     // [B] edit by smsong - 운동 상세(하루 세션) 분석. 신체정보+그날 운동 전체를 받아
     //   운동량 상위%, 피로도, 다음날 컨디션, 오버트레이닝, 종합 등급을 예측·분석한다.

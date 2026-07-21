@@ -184,10 +184,15 @@ const api = {
     listExercises: ()   => apiReq('GET',    `/exercise/${UID}`),
     addExercise:   (nm) => apiReq('POST',   `/exercise/${UID}`, { name: nm }),
     delExercise:   (id) => apiReq('DELETE', `/exercise/${UID}/${id}`),
-    // [B][E] edit by smsong : AI 성장 분석 — 자체 로딩 UI 가 있으므로 전역 로딩 폼은 끈다(silent)
-    aiAnalyze:     (payload) => apiReq('POST', `/ai/analyze/${UID}`, payload, { silent: true }),
-    // [B][E] edit by smsong : 운동 상세(하루) AI 분석
-    aiAnalyzeSession: (payload) => apiReq('POST', `/ai/session/${UID}`, payload, { silent: true }),
+    // [B] edit by smsong : AI 성장 분석 — 자체 로딩 UI 가 있으므로 전역 로딩 폼은 끈다(silent).
+    //   type/refKey 로 결과를 서버에 저장·구분한다.
+    aiAnalyze:     (payload, type, refKey) => apiReq('POST', `/ai/analyze/${UID}?type=${encodeURIComponent(type || 'trend')}&refKey=${encodeURIComponent(refKey || '')}`, payload, { silent: true }),
+    // 운동 상세(하루) AI 분석
+    aiAnalyzeSession: (payload, refKey) => apiReq('POST', `/ai/session/${UID}?refKey=${encodeURIComponent(refKey || '')}`, payload, { silent: true }),
+    // 저장된 AI 결과 조회(없으면 204 → null) / 삭제
+    aiGetResult:   (type, refKey) => apiReq('GET', `/ai/result/${UID}?type=${encodeURIComponent(type)}&refKey=${encodeURIComponent(refKey)}`, null, { silent: true }),
+    aiDelResult:   (type, refKey) => apiReq('DELETE', `/ai/result/${UID}?type=${encodeURIComponent(type)}&refKey=${encodeURIComponent(refKey)}`, null, { silent: true }),
+    // [E] edit by smsong
     // [B] edit by smsong : 내 정보(신체 정보 포함) 조회/수정 — 키/현재 체중/목표 체중을 DB에 영속화
     getMe:      ()      => apiReq('GET', `/user/uid/${UID}`),
     updateMe:   (dto)   => apiUserUpdate(dto)
@@ -360,6 +365,7 @@ function condColor(c) {
 let state = null;
 const ui = {
     workoutView: 'calendar',           // 'calendar' | 'list'
+    workoutPartFilter: null,           // [B][E] edit by smsong : 운동 탭 부위 필터(null=전체)
     dietView: 'calendar',
     workoutCal: firstOfThisMonth(),
     dietCal: firstOfThisMonth(),
@@ -576,6 +582,20 @@ function cmpSessionInDay(a, b) {
     return (Number(a.id) || 0) - (Number(b.id) || 0);
 }
 function sessionsByDate(date) { return state.sessions.filter(s => s.date === date).slice().sort(cmpSessionInDay); }
+
+// [B] edit by smsong : 부위 필터 적용 세션 조회. ui.workoutPartFilter 가 있으면
+//   그 부위를 포함한 세션만 남긴다(null=전체). 달력/목록이 공통으로 사용.
+function sessionMatchesPart(s, part) {
+    if (!part) return true;
+    return sessionBodyParts(s).includes(part);
+}
+function filteredSessionsByDate(date) {
+    return sessionsByDate(date).filter(s => sessionMatchesPart(s, ui.workoutPartFilter));
+}
+function dateHasFilteredWorkout(date) {
+    return filteredSessionsByDate(date).length > 0;
+}
+// [E] edit by smsong
 // 전체 세션을 시간순(날짜 → 세션 순서)으로
 function orderedSessions() {
     return state.sessions.slice().sort((a, b) => {
@@ -909,8 +929,22 @@ function renderWorkout() {
         <!-- [E] edit by smsong -->
     </div>`;
 
+    // [B] edit by smsong : 부위 필터 칩. 선택한 부위가 포함된 날짜/세션만 달력·목록에 표시.
+    //   '전체' + BODY_PARTS. 가로 스크롤로 넘긴다.
+    html += `<div class="part-filter" id="partFilter">
+        <button class="chip xs ${!ui.workoutPartFilter ? 'active' : ''}" data-part="" type="button">전체</button>
+        ${BODY_PARTS.map(p => `<button class="chip xs ${ui.workoutPartFilter === p ? 'active' : ''}" data-part="${esc(p)}" type="button">${esc(p)}</button>`).join('')}
+    </div>`;
+    // [E] edit by smsong
+
     html += ui.workoutView === 'calendar' ? workoutCalendarHtml() : workoutListHtml();
     document.getElementById('view-workout').innerHTML = html;
+
+    // [B][E] edit by smsong : 부위 필터 칩 클릭 → 필터 적용 후 다시 렌더
+    document.querySelectorAll('#partFilter [data-part]').forEach(b => b.onclick = () => {
+        ui.workoutPartFilter = b.dataset.part || null;
+        renderWorkout();
+    });
 
     // 이벤트
     document.getElementById('addSessionBtn').onclick =
@@ -1038,45 +1072,58 @@ function enableDragReorder(listEl, onCommit) {
 
 // 달력 셀: 세션 수만큼 점(최대 3개) → 하루에 여러 번 운동한 날이 구분된다
 function workoutCalendarHtml() {
-    // [B] edit by smsong : 운동한 날은 점 대신 셀 테두리로만 표시(cellExtra=null, hasFn 은 유지)
+    // [B] edit by smsong : 운동한 날은 셀 테두리(마커)로 표시. 부위 필터가 있으면 그 부위를
+    //   포함한 날만 마커가 켜진다(hasFn 에 필터 반영).
     const cal = calendarGrid(ui.workoutCal, ui.workoutSel, null,
-        date => sessionsByDate(date).length > 0, { showCounts: true, marker: true });
+        dateHasFilteredWorkout, { showCounts: true, marker: true });
     // [E] edit by smsong
 
     const sel = ui.workoutSel;
-    const list = sessionsByDate(sel);
-    const dur = durationOfDate(sel);
+    // [B][E] edit by smsong : 선택 날짜 상세도 부위 필터 반영
+    const list = filteredSessionsByDate(sel);
+    const dur = list.reduce((a, s) => a + (sessionDuration(s) || 0), 0) || null;
 
+    const filterNote = ui.workoutPartFilter ? ` · ${esc(ui.workoutPartFilter)}` : '';
     let detail = `<div class="cal-day-detail">
         <div class="day-head">
-            <div class="d-date">${fmtKorean(sel)}</div>
-            <div class="d-sum tabnum">${list.length ? `기록 ${list.length} · 볼륨 ${volumeOfDate(sel)} kg${dur != null ? ' · ' + fmtDur(dur) : ''}` : ''}</div>
+            <div class="d-date">${fmtKorean(sel)}${filterNote}</div>
+            <div class="d-sum tabnum">${list.length ? `기록 ${list.length} · 볼륨 ${list.reduce((a, s) => a + sessionVolume(s), 0)} kg${dur != null ? ' · ' + fmtDur(dur) : ''}` : ''}</div>
         </div>`;
     const parts = dayBodyParts(sel);
     if (parts.length) detail += `<div class="day-parts">부위 · ${parts.join(' · ')}</div>`;
     detail += list.length
-        ? `<div class="sess-list reorder-list" data-reorder-date="${sel}">${list.map(s => sessionCardHtml(s, true)).join('')}</div>`
-        : emptyBlock('dumbbell', '이 날은 기록이 없어요', '오른쪽 위 ＋ 버튼으로 운동 기록을 만드세요');
+        ? `<div class="sess-list reorder-list" data-reorder-date="${sel}">${list.map(s => sessionCardHtml(s, !ui.workoutPartFilter)).join('')}</div>`
+        : emptyBlock('dumbbell', ui.workoutPartFilter ? `이 날은 '${esc(ui.workoutPartFilter)}' 기록이 없어요` : '이 날은 기록이 없어요', ui.workoutPartFilter ? '다른 부위를 선택하거나 전체를 보세요' : '오른쪽 위 ＋ 버튼으로 운동 기록을 만드세요');
     detail += `</div>`;
 
     return `<div class="card">${cal}</div>${detail}`;
 }
 
 function workoutListHtml() {
-    const dates = [...new Set(state.sessions.map(s => s.date))].sort((a, b) => a < b ? 1 : -1);
-    if (!dates.length) return emptyBlock('dumbbell', '아직 운동 기록이 없어요', '오른쪽 위 ＋ 버튼으로 시작하세요');
+    // [B] edit by smsong : 부위 필터 반영. 필터 부위를 포함한 세션이 있는 날짜만,
+    //   그 안에서도 해당 부위 세션만 보여준다.
+    const part = ui.workoutPartFilter;
+    let dates = [...new Set(state.sessions.map(s => s.date))].sort((a, b) => a < b ? 1 : -1);
+    if (part) dates = dates.filter(d => filteredSessionsByDate(d).length > 0);
+    if (!dates.length) {
+        return part
+            ? emptyBlock('dumbbell', `'${esc(part)}' 기록이 없어요`, '다른 부위를 선택하거나 전체를 보세요')
+            : emptyBlock('dumbbell', '아직 운동 기록이 없어요', '오른쪽 위 ＋ 버튼으로 시작하세요');
+    }
     return dates.map(date => {
+        const list = filteredSessionsByDate(date);
         const parts = dayBodyParts(date);
-        const dur = durationOfDate(date);
+        const dur = list.reduce((a, s) => a + (sessionDuration(s) || 0), 0) || null;
+        const vol = list.reduce((a, s) => a + sessionVolume(s), 0);
         return `
         <div class="day-group">
             <div class="day-head">
-                <div class="d-date">${fmtKorean(date)}</div>
-                <div class="d-sum tabnum">기록 ${sessionsByDate(date).length} · 볼륨 ${volumeOfDate(date)} kg${dur != null ? ' · ' + fmtDur(dur) : ''}</div>
+                <div class="d-date">${fmtKorean(date)}${part ? ` · ${esc(part)}` : ''}</div>
+                <div class="d-sum tabnum">기록 ${list.length} · 볼륨 ${vol} kg${dur != null ? ' · ' + fmtDur(dur) : ''}</div>
             </div>
             ${parts.length ? `<div class="day-parts">부위 · ${parts.join(' · ')}</div>` : ''}
             <div class="sess-list reorder-list" data-reorder-date="${date}">
-                ${sessionsByDate(date).map(s => sessionCardHtml(s, true)).join('')}
+                ${list.map(s => sessionCardHtml(s, !part)).join('')}
             </div>
         </div>`;
     }).join('');
@@ -1479,55 +1526,21 @@ function renderChange() {
     // [E] edit by smsong
 
     // [B] edit by smsong : 변화 탭 AI — 이 종목의 "전체 추세"를 분석(trend 모드).
-    //   결과는 "종목" 기준으로만 캐시(ui.changeAiCache)한다 → 보조 on/off 를 바꿔도 결과가 유지된다.
-    //   (보조 설정은 그래프/지표엔 반영되지만, 이미 생성된 AI 결과는 그대로 남긴다. 새 기준으로
-    //    다시 보고 싶으면 스파클 버튼을 다시 누른다.)
-    const aiKey = String(ui.changeExercise || '');
-    const gAiBtn = document.getElementById('growthAiBtn');
-    const gAiOut = document.getElementById('growthAiResult');
-    ui.changeAiCache = ui.changeAiCache || {};
-    // 접기 상태를 ui.changeAiCollapsed 에 저장 → 재렌더(기간/보조 변경 등) 후에도 유지
-    function wireGrowthAiCollapse(container) {
-        const tg = container.querySelector('.ai-toggle');
-        if (tg) tg.addEventListener('click', () => {
-            const card = container.querySelector('.ai-card');
-            ui.changeAiCollapsed = !!(card && card.classList.contains('collapsed'));
-        });
-    }
-    // 캐시된 결과가 있으면 복원(접힘 상태까지)
-    if (gAiOut && aiKey && ui.changeAiCache[aiKey]) {
-        gAiOut.innerHTML = aiResultHtml(ui.changeAiCache[aiKey]);
-        if (ui.changeAiCollapsed) {
-            const card = gAiOut.querySelector('.ai-card');
-            const tg = gAiOut.querySelector('.ai-toggle');
-            if (card) card.classList.add('collapsed');
-            if (tg) tg.setAttribute('aria-expanded', 'false');
-        }
-        wireAiToggle(gAiOut);
-        wireGrowthAiCollapse(gAiOut);
-        if (gAiBtn) { gAiBtn.disabled = true; gAiBtn.title = 'AI 분석 완료'; gAiBtn.classList.add('done'); }
-    }
-    if (gAiBtn && gAiOut) gAiBtn.onclick = async () => {
-        gAiBtn.disabled = true;
-        // [B][E] edit by smsong : 전체추세 로딩 메시지 — 종목명 포함
-        gAiOut.innerHTML = aiLoadingHtml(`${ui.changeExercise}의 전체 기록을 AI가 분석 중입니다`);
-        try {
+    //   저장된 결과는 서버에서 조회해 바로 표시. 재생성 시 확인 후 덮어쓴다.
+    //   refKey = 종목명 → 종목당 1건 유지(보조 on/off 를 바꿔도 결과 유지).
+    mountAiSection({
+        btn: document.getElementById('growthAiBtn'),
+        out: document.getElementById('growthAiResult'),
+        type: 'trend',
+        refKey: String(ui.changeExercise || ''),
+        mode: 'trend',
+        loadingMsg: () => `${ui.changeExercise}의 전체 기록을 AI가 분석 중입니다`,
+        run: async () => {
             const bw = exerciseIsBodyweight(ui.changeExercise);
-            // trend 모드 : 전체 이력 추세. 두 시점(prev/last)은 보내지 않는다.
             const payload = buildAiPayload(ui.changeExercise, null, null, ui.changeAssist, bw, 'trend');
-            const res = await api.aiAnalyze(payload);
-            ui.changeAiCache[aiKey] = res;
-            ui.changeAiCollapsed = false;
-            gAiOut.innerHTML = aiResultHtml(res);
-            wireAiToggle(gAiOut);
-            wireGrowthAiCollapse(gAiOut);
-            gAiBtn.title = 'AI 분석 완료'; gAiBtn.classList.add('done');
-        } catch (err) {
-            gAiBtn.disabled = false;
-            if (err && err.auth) return;
-            gAiOut.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
+            return await api.aiAnalyze(payload, 'trend', String(ui.changeExercise || ''));
         }
-    };
+    });
     // [E] edit by smsong
 
     // [B] edit by smsong : 지표 행 탭 → 두 기록의 운동 리스트를 한 폼에서 나란히 비교
@@ -2014,9 +2027,16 @@ function openMarkerPicker(rerender) {
                     </button>`).join('')}
             </div>
 
-            <!-- 이모지 선택(이모지 모드일 때만) -->
+            <!-- 이모지 직접 입력(이모지 모드일 때만) -->
             <div class="mk-emojis-wrap" id="mkEmojiWrap" style="${sel.shape === 'emoji' ? '' : 'display:none'}">
-                <div class="mk-sec-t">이모지</div>
+                <div class="mk-sec-t">이모지 <span class="lbl-sub">원하는 이모지를 직접 입력하세요</span></div>
+                <div class="mk-emoji-input-row">
+                    <div class="mk-emoji-current">${sel.emoji || '🔥'}</div>
+                    <input class="input mk-emoji-input" id="mkEmojiInput" type="text"
+                           value="${esc(sel.emoji || '')}" maxlength="8"
+                           placeholder="이모지 붙여넣기 (예: 🔥)" autocomplete="off" inputmode="text">
+                </div>
+                <div class="mk-sec-t" style="margin-top:4px">빠른 선택</div>
                 <div class="mk-emojis" id="mkEmojis">
                     ${CAL_MARKER_EMOJIS.map(e => `<button class="mk-emoji ${e === sel.emoji ? 'on' : ''}" data-emoji="${e}" type="button">${e}</button>`).join('')}
                 </div>
@@ -2047,13 +2067,32 @@ function openMarkerPicker(rerender) {
             sel.emoji = b.dataset.emoji;
             rerenderSheet();
         });
+        // [B] edit by smsong : 이모지 직접 입력. 입력값(맨 앞 이모지 1개)을 마커로.
+        //   실시간으로 미리보기/현재값만 갱신하고 포커스는 유지(전체 rerender 하지 않음).
+        const emojiInput = document.getElementById('mkEmojiInput');
+        if (emojiInput) emojiInput.oninput = () => {
+            const v = emojiFirst(emojiInput.value);
+            sel.emoji = v || '';
+            const cur = document.querySelector('.mk-emoji-current');
+            if (cur) cur.textContent = sel.emoji || '🔥';
+            const prevEmoji = document.querySelector('.mk-preview .mk-prev-emoji');
+            if (prevEmoji) prevEmoji.textContent = sel.emoji || '🔥';
+            // 빠른선택 하이라이트 갱신
+            document.querySelectorAll('#mkEmojis .mk-emoji').forEach(b =>
+                b.classList.toggle('on', b.dataset.emoji === sel.emoji));
+        };
+        // [E] edit by smsong
         const colorsWrap = document.getElementById('mkColors');
         if (colorsWrap) colorsWrap.querySelectorAll('.mk-color').forEach(b => b.onclick = () => {
             sel.color = b.dataset.color;
             rerenderSheet();
         });
         const apply = document.getElementById('mkApply');
-        if (apply) apply.onclick = () => { setCalMarker(sel); closeSheet(); rerender(); };
+        if (apply) apply.onclick = () => {
+            // [B][E] edit by smsong : 이모지 모드인데 비어 있으면 기본값으로
+            if (sel.shape === 'emoji' && !sel.emoji) sel.emoji = CAL_MARKER_EMOJIS[0];
+            setCalMarker(sel); closeSheet(); rerender();
+        };
     }
     // 시트 내용만 다시 그려 선택 상태를 반영(시트 자체는 유지)
     function rerenderSheet() {
@@ -2685,41 +2724,29 @@ function openSessionEditor(sessionId, date, mode, editorOpts) {
         };
         document.getElementById('seAddW').onclick = () => openWorkoutSheet(null, async item => {
             await addWorkoutToSession(sid, item);
-            if (ui.sessionAiCache) delete ui.sessionAiCache[String(sid)];   // 운동이 바뀌면 이전 분석 무효화
+            // 운동이 바뀌면 이전 분석은 더 이상 유효하지 않으므로 서버 저장분도 삭제
+            try { await api.aiDelResult('session', String(sid)); } catch (_) {}
             paintList(); render(); toast('운동을 추가했어요');
         });
 
         // [B] edit by smsong : 이 날 운동 상세 AI 분석 — 신체정보 + 그날 운동 전체를 분석.
-        //   결과는 세션 id 로 캐시(세션 편집/추가 후 무효화). 로딩엔 날짜(요일)를 넣는다.
-        const seAiBtn = document.getElementById('seAiBtn');
-        const seAiOut = document.getElementById('seAiResult');
-        ui.sessionAiCache = ui.sessionAiCache || {};
+        //   저장된 결과는 서버에서 조회해 바로 표시. 재생성 시 확인 후 덮어쓴다.
         const sCur = sess();
-        const sKey = sCur ? String(sCur.id) : null;
-        if (seAiOut && sKey && ui.sessionAiCache[sKey]) {
-            seAiOut.innerHTML = aiResultHtml(ui.sessionAiCache[sKey], 'session');
-            wireAiToggle(seAiOut);
-            if (seAiBtn) { seAiBtn.disabled = true; seAiBtn.title = 'AI 분석 완료'; seAiBtn.classList.add('done'); }
+        if (sCur) {
+            mountAiSection({
+                btn: document.getElementById('seAiBtn'),
+                out: document.getElementById('seAiResult'),
+                type: 'session',
+                refKey: String(sCur.id),
+                mode: 'session',
+                loadingMsg: () => `${fmtKorean(sCur.date)} 운동을 AI가 분석 중입니다`,
+                run: async () => {
+                    const sNow = sess() || sCur;
+                    const payload = buildSessionAiPayload(sNow);
+                    return await api.aiAnalyzeSession(payload, String(sNow.id));
+                }
+            });
         }
-        if (seAiBtn && seAiOut) seAiBtn.onclick = async () => {
-            const sNow = sess();
-            if (!sNow) return;
-            seAiBtn.disabled = true;
-            // 로딩 메시지: "2026년 7월 17일 (금) 운동을 AI가 분석 중입니다…"
-            seAiOut.innerHTML = aiLoadingHtml(`${fmtKorean(sNow.date)} 운동을 AI가 분석 중입니다`);
-            try {
-                const payload = buildSessionAiPayload(sNow);
-                const res = await api.aiAnalyzeSession(payload);
-                ui.sessionAiCache[String(sNow.id)] = res;
-                seAiOut.innerHTML = aiResultHtml(res, 'session');
-                wireAiToggle(seAiOut);
-                seAiBtn.title = 'AI 분석 완료'; seAiBtn.classList.add('done');
-            } catch (err) {
-                seAiBtn.disabled = false;
-                if (err && err.auth) return;
-                seAiOut.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
-            }
-        };
         // [E] edit by smsong
 
         paintList();
@@ -3229,44 +3256,25 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
     // [B] edit by smsong : AI 성장 분석.
     //   이 종목의 "전체" 세션 이력 + 지금 비교 중인 두 시점 + 체중 추이를 백엔드로 보내
     //   Gemini 가 추세/근성장·근손실/회복/미래를 분석하게 한다. 결과는 아래 영역에 카드로 렌더.
-    const aiBtn = document.getElementById('cmpxAiBtn');
-    const aiOut = document.getElementById('cmpxAiResult');
-
-    // 재오픈(보조 토글 등) 시 이전 AI 결과를 그대로 복원한다 → 결과가 사라지지 않는다.
-    if (aiOut && opts.aiResult) {
-        aiOut.innerHTML = aiResultHtml(opts.aiResult);
-        if (opts.aiCollapsed) {   // 접힌 상태였다면 접힘도 복원
-            const card = aiOut.querySelector('.ai-card');
-            const btn = aiOut.querySelector('.ai-toggle');
-            if (card) card.classList.add('collapsed');
-            if (btn) btn.setAttribute('aria-expanded', 'false');
-        }
-        wireAiToggle(aiOut);
-        // [B][E] edit by smsong : 결과가 이미 있으면 생성 버튼 비활성화(중복 생성 방지)
-        if (aiBtn) { aiBtn.disabled = true; aiBtn.title = 'AI 분석 완료'; aiBtn.classList.add('done'); }
-    }
-
-    if (aiBtn && aiOut) aiBtn.onclick = async () => {
-        aiBtn.disabled = true;
-        // [B][E] edit by smsong : 비교 로딩 메시지 — 두 날짜를 넣어 "비교하여 분석 중"
-        const dFrom = prevStat ? labelYmd(prevStat.date) : '첫 기록';
-        const dTo = lastStat ? labelYmd(lastStat.date) : '';
-        aiOut.innerHTML = aiLoadingHtml(`${dFrom} ↔ ${dTo} 기록을 AI가 비교하여 분석 중입니다`);
-        try {
+    //   저장된 결과는 서버에서 조회해 바로 표시. 재생성 시 확인 후 덮어쓴다.
+    //   refKey = 종목|이전날짜|최근날짜 → 이 비교 조합당 1건 유지.
+    const cmpRefKey = `${exercise}|${prevStat ? prevStat.date : 'first'}|${lastStat ? lastStat.date : ''}`;
+    mountAiSection({
+        btn: document.getElementById('cmpxAiBtn'),
+        out: document.getElementById('cmpxAiResult'),
+        type: 'compare',
+        refKey: cmpRefKey,
+        mode: 'compare',
+        loadingMsg: () => {
+            const dFrom = prevStat ? labelYmd(prevStat.date) : '첫 기록';
+            const dTo = lastStat ? labelYmd(lastStat.date) : '';
+            return `${dFrom} ↔ ${dTo} 기록을 AI가 비교하여 분석 중입니다`;
+        },
+        run: async () => {
             const payload = buildAiPayload(exercise, prevStat, lastStat, inc, isBw, 'compare');
-            const res = await api.aiAnalyze(payload);
-            opts.aiResult = res;              // [B][E] edit by smsong : 결과 보관 → 재오픈 시 유지
-            opts.aiCollapsed = false;
-            aiOut.innerHTML = aiResultHtml(res);
-            wireAiToggle(aiOut);
-            // [B][E] edit by smsong : 생성 완료 → 버튼은 비활성 유지(중복 생성 방지)
-            aiBtn.title = 'AI 분석 완료'; aiBtn.classList.add('done');
-        } catch (err) {
-            aiBtn.disabled = false;   // 실패 시엔 재시도할 수 있게 되돌린다
-            if (err && err.auth) return;
-            aiOut.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
+            return await api.aiAnalyze(payload, 'compare', cmpRefKey);
         }
-    };
+    });
     // [E] edit by smsong
 }
 // [E] edit by smsong
@@ -3482,6 +3490,95 @@ function wireAiToggle(container) {
         const collapsed = card.classList.toggle('collapsed');
         btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     };
+}
+// [E] edit by smsong
+
+// [B] edit by smsong : AI 섹션 공통 관리(3종 분석 공용).
+//   화면 진입 시 저장된 결과를 서버에서 조회해 바로 표시하고,
+//   결과가 있으면 생성 버튼을 "재생성"으로 바꾼다(누르면 확인 폼 → 덮어쓰기).
+//   opts = { btn, out, type, refKey, mode, loadingMsg, run() }
+//     · run() : 실제 분석을 호출해 결과(res)를 반환하는 async 함수(서버 저장까지 수행)
+async function mountAiSection(opts) {
+    const { btn, out, type, refKey, mode, loadingMsg, run } = opts;
+    if (!btn || !out) return;
+    let hasResult = false;
+
+    const paint = (res) => {
+        out.innerHTML = aiResultHtml(res, mode);
+        wireAiToggle(out);
+        hasResult = true;
+        setBtnRegen();
+    };
+    const setBtnRegen = () => {
+        btn.disabled = false;
+        btn.classList.add('done');
+        btn.title = 'AI 분석 다시 생성';
+        btn.setAttribute('aria-label', 'AI 분석 다시 생성');
+        btn.dataset.regen = '1';
+    };
+    const setBtnFresh = () => {
+        btn.disabled = false;
+        btn.classList.remove('done');
+        btn.title = 'AI 분석';
+        btn.dataset.regen = '';
+    };
+
+    const doRun = async () => {
+        btn.disabled = true;
+        out.innerHTML = aiLoadingHtml(loadingMsg());
+        try {
+            const res = await run();
+            paint(res);
+        } catch (err) {
+            if (err && err.auth) { setBtnFresh(); return; }
+            out.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
+            hasResult ? setBtnRegen() : setBtnFresh();
+        }
+    };
+
+    btn.onclick = () => {
+        if (btn.dataset.regen === '1') {
+            // 재생성: 이전 결과가 사라진다는 확인
+            openConfirm({
+                title: 'AI 분석 다시 생성',
+                message: '다시 생성하면 이전에 생성된 AI 분석 결과는 사라지고\n새로운 결과로 대체됩니다.\n\n계속할까요?',
+                okText: '다시 생성',
+                onOk: doRun
+            });
+        } else {
+            doRun();
+        }
+    };
+
+    // 저장된 결과 우선 조회(있으면 즉시 표시 + 재생성 모드)
+    if (refKey) {
+        try {
+            const saved = await api.aiGetResult(type, refKey);
+            if (saved) { paint(saved); return; }
+        } catch (_) { /* 조회 실패는 무시하고 생성 가능 상태 유지 */ }
+    }
+    setBtnFresh();
+}
+
+// [B][E] edit by smsong : 확인/취소 다이얼로그(앱 스타일). onOk 는 확인 시 실행.
+function openConfirm({ title, message, okText, cancelText, onOk, danger }) {
+    const wrap = document.createElement('div');
+    wrap.className = 'confirm-backdrop';
+    wrap.innerHTML = `
+        <div class="confirm-box" role="dialog" aria-modal="true">
+            ${title ? `<div class="confirm-title">${esc(title)}</div>` : ''}
+            <div class="confirm-msg">${esc(message || '').replace(/\n/g, '<br>')}</div>
+            <div class="confirm-acts">
+                <button class="btn ghost" data-c-cancel type="button">${esc(cancelText || '취소')}</button>
+                <button class="btn ${danger ? 'danger' : 'grad'}" data-c-ok type="button">${esc(okText || '확인')}</button>
+            </div>
+        </div>`;
+    document.body.appendChild(wrap);
+    requestAnimationFrame(() => wrap.classList.add('show'));
+    const close = () => { wrap.classList.remove('show'); setTimeout(() => wrap.remove(), 180); };
+    wrap.querySelector('[data-c-cancel]').onclick = close;
+    wrap.querySelector('[data-c-ok]').onclick = () => { close(); if (onOk) onOk(); };
+    wrap.onclick = (e) => { if (e.target === wrap) close(); };
 }
 // [E] edit by smsong
 
@@ -4172,6 +4269,21 @@ function getCalMarker() {
     } catch (_) { return { shape: 'circle', color: CAL_MARKER_COLORS[0], emoji: CAL_MARKER_EMOJIS[0] }; }
 }
 function setCalMarker(m) { try { localStorage.setItem(CAL_MARKER_KEY, JSON.stringify(m)); } catch (_) {} }
+// [B] edit by smsong : 문자열에서 맨 앞 "이모지 하나"를 추출(ZWJ·피부톤·variation selector 결합 포함).
+//   Intl.Segmenter 가 있으면 grapheme 단위로, 없으면 Array.from 폴백.
+function emojiFirst(str) {
+    if (!str) return '';
+    const s = String(str).trim();
+    if (!s) return '';
+    try {
+        if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+            const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+            for (const g of seg.segment(s)) return g.segment;
+        }
+    } catch (_) {}
+    return Array.from(s)[0] || '';
+}
+// [E] edit by smsong
 // clip-path 로 도형을 만든다(원/둥근네모는 border-radius 로 처리하므로 여기선 각진 도형만).
 const CAL_SHAPE_CLIP = {
     square:   'none',

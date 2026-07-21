@@ -1268,6 +1268,14 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .se-meta-memo { font-size: 13px; color: var(--text-mute); margin-bottom: 12px; line-height: 1.5; }
 .chip.xs { padding: 4px 10px; font-size: 12px; }
 .chip.xs.view-chip { pointer-events: none; }
+/* [B] edit by smsong : 운동 탭 부위 필터 칩(가로 스크롤) */
+.part-filter {
+    display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 8px;
+    margin: 0 0 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.part-filter::-webkit-scrollbar { display: none; }
+.part-filter .chip { flex: 0 0 auto; }
+/* [E] edit by smsong */
 
 /* 총 시간(분): 자동 계산 전용 — 입력 잠금 표시 */
 .input.readonly {
@@ -1752,6 +1760,14 @@ textarea.input.im-text {
 .mk-shape .mk-ic-emoji { font-size: 22px; line-height: 26px; height: 26px; }
 .mk-shape-lbl { font-size: 11px; font-weight: 700; }
 .mk-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+/* [B][E] edit by smsong : 이모지 직접 입력 행 */
+.mk-emoji-input-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.mk-emoji-current {
+    flex: 0 0 auto; width: 46px; height: 46px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center; font-size: 26px;
+    background: var(--ink-850); border: 1px solid var(--line);
+}
+.mk-emoji-input { flex: 1; min-width: 0; }
 /* [B][E] edit by smsong : 이모지가 많아져 스크롤 그리드로. 6열 고정, 최대 높이 후 세로 스크롤. */
 .mk-emojis {
     display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px;
@@ -1772,6 +1788,27 @@ textarea.input.im-text {
 }
 .mk-color.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--ink-900) inset; }
 .mk-apply { margin-top: 4px; }
+/* [E] edit by smsong */
+
+/* [B] edit by smsong — 확인/취소 다이얼로그 */
+.confirm-backdrop {
+    position: fixed; inset: 0; z-index: 2000;
+    background: rgba(6, 16, 28, 0.5); backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    opacity: 0; transition: opacity .18s ease;
+}
+.confirm-backdrop.show { opacity: 1; }
+.confirm-box {
+    width: 100%; max-width: 340px;
+    background: var(--ink-900); border: 1px solid var(--line); border-radius: 18px;
+    padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+    transform: translateY(8px) scale(.98); transition: transform .18s ease;
+}
+.confirm-backdrop.show .confirm-box { transform: translateY(0) scale(1); }
+.confirm-title { font-size: 16px; font-weight: 800; margin-bottom: 8px; color: var(--text); }
+.confirm-msg { font-size: 13.5px; line-height: 1.6; color: var(--text-dim); margin-bottom: 18px; }
+.confirm-acts { display: flex; gap: 8px; }
+.confirm-acts .btn { flex: 1; }
 /* [E] edit by smsong */
 
 /* ---------- 토스트 ---------- */
