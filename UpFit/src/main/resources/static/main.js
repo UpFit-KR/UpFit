@@ -1405,8 +1405,8 @@ function renderChange() {
         // [B][E] edit by smsong : 기간으로 필터링 (그래프에 반영. 최신값 비교 카드는 전체 최신 기준 유지)
         //   두 번째 인자 = 보조 포함 여부
         const statsAll = exerciseSessionStats(ui.changeExercise, ui.changeAssist);
-        const stats = filterByPeriod(statsAll, s => s.date, ui.changePeriod);
-        // [B][E] edit by smsong : "1일" 기간에서는 묶지 않고 그날의 기록을 그대로 → 라벨은 시각으로
+        // [B][E] edit by smsong : 기간은 확대 레벨일 뿐, 데이터는 전부 표시한다(필터 제거).
+        const stats = statsAll;
         const exRawLabel = s => s.startTime || labelMd(s.date);
         const n = statsAll.length;
         const last = statsAll[n - 1];
@@ -1525,8 +1525,9 @@ function renderChange() {
         <div class="section-head"><h2>컨디션 · 운동 시간</h2></div>
         <div class="card">`;
     // [B][E] edit by smsong : 최근 14개 고정 → 선택한 기간으로 필터링
-    const condSeries = filterByPeriod(orderedSessions().filter(s => s.condition != null), s => s.date, ui.changePeriod);
-    const durSeries = filterByPeriod(orderedSessions().filter(s => sessionDuration(s) != null), s => s.date, ui.changePeriod);
+    // [B][E] edit by smsong : 기간은 확대 레벨 → 전체 데이터 표시(필터 제거)
+    const condSeries = orderedSessions().filter(s => s.condition != null);
+    const durSeries = orderedSessions().filter(s => sessionDuration(s) != null);
     // [B][E] edit by smsong : 컨디션은 구간 평균, 운동 시간은 구간 합계로 묶는다
     const sessRawLabel = s => s.startTime || labelMd(s.date);
     if (condSeries.length) {
@@ -1550,7 +1551,7 @@ function renderChange() {
         <div class="section-head"><h2>체중 변화</h2>${state.profile.targetWeight ? `<span class="sub">목표 ${state.profile.targetWeight}kg</span>` : ''}</div>
         <div class="card">`;
     const blAll = state.bodyLogs.slice().sort((a, b) => a.date < b.date ? -1 : 1);
-    const bl = filterByPeriod(blAll, b => b.date, ui.changePeriod);   // [B][E] edit by smsong : 기간 필터링
+    const bl = blAll;   // [B][E] edit by smsong : 기간은 확대 레벨 → 전체 데이터 표시(필터 제거)
     if (bl.length) {
         // [B][E] edit by smsong : 체중은 구간 평균(같은 주/달에 여러 번 쟀어도 하나의 점으로)
         html += `<div class="chart-sub-title">체중 (kg) <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
@@ -1568,14 +1569,10 @@ function renderChange() {
     html += `<div class="section">
         <div class="section-head"><h2>칼로리 추이</h2></div>
         <div class="card">`;
-    // [B][E] edit by smsong : 기간 단위로 묶어 합계. 1일이면 그날의 끼니별로 그대로 표시.
-    const kdays = periodDays(ui.changePeriod);
-    const days = [];
-    for (let i = kdays - 1; i >= 0; i--) days.push(shiftDays(-i));
-    const kcalRaw = days.map(d => ({ date: d, kcal: kcalOfDate(d) }));
-    const kcalPoints = periodUnit(ui.changePeriod) === 'raw'
-        ? mealsByDate(todayStr()).map(m => ({ label: (MEAL_TYPES.find(t => t.key === m.mealType) || {}).label || m.name, value: m.kcal || 0 }))
-        : aggSeries(kcalRaw, r => r.date, r => r.kcal, ui.changePeriod, 'sum');
+    // [B][E] edit by smsong : 기간은 확대 레벨. 전체 식단 날짜의 칼로리 합계를 버킷으로 묶는다.
+    const kcalDates = [...new Set(state.meals.map(m => m.date))];
+    const kcalRaw = kcalDates.map(d => ({ date: d, kcal: kcalOfDate(d) }));
+    const kcalPoints = aggSeries(kcalRaw, r => r.date, r => r.kcal, ui.changePeriod, 'sum');
     if (kcalPoints.some(p => p.value > 0)) {
         html += `<div class="chart-sub-title">섭취 칼로리 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
         html += lineChart(kcalPoints, { color: C_KCAL, unit: 'kcal' });
@@ -1823,16 +1820,20 @@ const CHANGE_PERIODS = [
 ];
 function periodDays(key) { const p = CHANGE_PERIODS.find(p => p.key === key); return p ? p.days : 30; }
 
-// [B] edit by smsong : 기간 = "x축의 단위" 로 재정의.
-//   기존엔 기간이 단순 필터(cutoff 이후 기록만)라, 1년을 골라도 기록이 3개면 점 3개짜리 그래프였다.
-//   변경 — 기간마다 x축의 눈금(버킷) 자체를 만든다. 기록이 없는 구간도 축에 그대로 남는다.
-//     1일   : 그날의 기록을 있는 그대로 (라벨 = 시각)
-//     1주   : 일 단위  ×  7칸
-//     1개월 : 일 단위  × 30칸
-//     6개월 : 주 단위  × 26칸 (월요일 시작)
-//     1년   : 월 단위  × 12칸
+// [B] edit by smsong : 기간 = "확대(zoom) 레벨" 로 재정의.
+//   핵심: 입력된 모든 데이터가 항상 보인다. 기간은 x축을 얼마나 잘게 묶을지(버킷 크기)만 정한다.
+//     1일   : 일   단위 집계 (가장 확대 — 점이 촘촘)
+//     1주   : 주   단위 집계 (월요일 시작)
+//     1개월 : 월   단위 집계
+//     6개월 : 반기(6개월) 단위 집계
+//     1년   : 연   단위 집계 (가장 축소)
+//   축 범위 = (가장 오래된 기록) ~ (오늘). 기록이 없는 중간 구간도 축에 남는다.
 function periodUnit(key) {
-    return key === '1y' ? 'month' : key === '6m' ? 'week' : key === '1d' ? 'raw' : 'day';
+    return key === '1y' ? 'year'
+         : key === '6m' ? 'half'
+         : key === '1m' ? 'month'
+         : key === '1w' ? 'week'
+         : 'day';   // 1d
 }
 function monthKey(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; }
 function weekStartStr(dateStr) {              // 그 날짜가 속한 주의 월요일
@@ -1840,87 +1841,86 @@ function weekStartStr(dateStr) {              // 그 날짜가 속한 주의 월
     d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     return toDateStr(d);
 }
+function halfKey(d) {   // 반기 키: YYYY-H1 / YYYY-H2
+    return `${d.getFullYear()}-H${d.getMonth() < 6 ? 1 : 2}`;
+}
 // 날짜(YYYY-MM-DD) → 그 날짜가 속한 버킷 키
 function bucketKeyOf(dateStr, unit) {
-    if (unit === 'month') return monthKey(parseDate(dateStr));
-    if (unit === 'week') return weekStartStr(dateStr);
-    return dateStr;
+    const d = parseDate(dateStr);
+    if (unit === 'year')  return String(d.getFullYear());
+    if (unit === 'half')  return halfKey(d);
+    if (unit === 'month') return monthKey(d);
+    if (unit === 'week')  return weekStartStr(dateStr);
+    return dateStr;   // day
 }
 // 버킷 키 → x축 라벨
 function bucketLabel(key, unit) {
+    if (unit === 'year') return `${key}`;
+    if (unit === 'half') { const [y, h] = key.split('-H'); return `${y.slice(2)}.${h === '1' ? '상' : '하'}`; }
     if (unit === 'month') {
-        // [B][E] edit by smsong : 1년 그래프에서 작년/올해 같은 달(예: 7월)이 겹쳐 헷갈리지 않도록,
-        //   1월이거나 연도 경계이면 "26.1" 처럼 연도를 함께 표시한다.
+        // 1월이면 연도를 함께(작년/올해 같은 달 혼동 방지)
         const [y, m] = key.split('-');
         const mm = Number(m);
         return mm === 1 ? `${y.slice(2)}.${mm}월` : `${mm}월`;
     }
-    return labelMd(key);
+    return labelMd(key);   // week/day → 월/일
 }
-// 기간 전체의 버킷 목록(과거 → 현재). 기록 유무와 무관하게 축을 먼저 만든다.
-function periodBuckets(key) {
+// 두 버킷 키 사이의 "다음 키"를 만들며 전체 축을 생성(빈 구간도 포함)
+function nextBucketKey(key, unit) {
+    if (unit === 'year')  return String(Number(key) + 1);
+    if (unit === 'half')  { const [y, h] = key.split('-H'); return h === '1' ? `${y}-H2` : `${Number(y) + 1}-H1`; }
+    if (unit === 'month') { const [y, m] = key.split('-').map(Number); const d = new Date(y, m - 1 + 1, 1); return monthKey(d); }
+    if (unit === 'week')  { const d = parseDate(key); d.setDate(d.getDate() + 7); return toDateStr(d); }
+    const d = parseDate(key); d.setDate(d.getDate() + 1); return toDateStr(d);   // day
+}
+// 기간 전체의 버킷 목록. 데이터 최초일 ~ 오늘 을 버킷 단위로 채운다.
+//   items 가 있으면 그 최소 날짜부터, 없으면 오늘 하나만.
+function periodBuckets(key, items, dateOf) {
     const unit = periodUnit(key);
+    // 데이터의 최소 날짜 구하기
+    let minDate = todayStr();
+    if (items && items.length && dateOf) {
+        for (const it of items) { const d = dateOf(it); if (d && d < minDate) minDate = d; }
+    }
+    const startKey = bucketKeyOf(minDate, unit);
+    const endKey = bucketKeyOf(todayStr(), unit);
     const keys = [];
-    const today = new Date();
-    if (unit === 'month') {
-        for (let i = 11; i >= 0; i--) keys.push(monthKey(new Date(today.getFullYear(), today.getMonth() - i, 1)));
-    } else if (unit === 'week') {
-        const w0 = weekStartStr(todayStr());
-        for (let i = 25; i >= 0; i--) { const d = parseDate(w0); d.setDate(d.getDate() - i * 7); keys.push(toDateStr(d)); }
-    } else if (unit === 'day') {
-        const n = periodDays(key);
-        for (let i = n - 1; i >= 0; i--) keys.push(shiftDays(-i));
+    let k = startKey, guard = 0;
+    while (guard++ < 2000) {
+        keys.push(k);
+        if (k === endKey) break;
+        k = nextBucketKey(k, unit);
+        // 안전장치: day 단위에서 endKey 를 지나치면 중단
+        if (unit === 'day' && k > endKey) break;
     }
     return { unit, keys };
 }
-// 축의 시작 = 필터 기준일 (월/주 단위는 버킷 경계에 맞춘다 → 축과 데이터가 어긋나지 않음)
-function periodCutoff(key) {
-    const { unit, keys } = periodBuckets(key);
-    if (unit === 'raw') return todayStr();
-    const first = keys[0];
-    return unit === 'month' ? first + '-01' : first;
-}
-// 날짜 문자열(YYYY-MM-DD)을 가진 배열을 기간으로 필터링
-function filterByPeriod(items, dateOf, periodKey) {
-    const cutoff = periodCutoff(periodKey);
-    return items.filter(it => dateOf(it) >= cutoff);
-}
-
 /**
- * 기간 단위로 묶어 그래프 점 배열을 만든다.
- * @param {Array}    items      원본 (기간 필터를 이미 통과한 것)
+ * 기간(확대 레벨)으로 묶어 그래프 점 배열을 만든다. 모든 데이터가 축에 담긴다.
+ * @param {Array}    items      원본(정렬 무관)
  * @param {function} dateOf     (item) => 'YYYY-MM-DD'
  * @param {function} valueOf    (item) => number
- * @param {string}   periodKey  1d/1w/1m/6m/1y
+ * @param {string}   periodKey  1d/1w/1m/6m/1y (확대 레벨)
  * @param {string}   mode       'sum' | 'avg' | 'max' | 'last'
- * @param {function} [rawLabelOf] 1일 모드에서 쓸 라벨 (item) => string
- * @returns {Array<{label,value}>}  기록이 없는 버킷은 value=null (sum 계열은 0)
+ * @param {function} [rawLabelOf] day 단위에서 쓸 라벨 (item) => string
+ * @returns {Array<{label,value,key}>}  기록이 없는 버킷은 value=null(sum 계열은 0)
  */
 function aggSeries(items, dateOf, valueOf, periodKey, mode, rawLabelOf) {
-    const { unit, keys } = periodBuckets(periodKey);
-    if (unit === 'raw') {
-        // [B] edit by smsong : raw(1일) 모드는 item 을 그대로 점으로 쓴다.
-        //   반드시 날짜(+시간) 오름차순으로 정렬해야 x축이 시간순으로 나온다.
-        //   (원본이 정렬돼 있지 않으면 점 순서가 뒤섞여 "날짜 매핑이 안 맞는" 것처럼 보였다.)
-        const sorted = items.slice().sort((a, b) => {
-            const da = dateOf(a), db = dateOf(b);
-            if (da !== db) return da < db ? -1 : 1;
-            const ta = (a && a.startTime) || '', tb = (b && b.startTime) || '';
-            return ta < tb ? -1 : ta > tb ? 1 : 0;
-        });
-        return sorted.map(it => ({
-            label: rawLabelOf ? rawLabelOf(it) : labelMd(dateOf(it)),
-            value: valueOf(it)
-        }));
-    }
-    // [E] edit by smsong
-    const map = {};
+    const { unit, keys } = periodBuckets(periodKey, items, dateOf);
+
+    // 버킷별로 값 + "대표 날짜"(그 버킷에서 실제 기록된 가장 이른 날)를 모은다.
+    //   대표 날짜로 라벨을 만들면, 주/반기 버킷도 실제 운동한 날짜로 표시돼 날짜가 밀리지 않는다.
+    const map = {};        // key -> [values]
+    const repDate = {};    // key -> 대표 날짜(YYYY-MM-DD)
     items.forEach(it => {
-        const k = bucketKeyOf(dateOf(it), unit);
+        const ds = dateOf(it);
+        const k = bucketKeyOf(ds, unit);
         const v = valueOf(it);
         if (v == null || isNaN(v)) return;
         (map[k] || (map[k] = [])).push(Number(v));
+        if (!repDate[k] || ds < repDate[k]) repDate[k] = ds;
     });
+
     return keys.map(k => {
         const arr = map[k];
         let v = null;
@@ -1929,10 +1929,25 @@ function aggSeries(items, dateOf, valueOf, periodKey, mode, rawLabelOf) {
             else if (mode === 'max') v = Math.max.apply(null, arr);
             else if (mode === 'last') v = arr[arr.length - 1];
             else v = Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10;   // avg
-        } else if (mode === 'sum') {
-            v = 0;    // 합계 지표(볼륨/칼로리 등)는 "0인 구간"이 정보다 → 축에 0으로 남긴다
+        } else if (mode === 'sum' && unit !== 'day') {
+            v = 0;    // 합계 지표는 "0인 구간"도 정보 → 축에 0으로. 단 day 확대에선 빈 날을 아래에서 제외.
         }
-        return { label: bucketLabel(k, unit), value: v, key: k };
+        // 라벨: day 단위는 그 버킷에 든 기록 라벨, 없으면 버킷 키 기반.
+        //   주/반기는 실제 기록 대표 날짜로(밀림 방지), 월/연은 버킷 라벨.
+        let label;
+        if (unit === 'day') {
+            label = repDate[k] ? labelMd(repDate[k]) : bucketLabel(k, unit);
+        } else if ((unit === 'week' || unit === 'half') && repDate[k]) {
+            label = labelMd(repDate[k]);
+        } else {
+            label = bucketLabel(k, unit);
+        }
+        return { label, value: v, key: k, empty: !(arr && arr.length) };
+    }).filter(pt => {
+        // [B][E] edit by smsong : day(가장 확대)에선 기록이 있는 날만 점으로 → 빈 날 수백 개로 그래프가
+        //   지나치게 넓어지고 렉이 걸리는 것을 막는다. 주/월/반기/연은 빈 구간도 축에 남긴다.
+        if (unit === 'day') return !pt.empty;
+        return true;
     });
 }
 // [E] edit by smsong
@@ -1944,11 +1959,11 @@ function periodTabsHtml(id, current) {
 // [B][E] edit by smsong : 지금 그래프의 x축이 어떤 단위인지 소제목 옆에 표기 (1년=월별 …)
 function periodUnitLabel(key) {
     const u = periodUnit(key);
-    return u === 'month' ? '· 월별 (최근 1년)'
-         : u === 'week'  ? '· 주별 (최근 6개월)'
-         : u === 'raw'   ? '· 오늘'
-         : key === '1w'  ? '· 일별 (최근 1주)'
-                         : '· 일별 (최근 1개월)';
+    return u === 'year'  ? '· 연도별 (전체)'
+         : u === 'half'  ? '· 반기별 (전체)'
+         : u === 'month' ? '· 월별 (전체)'
+         : u === 'week'  ? '· 주별 (전체)'
+                         : '· 일별 (전체)';
 }
 // [E] edit by smsong
 
