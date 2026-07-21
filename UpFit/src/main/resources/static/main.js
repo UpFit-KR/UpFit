@@ -1479,14 +1479,23 @@ function renderChange() {
     // [E] edit by smsong
 
     // [B] edit by smsong : 변화 탭 AI — 이 종목의 "전체 추세"를 분석(trend 모드).
-    //   결과는 종목+보조설정 키로 캐시(ui.changeAiCache)해, 재렌더(기간 변경 등) 시에도 유지한다.
-    //   비교 상세의 AI(두 시점 비교)와는 관점이 다르다.
-    const aiKey = `${ui.changeExercise}||${ui.changeAssist ? 'A' : 'N'}`;
+    //   결과는 "종목" 기준으로만 캐시(ui.changeAiCache)한다 → 보조 on/off 를 바꿔도 결과가 유지된다.
+    //   (보조 설정은 그래프/지표엔 반영되지만, 이미 생성된 AI 결과는 그대로 남긴다. 새 기준으로
+    //    다시 보고 싶으면 스파클 버튼을 다시 누른다.)
+    const aiKey = String(ui.changeExercise || '');
     const gAiBtn = document.getElementById('growthAiBtn');
     const gAiOut = document.getElementById('growthAiResult');
     ui.changeAiCache = ui.changeAiCache || {};
-    // 캐시된 결과가 있으면 복원
-    if (gAiOut && ui.changeAiCache[aiKey]) {
+    // 접기 상태를 ui.changeAiCollapsed 에 저장 → 재렌더(기간/보조 변경 등) 후에도 유지
+    function wireGrowthAiCollapse(container) {
+        const tg = container.querySelector('.ai-toggle');
+        if (tg) tg.addEventListener('click', () => {
+            const card = container.querySelector('.ai-card');
+            ui.changeAiCollapsed = !!(card && card.classList.contains('collapsed'));
+        });
+    }
+    // 캐시된 결과가 있으면 복원(접힘 상태까지)
+    if (gAiOut && aiKey && ui.changeAiCache[aiKey]) {
         gAiOut.innerHTML = aiResultHtml(ui.changeAiCache[aiKey]);
         if (ui.changeAiCollapsed) {
             const card = gAiOut.querySelector('.ai-card');
@@ -1495,6 +1504,7 @@ function renderChange() {
             if (tg) tg.setAttribute('aria-expanded', 'false');
         }
         wireAiToggle(gAiOut);
+        wireGrowthAiCollapse(gAiOut);
         if (gAiBtn) { gAiBtn.disabled = true; gAiBtn.title = 'AI 분석 완료'; gAiBtn.classList.add('done'); }
     }
     if (gAiBtn && gAiOut) gAiBtn.onclick = async () => {
@@ -1518,15 +1528,6 @@ function renderChange() {
             gAiOut.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
         }
     };
-    // 접기 상태를 ui.changeAiCollapsed 에 저장 → 재렌더(기간 변경 등) 후에도 유지
-    function wireGrowthAiCollapse(container) {
-        const tg = container.querySelector('.ai-toggle');
-        if (tg) tg.addEventListener('click', () => {
-            const card = container.querySelector('.ai-card');
-            ui.changeAiCollapsed = !!(card && card.classList.contains('collapsed'));
-        });
-    }
-    if (gAiOut && ui.changeAiCache[aiKey]) wireGrowthAiCollapse(gAiOut);
     // [E] edit by smsong
 
     // [B] edit by smsong : 지표 행 탭 → 두 기록의 운동 리스트를 한 폼에서 나란히 비교
