@@ -188,13 +188,9 @@ const api = {
     addExercise:   (nm) => apiReq('POST',   `/exercise/${UID}`, { name: nm }),
     delExercise:   (id) => apiReq('DELETE', `/exercise/${UID}/${id}`),
     // [B] edit by smsong : AI 성장 분석 — 자체 로딩 UI 가 있으므로 전역 로딩 폼은 끈다(silent).
-    //   type/refKey 로 결과를 서버에 저장·구분한다.
-    aiAnalyze:     (payload, type, refKey) => apiReq('POST', `/ai/analyze/${UID}?type=${encodeURIComponent(type || 'trend')}&refKey=${encodeURIComponent(refKey || '')}`, payload, { silent: true }),
+    aiAnalyze:     (payload) => apiReq('POST', `/ai/analyze/${UID}`, payload, { silent: true }),
     // 운동 상세(하루) AI 분석
-    aiAnalyzeSession: (payload, refKey) => apiReq('POST', `/ai/session/${UID}?refKey=${encodeURIComponent(refKey || '')}`, payload, { silent: true }),
-    // 저장된 AI 결과 조회(없으면 204 → null) / 삭제
-    aiGetResult:   (type, refKey) => apiReq('GET', `/ai/result/${UID}?type=${encodeURIComponent(type)}&refKey=${encodeURIComponent(refKey)}`, null, { silent: true }),
-    aiDelResult:   (type, refKey) => apiReq('DELETE', `/ai/result/${UID}?type=${encodeURIComponent(type)}&refKey=${encodeURIComponent(refKey)}`, null, { silent: true }),
+    aiAnalyzeSession: (payload) => apiReq('POST', `/ai/session/${UID}`, payload, { silent: true }),
     // [E] edit by smsong
     // [B] edit by smsong : 내 정보(신체 정보 포함) 조회/수정 — 키/현재 체중/목표 체중을 DB에 영속화
     getMe:      ()      => apiReq('GET', `/user/uid/${UID}`),
@@ -1628,20 +1624,15 @@ function renderChange() {
     // [E] edit by smsong
 
     // [B] edit by smsong : 변화 탭 AI — 이 종목의 "전체 추세"를 분석(trend 모드).
-    //   저장된 결과는 서버에서 조회해 바로 표시. 재생성 시 확인 후 덮어쓴다.
-    //   refKey = 종목명 → 종목당 1건 유지(보조 on/off 를 바꿔도 결과 유지).
     mountAiSection({
         btn: document.getElementById('growthAiBtn'),
         out: document.getElementById('growthAiResult'),
-        type: 'trend',
-        refKey: String(ui.changeExercise || ''),
         mode: 'trend',
-        confirmMsg: () => `'${ui.changeExercise}'의 전체 기록을 분석할까요?`,
         loadingMsg: () => `${ui.changeExercise}의 전체 기록을 AI가 분석 중입니다`,
         run: async () => {
             const bw = exerciseIsBodyweight(ui.changeExercise);
             const payload = buildAiPayload(ui.changeExercise, null, null, ui.changeAssist, bw, 'trend');
-            return await api.aiAnalyze(payload, 'trend', String(ui.changeExercise || ''));
+            return await api.aiAnalyze(payload);
         }
     });
     // [E] edit by smsong
@@ -2915,27 +2906,21 @@ function openSessionEditor(sessionId, date, mode, editorOpts) {
         };
         document.getElementById('seAddW').onclick = () => openWorkoutSheet(null, async item => {
             await addWorkoutToSession(sid, item);
-            // 운동이 바뀌면 이전 분석은 더 이상 유효하지 않으므로 서버 저장분도 삭제
-            try { await api.aiDelResult('session', String(sid)); } catch (_) {}
             paintList(); render(); toast('운동을 추가했어요');
         });
 
         // [B] edit by smsong : 이 날 운동 상세 AI 분석 — 신체정보 + 그날 운동 전체를 분석.
-        //   저장된 결과는 서버에서 조회해 바로 표시. 재생성 시 확인 후 덮어쓴다.
         const sCur = sess();
         if (sCur) {
             mountAiSection({
                 btn: document.getElementById('seAiBtn'),
                 out: document.getElementById('seAiResult'),
-                type: 'session',
-                refKey: String(sCur.id),
                 mode: 'session',
-                confirmMsg: () => `${fmtKorean(sCur.date)} 운동을 분석할까요?`,
                 loadingMsg: () => `${fmtKorean(sCur.date)} 운동을 AI가 분석 중입니다`,
                 run: async () => {
                     const sNow = sess() || sCur;
                     const payload = buildSessionAiPayload(sNow);
-                    return await api.aiAnalyzeSession(payload, String(sNow.id));
+                    return await api.aiAnalyzeSession(payload);
                 }
             });
         }
@@ -3448,20 +3433,10 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
     // [B] edit by smsong : AI 성장 분석.
     //   이 종목의 "전체" 세션 이력 + 지금 비교 중인 두 시점 + 체중 추이를 백엔드로 보내
     //   Gemini 가 추세/근성장·근손실/회복/미래를 분석하게 한다. 결과는 아래 영역에 카드로 렌더.
-    //   저장된 결과는 서버에서 조회해 바로 표시. 재생성 시 확인 후 덮어쓴다.
-    //   refKey = 종목|이전날짜|최근날짜 → 이 비교 조합당 1건 유지.
-    const cmpRefKey = `${exercise}|${prevStat ? prevStat.date : 'first'}|${lastStat ? lastStat.date : ''}`;
     mountAiSection({
         btn: document.getElementById('cmpxAiBtn'),
         out: document.getElementById('cmpxAiResult'),
-        type: 'compare',
-        refKey: cmpRefKey,
         mode: 'compare',
-        confirmMsg: () => {
-            const dFrom = prevStat ? labelYmd(prevStat.date) : '첫 기록';
-            const dTo = lastStat ? labelYmd(lastStat.date) : '';
-            return `${dFrom}와 ${dTo} 운동을 비교하여 분석할까요?`;
-        },
         loadingMsg: () => {
             const dFrom = prevStat ? labelYmd(prevStat.date) : '첫 기록';
             const dTo = lastStat ? labelYmd(lastStat.date) : '';
@@ -3469,7 +3444,7 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
         },
         run: async () => {
             const payload = buildAiPayload(exercise, prevStat, lastStat, inc, isBw, 'compare');
-            return await api.aiAnalyze(payload, 'compare', cmpRefKey);
+            return await api.aiAnalyze(payload);
         }
     });
     // [E] edit by smsong
@@ -3695,96 +3670,26 @@ function wireAiToggle(container) {
 //   결과가 있으면 생성 버튼을 "재생성"으로 바꾼다(누르면 확인 폼 → 덮어쓰기).
 //   opts = { btn, out, type, refKey, mode, loadingMsg, run() }
 //     · run() : 실제 분석을 호출해 결과(res)를 반환하는 async 함수(서버 저장까지 수행)
-async function mountAiSection(opts) {
-    const { btn, out, type, refKey, mode, loadingMsg, confirmMsg, run } = opts;
+// [B] edit by smsong : AI 분석 섹션 — 버튼을 누르면 그 자리에서 분석을 생성해 보여준다.
+//   (결과를 서버에 저장/조회하지 않는다. 매번 새로 생성.)
+function mountAiSection(opts) {
+    const { btn, out, mode, loadingMsg, run } = opts;
     if (!btn || !out) return;
-    let hasResult = false;
 
-    const paint = (res) => {
-        out.innerHTML = aiResultHtml(res, mode);
-        wireAiToggle(out);
-        hasResult = true;
-        setBtnRegen();
-    };
-    const setBtnRegen = () => {
-        btn.disabled = false;
-        btn.classList.add('done');
-        btn.title = 'AI 분석 다시 생성';
-        btn.setAttribute('aria-label', 'AI 분석 다시 생성');
-        btn.dataset.regen = '1';
-    };
-    const setBtnFresh = () => {
-        btn.disabled = false;
-        btn.classList.remove('done');
-        btn.title = 'AI 분석';
-        btn.dataset.regen = '';
-    };
-
-    const doRun = async () => {
+    btn.onclick = async () => {
         btn.disabled = true;
-        out.innerHTML = aiLoadingHtml(loadingMsg());
+        out.innerHTML = aiLoadingHtml(loadingMsg ? loadingMsg() : 'AI가 분석 중입니다');
         try {
             const res = await run();
-            paint(res);
+            out.innerHTML = aiResultHtml(res, mode);
+            wireAiToggle(out);
+            btn.disabled = false;
         } catch (err) {
-            if (err && err.auth) { setBtnFresh(); return; }
+            btn.disabled = false;
+            if (err && err.auth) return;
             out.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
-            hasResult ? setBtnRegen() : setBtnFresh();
         }
     };
-
-    btn.onclick = () => {
-        if (btn.dataset.regen === '1') {
-            // [B][E] edit by smsong : 재생성 — 이전 결과가 사라진다는 확인.
-            //   기능별 확인 메시지(confirmMsg) 뒤에 재생성 경고를 덧붙인다.
-            openConfirm({
-                title: 'AI 분석 다시 생성',
-                message: `${confirmMsg ? confirmMsg() + '\n\n' : ''}다시 생성하면 이전 AI 분석 결과는 사라지고 새 결과로 대체됩니다.`,
-                okText: '다시 생성',
-                cancelText: '취소',
-                onOk: doRun
-            });
-        } else {
-            // [B][E] edit by smsong : 최초 생성 — 기능별 확인 메시지로 "예/취소"를 묻는다.
-            openConfirm({
-                title: 'AI 분석',
-                message: confirmMsg ? confirmMsg() : 'AI 분석을 시작할까요?',
-                okText: '예',
-                cancelText: '취소',
-                onOk: doRun
-            });
-        }
-    };
-
-    // 저장된 결과 우선 조회(있으면 즉시 표시 + 재생성 모드)
-    if (refKey) {
-        try {
-            const saved = await api.aiGetResult(type, refKey);
-            if (saved) { paint(saved); return; }
-        } catch (_) { /* 조회 실패는 무시하고 생성 가능 상태 유지 */ }
-    }
-    setBtnFresh();
-}
-
-// [B][E] edit by smsong : 확인/취소 다이얼로그(앱 스타일). onOk 는 확인 시 실행.
-function openConfirm({ title, message, okText, cancelText, onOk, danger }) {
-    const wrap = document.createElement('div');
-    wrap.className = 'confirm-backdrop';
-    wrap.innerHTML = `
-        <div class="confirm-box" role="dialog" aria-modal="true">
-            ${title ? `<div class="confirm-title">${esc(title)}</div>` : ''}
-            <div class="confirm-msg">${esc(message || '').replace(/\n/g, '<br>')}</div>
-            <div class="confirm-acts">
-                <button class="btn ghost" data-c-cancel type="button">${esc(cancelText || '취소')}</button>
-                <button class="btn ${danger ? 'danger' : 'grad'}" data-c-ok type="button">${esc(okText || '확인')}</button>
-            </div>
-        </div>`;
-    document.body.appendChild(wrap);
-    requestAnimationFrame(() => wrap.classList.add('show'));
-    const close = () => { wrap.classList.remove('show'); setTimeout(() => wrap.remove(), 180); };
-    wrap.querySelector('[data-c-cancel]').onclick = close;
-    wrap.querySelector('[data-c-ok]').onclick = () => { close(); if (onOk) onOk(); };
-    wrap.onclick = (e) => { if (e.target === wrap) close(); };
 }
 // [E] edit by smsong
 
