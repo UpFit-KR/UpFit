@@ -479,6 +479,7 @@ button { font-family: var(--font); cursor: pointer; }
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
     position: relative; font-variant-numeric: tabular-nums;
     min-width: 0;
+    -webkit-tap-highlight-color: transparent;   /* [B][E] edit by smsong : iOS 탭 시 회색 사각형 잔상 방지 */
 }
 .cal-cell.empty { background: transparent; border: 0; }
 /* 숫자 = 원형 배지. 셀 사이에 틈이 없어도 배지끼리는 서로 닿지 않는다. */
@@ -490,18 +491,19 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .cal-cell.today .dnum { border-color: var(--accent); color: var(--accent); }      /* 오늘 = 파란 원 테두리 */
 .cal-cell.selected .dnum { background: var(--grad-soft); }                        /* 선택 = 연한 그린 원 채움 */
-.cal-cell.has .dnum { border-color: var(--accent-2); color: var(--accent-2); }    /* 운동한 날 = 초록 원 테두리(기본) */
+.cal-cell.has .dnum { border-color: var(--accent-2); color: var(--accent-2); background: transparent; }    /* 운동한 날 = 초록 원 테두리(기본), 배경 없음 */
 .cal-cell.today.has .dnum { border-color: var(--accent-2); color: var(--accent-2); }
 
 /* [B] edit by smsong : 사용자 지정 마커(모양/색) — has + mk-shape 셀.
    기본 원 테두리를 덮어써, 선택한 도형/색으로 "운동한 날"을 표시한다. */
 .cal-cell.has.mk-shape .dnum {
     border-color: var(--mk-color); color: var(--mk-color);
+    background: transparent;   /* 테두리형 마커는 배경 없음(회색 사각형 방지) */
 }
-/* 원 / 둥근 네모 : 테두리 방식(숫자 잘 보임) */
-.cal-cell.has.mk-shape[data-shape="circle"]  .dnum { border-radius: 50%; }
-.cal-cell.has.mk-shape[data-shape="rounded"] .dnum { border-radius: 8px; }
-.cal-cell.has.mk-shape[data-shape="square"]  .dnum { border-radius: 2px; }
+/* 원 / 둥근 네모 / 정사각형 : 테두리 방식(숫자 잘 보임). 배경은 투명. */
+.cal-cell.has.mk-shape[data-shape="circle"]  .dnum { border-radius: 50%; background: transparent; }
+.cal-cell.has.mk-shape[data-shape="rounded"] .dnum { border-radius: 8px; background: transparent; }
+.cal-cell.has.mk-shape[data-shape="square"]  .dnum { border-radius: 2px; background: transparent; }
 /* 각진 도형(세모/마름모/오각/육각/별) : 연한 채움 + clip-path. 테두리는 clip 되므로 배경으로 표현. */
 .cal-cell.has.mk-shape[data-shape="triangle"] .dnum,
 .cal-cell.has.mk-shape[data-shape="diamond"] .dnum,
@@ -509,6 +511,7 @@ button { font-family: var(--font); cursor: pointer; }
 .cal-cell.has.mk-shape[data-shape="hexagon"] .dnum,
 .cal-cell.has.mk-shape[data-shape="star"] .dnum {
     border: 0;
+    background: var(--mk-color);   /* color-mix 미지원 브라우저 fallback(단색) */
     background: color-mix(in srgb, var(--mk-color) 22%, transparent);
     color: var(--mk-color);
 }
