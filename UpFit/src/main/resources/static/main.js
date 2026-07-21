@@ -1853,16 +1853,18 @@ function bucketKeyOf(dateStr, unit) {
     if (unit === 'week')  return weekStartStr(dateStr);
     return dateStr;   // day
 }
+// 버킷 키 → 그 버킷의 시작 날짜(YYYY-MM-DD). 빈 버킷의 대표 날짜로 쓴다.
+function bucketStartDate(key, unit) {
+    if (unit === 'year')  return `${key}-01-01`;
+    if (unit === 'half')  { const [y, h] = key.split('-H'); return `${y}-${h === '1' ? '01' : '07'}-01`; }
+    if (unit === 'month') return `${key}-01`;
+    return key;   // week(월요일) / day 는 키가 곧 날짜
+}
 // 버킷 키 → x축 라벨
 function bucketLabel(key, unit) {
     if (unit === 'year') return `${key}`;
-    if (unit === 'half') { const [y, h] = key.split('-H'); return `${y.slice(2)}.${h === '1' ? '상' : '하'}`; }
-    if (unit === 'month') {
-        // 1월이면 연도를 함께(작년/올해 같은 달 혼동 방지)
-        const [y, m] = key.split('-');
-        const mm = Number(m);
-        return mm === 1 ? `${y.slice(2)}.${mm}월` : `${mm}월`;
-    }
+    if (unit === 'half') { const [y, h] = key.split('-H'); return h === '1' ? '상반기' : '하반기'; }
+    if (unit === 'month') { const m = Number(key.split('-')[1]); return `${m}월`; }
     return labelMd(key);   // week/day → 월/일
 }
 // 두 버킷 키 사이의 "다음 키"를 만들며 전체 축을 생성(빈 구간도 포함)
@@ -1942,7 +1944,13 @@ function aggSeries(items, dateOf, valueOf, periodKey, mode, rawLabelOf) {
         } else {
             label = bucketLabel(k, unit);
         }
-        return { label, value: v, key: k, empty: !(arr && arr.length) };
+        // [B][E] edit by smsong : 클릭 툴팁에서 쓸 "전체 날짜". 실제 기록일이 있으면 그 날짜,
+        //   없으면 버킷 시작일을 대표로. (day=키 자체, week=월요일, month=1일, half=반기 첫날, year=1/1)
+        const date = repDate[k] || bucketStartDate(k, unit);
+        // [B][E] edit by smsong : 연도를 라벨 아래에 별도로 표시(직관적). 연도가 바뀌는 첫 버킷에만.
+        //   month: 1월 또는 그 해 첫 버킷 / half: 상반기 / week·day: 1월 진입 주 / year: 항상 연도가 곧 라벨.
+        const yr = date.slice(0, 4);
+        return { label, value: v, key: k, date, year: yr, empty: !(arr && arr.length) };
     }).filter(pt => {
         // [B][E] edit by smsong : day(가장 확대)에선 기록이 있는 날만 점으로 → 빈 날 수백 개로 그래프가
         //   지나치게 넓어지고 렉이 걸리는 것을 막는다. 주/월/반기/연은 빈 구간도 축에 남긴다.
@@ -2355,7 +2363,11 @@ function lineChart(points, opts) {
             <div style="font-size:12px;margin-top:6px">데이터가 2개 이상이면 추이 그래프가 그려져요</div></div>`;
     }
 
-    const H = 196, padT = 34, padB = 30;
+    // [B][E] edit by smsong : 연도 행을 그릴지 판단(연 단위 제외 + 점이 2개 이상 + 여러 연도이거나 연도표시 필요).
+    //   연도 행을 그리면 x축 아래 공간(padB)을 넉넉히 확보한다.
+    const isYearUnit = points.length && /^\d{4}$/.test(String(points[0].key || ''));
+    const wantYearRow = opts.showYear !== false && points.length > 1 && points[0].year && !isYearUnit;
+    const H = 196, padT = 34, padB = wantYearRow ? 44 : 30;
     // 점당 폭 고정 → 데이터가 많으면 SVG 가 넓어지고 .chart-scroll 이 가로 스크롤로 보여준다.
     const SPACING = 46;
     const AXIS_W = 42;              // 고정 세로축 폭
@@ -2443,7 +2455,7 @@ function lineChart(points, opts) {
         const cx = x(i);
         const left  = i === 0 ? 0 : (x(i - 1) + cx) / 2;
         const right = i === points.length - 1 ? W : (cx + x(i + 1)) / 2;
-        hits += `<rect class="cpt" x="${left.toFixed(1)}" y="0" width="${(right - left).toFixed(1)}" height="${H}" fill="transparent" style="cursor:pointer" data-cx="${cx.toFixed(1)}" data-cy="${y(p.value).toFixed(1)}" data-v="${p.value}" data-lab="${esc(String(p.label))}"/>`;
+        hits += `<rect class="cpt" x="${left.toFixed(1)}" y="0" width="${(right - left).toFixed(1)}" height="${H}" fill="transparent" style="cursor:pointer" data-cx="${cx.toFixed(1)}" data-cy="${y(p.value).toFixed(1)}" data-v="${p.value}" data-lab="${esc(String(p.label))}" data-date="${esc(p.date || '')}"/>`;
     });
     let di = 0;
     points.forEach((p, i) => {
@@ -2467,13 +2479,32 @@ function lineChart(points, opts) {
     const minLabelGap = 40;
     const every = opts.everyLabel || Math.max(1, Math.ceil(minLabelGap / SPACING));
     let labels = '';
+    // [B] edit by smsong : 연도 경계 처리 — 연도가 바뀌는 첫 점에 연도를 아래줄에 표시하고
+    //   그 자리에 옅은 세로 구분선을 그린다. 월/주/일/반기 확대에서 "몇 년도"인지 직관적으로 파악.
+    let yearMarks = '';
+    let prevYear = null;
+    const mdLabelY = H - padB + 20;             // 월/일 라벨
+    const yLabelY = H - padB + 33;              // 그 아래 연도
     points.forEach((p, i) => {
+        // 월/일 라벨(위)
         if (i % every === 0 || i === points.length - 1) {
             const anchor = i === 0 ? 'start' : (i === points.length - 1 ? 'end' : 'middle');
             const lx = i === 0 ? Math.max(x(i) - 6, 2) : (i === points.length - 1 ? Math.min(x(i) + 8, W - 2) : x(i));
-            labels += `<text x="${lx.toFixed(1)}" y="${H - 9}" text-anchor="${anchor}" style="fill:var(--text-mute)" font-size="9.5">${esc(String(p.label))}</text>`;
+            labels += `<text x="${lx.toFixed(1)}" y="${mdLabelY.toFixed(1)}" text-anchor="${anchor}" style="fill:var(--text-mute)" font-size="9.5">${esc(String(p.label))}</text>`;
+        }
+        // 연도 경계(연도가 바뀔 때마다)
+        if (wantYearRow && p.year && p.year !== prevYear) {
+            if (prevYear !== null) {
+                const bx = (i === 0 ? x(i) : (x(i - 1) + x(i)) / 2).toFixed(1);
+                yearMarks += `<line x1="${bx}" y1="${padT - 6}" x2="${bx}" y2="${(padT + innerH).toFixed(1)}" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 3" opacity="0.85"/>`;
+            }
+            const yx = Math.max(x(i), 4);
+            yearMarks += `<text x="${yx.toFixed(1)}" y="${yLabelY.toFixed(1)}" text-anchor="middle" style="fill:var(--text-dim)" font-size="10.5" font-weight="800">${esc(p.year)}</text>`;
+            prevYear = p.year;
         }
     });
+    labels += yearMarks;
+    // [E] edit by smsong
 
     // ---------- 왼쪽 고정 세로축 ----------
     let axis = '';
@@ -2503,10 +2534,16 @@ function lineChart(points, opts) {
 
 // [B] edit by smsong : 그래프 점 탭 → 해당 날짜 수치 툴팁 표시
 function wireCharts(root) {
-    // [B][E] edit by smsong : 가로로 넓어진 그래프는 기본적으로 최신 데이터(오른쪽 끝)가 보이게
-    (root || document).querySelectorAll('.chart-scroll').forEach(el => {
-        el.scrollLeft = el.scrollWidth;
-    });
+    // [B] edit by smsong : 가로로 넓어진 그래프는 최신 데이터(오른쪽 끝)가 먼저 보이게 스크롤.
+    //   렌더 직후엔 scrollWidth 가 아직 확정되지 않을 수 있어 rAF 로 레이아웃 후 두 번 맞춘다.
+    const scrollToEnd = () => {
+        (root || document).querySelectorAll('.chart-scroll').forEach(el => {
+            el.scrollLeft = el.scrollWidth;
+        });
+    };
+    scrollToEnd();
+    requestAnimationFrame(() => { scrollToEnd(); requestAnimationFrame(scrollToEnd); });
+    // [E] edit by smsong
     (root || document).querySelectorAll('.chart-svg').forEach(svg => {
         if (svg.dataset.wired) return;
         svg.dataset.wired = '1';
@@ -2521,12 +2558,19 @@ function wireCharts(root) {
             if (!t) { tip.style.display = 'none'; tip.innerHTML = ''; return; }
             const cx = parseFloat(t.dataset.cx), cy = parseFloat(t.dataset.cy);
             const v = t.dataset.v, lab = t.dataset.lab;
-            // [B][E] edit by smsong : 말풍선이 그림 밖으로 나가지 않게 보정 (고정폭 290 → 실제 폭 W)
-            const tx = Math.min(Math.max(cx, 30), W - 30);
-            const bubbleY = Math.max(cy - 12, 20);
+            const dateStr = t.dataset.date || '';
+            // [B][E] edit by smsong : YYYY-MM-DD → YYYY.MM.DD
+            const dateDot = dateStr ? dateStr.replace(/-/g, '.') : '';
+            // 말풍선이 그림 밖으로 나가지 않게 보정
+            const tx = Math.min(Math.max(cx, 34), W - 34);
+            // 값 말풍선 위에 날짜를 함께 표시(2줄). 날짜가 있으면 말풍선을 조금 더 위로.
+            const hasDate = !!dateDot;
+            const bubbleY = Math.max(cy - 12, hasDate ? 30 : 20);
+            const dateY = bubbleY - 20;
             tip.innerHTML =
                 `<line x1="${cx}" y1="18" x2="${cx}" y2="${H - 24}" stroke="${color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.45"/>` +
                 `<circle cx="${cx}" cy="${cy}" r="5" fill="${color}" stroke="var(--ink-900)" stroke-width="2"/>` +
+                (hasDate ? `<text x="${tx}" y="${dateY}" text-anchor="middle" fill="var(--text-dim)" font-size="9.5" font-weight="800">${esc(dateDot)}</text>` : '') +
                 `<g transform="translate(${tx}, ${bubbleY})">` +
                 `<rect x="-28" y="-15" width="56" height="19" rx="6" fill="${color}"/>` +
                 `<text x="0" y="-1.5" text-anchor="middle" fill="#fff" font-size="10.5" font-weight="800">${v}${unit}</text></g>` +
