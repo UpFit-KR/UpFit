@@ -366,6 +366,7 @@ let state = null;
 const ui = {
     workoutView: 'calendar',           // 'calendar' | 'list'
     workoutPartFilter: null,           // [B][E] edit by smsong : 운동 탭 부위 필터(null=전체)
+    listPage: 1,                       // [B][E] edit by smsong : 목록 뷰 페이지(20개씩)
     dietView: 'calendar',
     workoutCal: firstOfThisMonth(),
     dietCal: firstOfThisMonth(),
@@ -960,45 +961,37 @@ function renderHome() {
 // ---------- 운동 ----------
 function renderWorkout(preserveFilterScroll) {
     let html = `
-    <div class="section-head">
+    <div class="section-head workout-head">
         <div class="seg" id="workoutSeg">
             <button data-v="calendar" class="${ui.workoutView === 'calendar' ? 'active' : ''}">달력</button>
             <button data-v="list" class="${ui.workoutView === 'list' ? 'active' : ''}">목록</button>
         </div>
-        <!-- [B] edit by smsong : 선택한 날짜로 붙여넣기/파일 가져오기 -->
+        <!-- [B] edit by smsong : 부위 필터를 콤보박스로. 선택 부위만 달력/목록에 표시 -->
+        <div class="wk-select-wrap">
+            <select class="wk-select ${ui.workoutPartFilter ? 'on' : ''}" id="partSelect" aria-label="부위 필터">
+                <option value="" ${!ui.workoutPartFilter ? 'selected' : ''}>전체 부위</option>
+                ${BODY_PARTS.map(p => `<option value="${esc(p)}" ${ui.workoutPartFilter === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+            </select>
+            <span class="wk-select-chev">${icon('chevD')}</span>
+        </div>
+        <!-- [E] edit by smsong -->
         <div class="head-btns">
             <button class="ibtn" id="importBtn" type="button" title="기록 가져오기" aria-label="기록 가져오기">${icon('paste')}</button>
             <button class="ibtn grad" id="addSessionBtn" type="button" title="운동 기록 추가" aria-label="운동 기록 추가">${icon('plus')}</button>
         </div>
-        <!-- [E] edit by smsong -->
     </div>`;
-
-    // [B] edit by smsong : 부위 필터 칩. 선택한 부위가 포함된 날짜/세션만 달력·목록에 표시.
-    //   '전체' + BODY_PARTS. 가로 스크롤로 넘긴다.
-    html += `<div class="part-filter" id="partFilter">
-        <button class="chip xs ${!ui.workoutPartFilter ? 'active' : ''}" data-part="" type="button">전체</button>
-        ${BODY_PARTS.map(p => `<button class="chip xs ${ui.workoutPartFilter === p ? 'active' : ''}" data-part="${esc(p)}" type="button">${esc(p)}</button>`).join('')}
-    </div>`;
-    // [E] edit by smsong
 
     html += ui.workoutView === 'calendar' ? workoutCalendarHtml() : workoutListHtml();
     document.getElementById('view-workout').innerHTML = html;
 
-    // [B] edit by smsong : 부위 필터 칩 클릭 → 필터 적용 후 다시 렌더.
-    //   재렌더로 innerHTML 이 갈리면 가로 스크롤이 0 으로 튀므로, 클릭 직전 scrollLeft 를
-    //   저장해 두고 렌더 직후 복원한다(선택한 칩 위치가 유지됨).
-    document.querySelectorAll('#partFilter [data-part]').forEach(b => b.onclick = () => {
-        const pf = document.getElementById('partFilter');
-        const keepScroll = pf ? pf.scrollLeft : 0;
-        ui.workoutPartFilter = b.dataset.part || null;
-        renderWorkout(keepScroll);
-    });
-    // 재렌더 시 전달된 스크롤 위치 복원
-    if (typeof preserveFilterScroll === 'number') {
-        const pf = document.getElementById('partFilter');
-        if (pf) pf.scrollLeft = preserveFilterScroll;
-    }
-    // [E] edit by smsong
+    // [B][E] edit by smsong : 부위 콤보박스 변경 → 필터 적용 후 다시 렌더.
+    //   목록 뷰는 페이지네이션을 처음부터 다시 시작한다.
+    const partSel = document.getElementById('partSelect');
+    if (partSel) partSel.onchange = () => {
+        ui.workoutPartFilter = partSel.value || null;
+        ui.listPage = 1;   // 목록 페이지 초기화
+        renderWorkout();
+    };
 
     // 이벤트
     document.getElementById('addSessionBtn').onclick =
@@ -1007,9 +1000,10 @@ function renderWorkout(preserveFilterScroll) {
     document.getElementById('importBtn').onclick =
         () => openImportSheet(ui.workoutView === 'calendar' ? ui.workoutSel : todayStr());
     // [E] edit by smsong
-    document.querySelectorAll('#workoutSeg button').forEach(b => b.onclick = () => { ui.workoutView = b.dataset.v; renderWorkout(); });
+    document.querySelectorAll('#workoutSeg button').forEach(b => b.onclick = () => { ui.workoutView = b.dataset.v; ui.listPage = 1; renderWorkout(); });
     bindCalendar('workout');
     wireReorder();   // [B][E] edit by smsong : 세션 드래그 순서 변경 활성화
+    if (ui.workoutView === 'list') wireListPaging();   // [B][E] edit by smsong : 목록 무한 스크롤
 }
 
 // [B] edit by smsong : 날짜별 운동 기록(세션) 목록에 드래그 순서 변경 연결(서버 저장 → 기기 간 동기화)
@@ -1018,6 +1012,40 @@ function wireReorder() {
         enableDragReorder(list, ids => commitReorder(list.dataset.reorderDate, ids));
     });
 }
+
+// [B] edit by smsong : 목록 무한 스크롤. 하단 sentinel 이 보이면 페이지를 늘려
+//   목록 컨테이너(#view-workout 안)만 다시 그린다(스크롤 위치 유지, 전체 재렌더 아님).
+let _listObserver = null;
+function wireListPaging() {
+    if (_listObserver) { _listObserver.disconnect(); _listObserver = null; }
+    const sentinel = document.getElementById('listSentinel');
+    if (!sentinel) return;
+    const root = document.getElementById('appMain') || null;   // 스크롤 컨테이너
+    _listObserver = new IntersectionObserver((entries) => {
+        if (entries.some(e => e.isIntersecting)) {
+            ui.listPage = (ui.listPage || 1) + 1;
+            repaintList();
+        }
+    }, { root: root, rootMargin: '300px 0px' });   // 300px 미리 로드
+    _listObserver.observe(sentinel);
+}
+
+// 목록 뷰만 다시 그린다(헤더/콤보박스는 유지). 페이지 증가 시 사용.
+function repaintList() {
+    const view = document.getElementById('view-workout');
+    if (!view) return;
+    // 헤더(.workout-head) 다음의 목록 영역만 교체하기 위해, 목록 래퍼를 다시 만든다.
+    //   간단히: 목록 HTML 을 새로 만들어 기존 목록 블록을 교체.
+    const headEnd = view.querySelector('.workout-head');
+    if (!headEnd) { renderWorkout(); return; }
+    // 헤더 이후 모든 형제를 제거하고 새 목록으로 대체
+    let sib = headEnd.nextSibling;
+    while (sib) { const next = sib.nextSibling; sib.remove(); sib = next; }
+    headEnd.insertAdjacentHTML('afterend', workoutListHtml());
+    wireReorder();
+    wireListPaging();
+}
+// [E] edit by smsong
 
 // 드래그로 만든 순서를 서버에 저장. 성공 시 sortOrder 를 응답값으로 갱신,
 // 실패 시 서버 기준으로 되돌리기 위해 다시 렌더.
@@ -1164,7 +1192,15 @@ function workoutListHtml() {
             ? emptyBlock('dumbbell', `'${esc(part)}' 기록이 없어요`, '다른 부위를 선택하거나 전체를 보세요')
             : emptyBlock('dumbbell', '아직 운동 기록이 없어요', '오른쪽 위 ＋ 버튼으로 시작하세요');
     }
-    return dates.map(date => {
+    // [B] edit by smsong : 페이지네이션 — 날짜 20개씩. 데이터가 많을 때 한 번에 다 그리면 렉이 걸려서,
+    //   맨 아래로 스크롤하면 20개씩 추가로 붙인다(wireListPaging 의 IntersectionObserver).
+    const PAGE = 20;
+    const total = dates.length;
+    const shown = Math.min(total, PAGE * (ui.listPage || 1));
+    const pageDates = dates.slice(0, shown);
+    // [E] edit by smsong
+
+    let out = pageDates.map(date => {
         const list = filteredSessionsByDate(date);
         const parts = dayBodyParts(date);
         const dur = list.reduce((a, s) => a + (sessionDuration(s) || 0), 0) || null;
@@ -1181,6 +1217,16 @@ function workoutListHtml() {
             </div>
         </div>`;
     }).join('');
+
+    // [B][E] edit by smsong : 더 있으면 하단 sentinel(스크롤 감지용) + 로딩 표시, 없으면 끝 안내
+    if (shown < total) {
+        out += `<div class="list-sentinel" id="listSentinel">
+            <div class="list-loading">${icon('dumbbell')} 더 불러오는 중… <span class="tabnum">(${shown}/${total})</span></div>
+        </div>`;
+    } else if (total > PAGE) {
+        out += `<div class="list-end">모든 기록을 불러왔어요 · ${total}일</div>`;
+    }
+    return out;
 }
 
 // 운동 기록(세션) 카드. 탭하면 상세가 정중앙 모달로 열린다 (전체보기 아이콘으로 확대 가능).
@@ -3951,12 +3997,14 @@ function activateTab(tab, remember) {
     });
     // [B][E] edit by smsong : 이전 탭 → 새 탭으로 코멧이 날아가 이동을 각인
     if (fromTab && fromTab !== tab) navComet(fromTab, tab);
-    // [B][E] edit by smsong : 탭을 전환하면 운동 탭 부위 필터는 '전체'로 초기화한다.
+    // [B][E] edit by smsong : 탭을 전환하면 운동 탭 부위 필터는 '전체'로, 목록 페이지는 1로 초기화한다.
     //   render() 는 탭 전환마다 호출되지 않으므로(뷰는 show/hide 만), 필터가 걸려 있었다면
     //   여기서 리셋하고 workout 뷰만 다시 그려 '전체'로 되돌린다.
-    if (fromTab && fromTab !== tab && ui.workoutPartFilter) {
+    if (fromTab && fromTab !== tab) {
+        const needRepaint = !!ui.workoutPartFilter || (ui.listPage || 1) !== 1;
         ui.workoutPartFilter = null;
-        renderWorkout();
+        ui.listPage = 1;
+        if (needRepaint) renderWorkout();
     }
 
     curTab = tab;

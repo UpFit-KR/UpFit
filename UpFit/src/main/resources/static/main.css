@@ -1334,13 +1334,32 @@ html.modal-open, body.modal-open { overflow: hidden !important; touch-action: no
 .se-meta-memo { font-size: 13px; color: var(--text-mute); margin-bottom: 12px; line-height: 1.5; }
 .chip.xs { padding: 4px 10px; font-size: 12px; }
 .chip.xs.view-chip { pointer-events: none; }
-/* [B] edit by smsong : 운동 탭 부위 필터 칩(가로 스크롤) */
-.part-filter {
-    display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 8px;
-    margin: 0 0 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+/* [B] edit by smsong : 운동 탭 헤더 — 세그먼트 + 부위 콤보박스 + 버튼 한 줄 */
+.section-head.workout-head { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.wk-select-wrap { position: relative; flex: 1; min-width: 0; }
+.wk-select {
+    width: 100%; appearance: none; -webkit-appearance: none;
+    padding: 8px 30px 8px 12px; border-radius: 11px;
+    border: 1px solid var(--line); background: var(--ink-850); color: var(--text-dim);
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
 }
-.part-filter::-webkit-scrollbar { display: none; }
-.part-filter .chip { flex: 0 0 auto; }
+.wk-select.on { border-color: var(--accent); color: var(--accent); background: var(--grad-soft); }
+.wk-select-chev {
+    position: absolute; right: 9px; top: 50%; transform: translateY(-50%);
+    pointer-events: none; color: var(--text-mute); display: inline-flex;
+}
+.wk-select-chev svg { width: 15px; height: 15px; }
+.wk-select.on + .wk-select-chev { color: var(--accent); }
+/* 목록 무한 스크롤 — 하단 로딩/끝 표시 */
+.list-sentinel { padding: 16px 0 24px; display: flex; justify-content: center; }
+.list-loading {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12.5px; font-weight: 700; color: var(--text-mute);
+}
+.list-loading svg { width: 16px; height: 16px; animation: listPulse 1s ease-in-out infinite; }
+@keyframes listPulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+.list-end { text-align: center; font-size: 12px; color: var(--text-mute); padding: 12px 0 24px; font-weight: 600; }
 /* [E] edit by smsong */
 
 /* 총 시간(분): 자동 계산 전용 — 입력 잠금 표시 */
