@@ -130,8 +130,11 @@ async function apiReq(method, path, body, opts) {
     const silent = !!(opts && opts.silent);
     if (!silent) Busy.start();   // API 시작 ~ 종료 동안 로딩 폼 표시 + 입력 차단
     try {
-        const token = Auth.getToken();
-        // 요청 직전에도 만료 확인 (30분 토큰)
+        // [B] edit by smsong : 로그인 유지 — 요청 직전 만료 임박이면 먼저 토큰을 갱신한다.
+        //   (앱을 쓰는 동안 자연스럽게 슬라이딩 만료 → 세션이 계속 이어진다)
+        if (Auth.ensureFreshToken) { try { await Auth.ensureFreshToken(); } catch (_) {} }
+        let token = Auth.getToken();
+        // 요청 직전에도 만료 확인
         if (!token || Auth.isExpired(token)) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
 
         const res = await fetch(BACKEND_BASE + path, {
@@ -206,6 +209,8 @@ async function apiUserUpdate(userDto) {
     // [B][E] edit by smsong : 회원 수정도 동일하게 로딩 폼으로 감싼다
     Busy.start('내 정보를 저장하고 있어요');
     try {
+        // [B][E] edit by smsong : 로그인 유지 — 만료 임박이면 먼저 갱신
+        if (Auth.ensureFreshToken) { try { await Auth.ensureFreshToken(); } catch (_) {} }
         const token = Auth.getToken();
         if (!token || Auth.isExpired(token)) { Auth.invalidSession(); const e = new Error('AUTH'); e.auth = true; throw e; }
         const fd = new FormData();

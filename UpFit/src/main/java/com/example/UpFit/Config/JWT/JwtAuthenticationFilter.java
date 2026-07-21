@@ -38,7 +38,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             } else {
                 token = header;
             }
-            uid = jwtTokenProvider.getUidFromToken(token);
+            // [B][E] edit by smsong : 만료/손상 토큰이면 예외 대신 uid=null 로 두고 통과.
+            //   (컨트롤러/보안설정이 최종 판단. 필터에서 500 으로 죽지 않게 방어)
+            try {
+                uid = jwtTokenProvider.getUidFromToken(token);
+            } catch (Exception e) {
+                uid = null;
+            }
         }
 
         if (uid != null && SecurityContextHolder.getContext().getAuthentication() == null) {

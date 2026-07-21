@@ -40,6 +40,23 @@ public class UserController {
         return ResponseEntity.ok(userService.login(userDTO.getUid(), userDTO.getPassword()));
     }
 
+    // [B] edit by smsong : 토큰 갱신(로그인 유지). Authorization 헤더의 현재 토큰을 새 토큰으로 교체.
+    //   프론트(auth.js)가 만료 임박 시 자동 호출한다. 유효하지 않으면 401 → 재로그인.
+    @Operation(summary = "토큰 갱신 (로그인 유지)")
+    @PostMapping("/refresh")
+    public ResponseEntity<JWTDTO> refresh(@RequestHeader(value = "Authorization", required = false) String header) {
+        if (header == null || header.isBlank()) {
+            return ResponseEntity.status(401).build();
+        }
+        String token = header.startsWith("Bearer ") ? header.substring(7) : header;
+        try {
+            return ResponseEntity.ok(userService.refreshToken(token));
+        } catch (Exception e) {
+            return ResponseEntity.status(401).build();
+        }
+    }
+    // [E] edit by smsong
+
     // 전체 회원 조회
     @Operation(summary = "전체 회원 조회")
     @GetMapping("/all/{uid}")

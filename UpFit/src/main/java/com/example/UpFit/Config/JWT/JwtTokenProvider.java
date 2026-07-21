@@ -124,22 +124,36 @@ public class JwtTokenProvider {
         }
     }
 
-    // JWT 토큰 유효기간 갱신 (오류나는 중)
-    public void refreshToken(String token) {
-        Claims claims = getAllClaimsFromToken(token);
-        if (claims == null || isTokenExpired(token) || invalidTokens.contains(token)) {
-            logger.error("토큰이 유효하지 않거나 만료되었습니다");
-            throw new IllegalArgumentException("유효하지 않거나 만료된 토큰");
+    // [B] edit by smsong : 토큰 갱신(슬라이딩 만료) — 현재 토큰이 유효하면 같은 uid 로 새 토큰을 발급.
+    //   기존 refreshToken 은 claims 를 그대로 재서명해 setSubject/exp 가 꼬여 오류가 났다.
+    //   generateToken(uid) 를 재사용하면 이전 토큰 무효화 + 새 만료시간이 일관되게 처리된다.
+    //   반환값: 새 토큰(문자열). 유효하지 않으면 예외.
+    public String refreshToken(String token) {
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("토큰이 없습니다");
         }
-        // 만료 시간 갱신
-        claims.setExpiration(new Date(System.currentTimeMillis() + expiration));
-        String uid = claims.getSubject();
-        String refreshedToken = Jwts.builder()
-                .setClaims(claims)
-                .signWith(key, SignatureAlgorithm.HS512)
-                .compact();
-        activeTokens.put(uid, refreshedToken); // 갱신된 토큰 저장
-        logger.info("토큰의 기간이 연장되었습니다");
+        // 만료/무효 검사 (만료된 토큰으로는 갱신 불가 → 재로그인 필요)
+        String uid;
+        try {
+            uid = getUidFromToken(token);
+        } catch (ExpiredJwtException e) {
+            logger.error("만료된 토큰으로는 갱신할 수 없습니다");
+            throw new IllegalArgumentException("만료된 토큰");
+        }
+        if (uid == null) throw new IllegalArgumentException("유효하지 않은 토큰");
+        if (invalidTokens.contains(token)) {
+            logger.error("무효화된 토큰으로는 갱신할 수 없습니다");
+            throw new IllegalArgumentException("무효화된 토큰");
+        }
+        // 현재 활성 토큰과 일치해야 갱신 허용(탈취된 옛 토큰으로 갱신 방지)
+        if (!token.equals(activeTokens.get(uid))) {
+            logger.error("활성 토큰과 일치하지 않아 갱신을 거부합니다");
+            throw new IllegalArgumentException("활성 토큰 불일치");
+        }
+        // 새 토큰 발급(이전 토큰 자동 무효화)
+        String refreshed = generateToken(uid);
+        logger.info("토큰이 갱신되었습니다(슬라이딩 만료)");
+        return refreshed;
     }
 
     // JWT 토큰의 남은 유효 기간을 체크

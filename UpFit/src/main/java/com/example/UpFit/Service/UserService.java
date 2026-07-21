@@ -99,6 +99,17 @@ public class UserService {
         return new JWTDTO(token, UserDTO.entityToDto(userEntity));
     }
 
+    // [B] edit by smsong : 토큰 갱신(로그인 유지). 유효한 토큰 → 같은 사용자로 새 토큰 재발급.
+    //   프론트가 만료 임박 시 호출한다. 만료/무효 토큰이면 예외 → 프론트는 재로그인 유도.
+    public JWTDTO refreshToken(String token) {
+        String newToken = jwtTokenProvider.refreshToken(token);   // 유효성 검사 + 재발급(예외 던짐)
+        String uid = jwtTokenProvider.getUidFromToken(newToken);
+        UserEntity userEntity = userRepository.findByUid(uid)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+        return new JWTDTO(newToken, UserDTO.entityToDto(userEntity));
+    }
+    // [E] edit by smsong
+
     // 전체 회원 조회
     public List<UserDTO> getAllUsers(String uid, UserDetails userDetails) {
         if (!userDetails.getUsername().equals(uid)) {
