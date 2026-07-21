@@ -186,6 +186,8 @@ const api = {
     delExercise:   (id) => apiReq('DELETE', `/exercise/${UID}/${id}`),
     // [B][E] edit by smsong : AI 성장 분석 — 자체 로딩 UI 가 있으므로 전역 로딩 폼은 끈다(silent)
     aiAnalyze:     (payload) => apiReq('POST', `/ai/analyze/${UID}`, payload, { silent: true }),
+    // [B][E] edit by smsong : 운동 상세(하루) AI 분석
+    aiAnalyzeSession: (payload) => apiReq('POST', `/ai/session/${UID}`, payload, { silent: true }),
     // [B] edit by smsong : 내 정보(신체 정보 포함) 조회/수정 — 키/현재 체중/목표 체중을 DB에 영속화
     getMe:      ()      => apiReq('GET', `/user/uid/${UID}`),
     updateMe:   (dto)   => apiUserUpdate(dto)
@@ -438,6 +440,10 @@ async function load() {
             if (me.height != null) state.profile.height = me.height;
             if (me.weight != null) state.profile.weight = me.weight;
             if (me.targetWeight != null) state.profile.targetWeight = me.targetWeight;
+            // [B][E] edit by smsong : 체지방/성별/나이도 신체 정보로 보관(운동 상세 AI 분석에 사용)
+            if (me.bodyFat != null) state.profile.bodyFat = me.bodyFat;
+            if (me.gender != null) state.profile.gender = me.gender;
+            if (me.age != null) state.profile.age = me.age;
         }
     } catch (err) { if (err && err.auth) throw err; }
     // [E] edit by smsong
@@ -519,7 +525,8 @@ async function saveBodyInfo(patch) {
         name: state.profile.name || (base && base.name) || null,
         height: state.profile.height,
         weight: state.profile.weight,
-        targetWeight: state.profile.targetWeight
+        targetWeight: state.profile.targetWeight,
+        bodyFat: state.profile.bodyFat   // [B][E] edit by smsong : 체지방률도 함께 저장
     });
     const saved = await api.updateMe(dto);
     if (saved) state.userRaw = saved;
@@ -1033,7 +1040,7 @@ function enableDragReorder(listEl, onCommit) {
 function workoutCalendarHtml() {
     // [B] edit by smsong : 운동한 날은 점 대신 셀 테두리로만 표시(cellExtra=null, hasFn 은 유지)
     const cal = calendarGrid(ui.workoutCal, ui.workoutSel, null,
-        date => sessionsByDate(date).length > 0, { showCounts: true });
+        date => sessionsByDate(date).length > 0, { showCounts: true, marker: true });
     // [E] edit by smsong
 
     const sel = ui.workoutSel;
@@ -1492,7 +1499,8 @@ function renderChange() {
     }
     if (gAiBtn && gAiOut) gAiBtn.onclick = async () => {
         gAiBtn.disabled = true;
-        gAiOut.innerHTML = aiLoadingHtml();
+        // [B][E] edit by smsong : 전체추세 로딩 메시지 — 종목명 포함
+        gAiOut.innerHTML = aiLoadingHtml(`${ui.changeExercise}의 전체 기록을 AI가 분석 중입니다`);
         try {
             const bw = exerciseIsBodyweight(ui.changeExercise);
             // trend 모드 : 전체 이력 추세. 두 시점(prev/last)은 보내지 않는다.
@@ -1840,6 +1848,7 @@ function renderProfile() {
             <div class="kv"><span class="k">키</span><span class="v tabnum">${p.height ? p.height + ' cm' : '—'}</span></div>
             <div class="kv"><span class="k">현재 체중</span><span class="v tabnum">${lastWeight != null ? lastWeight + ' kg' : '—'}</span></div>
             <div class="kv"><span class="k">목표 체중</span><span class="v tabnum">${p.targetWeight ? p.targetWeight + ' kg' : '—'}</span></div>
+            <div class="kv"><span class="k">체지방률</span><span class="v tabnum">${p.bodyFat != null ? p.bodyFat + ' %' : '—'}</span></div>
         </div>
     </div>
 
@@ -1894,6 +1903,10 @@ function calendarGrid(cal, selDate, cellExtra, hasFn, gridOpts) {
     const daysInMonth = new Date(y, m + 1, 0).getDate();
     const today = todayStr();
 
+    // [B] edit by smsong : 운동한 날 마커 설정(모양/색/이모지). gridOpts.marker=true 인 달력(운동)에서만 사용.
+    const mk = gridOpts.marker ? getCalMarker() : null;
+    // [E] edit by smsong
+
     let cells = '';
     // 요일 헤더
     WEEKDAYS.forEach((d, i) => {
@@ -1910,9 +1923,24 @@ function calendarGrid(cal, selDate, cellExtra, hasFn, gridOpts) {
         if (has) { cls.push('has'); workoutDays++; }
         if (ds === today) cls.push('today');
         if (ds === selDate) cls.push('selected');
-        cells += `<div class="${cls.join(' ')}" data-date="${ds}">
-            <span class="dnum">${d}</span>${cellExtra ? cellExtra(ds) : ''}
+        // [B] edit by smsong : has 셀에 사용자 마커(모양/색) 적용.
+        //   · 이모지 모드 → dnum 위에 이모지 뱃지를 겹쳐 표시(dnum 은 그대로 숫자).
+        //   · 도형 모드   → data-shape + --mk-color 로 CSS 가 clip-path/색을 입힌다.
+        let shapeAttr = '', styleAttr = '', emojiBadge = '';
+        if (has && mk) {
+            if (mk.shape === 'emoji') {
+                cls.push('mk-emoji');
+                emojiBadge = `<span class="cal-mk-emoji">${mk.emoji}</span>`;
+            } else {
+                cls.push('mk-shape');
+                shapeAttr = ` data-shape="${mk.shape}"`;
+                styleAttr = ` style="--mk-color:${mk.color}"`;
+            }
+        }
+        cells += `<div class="${cls.join(' ')}"${shapeAttr}${styleAttr} data-date="${ds}">
+            <span class="dnum">${d}</span>${emojiBadge}${cellExtra ? cellExtra(ds) : ''}
         </div>`;
+        // [E] edit by smsong
     }
 
     // [B] edit by smsong : 이 달의 운동일/휴식일 카운트.
@@ -1938,6 +1966,7 @@ function calendarGrid(cal, selDate, cellExtra, hasFn, gridOpts) {
             ${y}년 ${m + 1}월 ${icon('chevD')}
         </button>
         <div class="cal-nav">
+            ${gridOpts.marker ? `<button data-cal-marker type="button" title="표시 모양 설정" aria-label="달력 표시 모양 설정">${icon('palette')}</button>` : ''}
             <button data-cal-prev>${icon('chevL')}</button>
             <button data-cal-today>${icon('dot')}</button>
             <button data-cal-next>${icon('chevR')}</button>
@@ -1946,6 +1975,92 @@ function calendarGrid(cal, selDate, cellExtra, hasFn, gridOpts) {
     ${countHtml}
     <div class="cal-grid">${cells}</div>`;
 }
+
+// [B] edit by smsong : 달력 "운동한 날" 표시 모양/색 설정 시트.
+//   모양(도형/이모지)과 색을 골라 즉시 적용. 저장은 유저별 localStorage(기기 취향).
+function openMarkerPicker(rerender) {
+    const cur = getCalMarker();
+    let sel = { shape: cur.shape, color: cur.color, emoji: cur.emoji };
+
+    // 미리보기용 도형 스타일
+    const previewStyle = (shape, color) => {
+        if (shape === 'circle')  return `border:2.5px solid ${color};border-radius:50%;`;
+        if (shape === 'rounded') return `border:2.5px solid ${color};border-radius:8px;`;
+        const clip = CAL_SHAPE_CLIP[shape];
+        return `background:${color};${clip && clip !== 'none' ? `clip-path:${clip};` : 'border-radius:3px;'}`;
+    };
+
+    const render = () => `
+        <div class="mk-wrap">
+            <!-- 미리보기 -->
+            <div class="mk-preview">
+                <div class="mk-prev-cell">
+                    ${sel.shape === 'emoji'
+                        ? `<span class="mk-prev-emoji">${sel.emoji}</span><span class="mk-prev-num">17</span>`
+                        : `<span class="mk-prev-shape" style="${previewStyle(sel.shape, sel.color)}"></span><span class="mk-prev-num">17</span>`}
+                </div>
+                <span class="mk-prev-lbl">운동한 날 표시 미리보기</span>
+            </div>
+
+            <div class="mk-sec-t">모양</div>
+            <div class="mk-shapes" id="mkShapes">
+                ${CAL_MARKER_SHAPES.map(s => `
+                    <button class="mk-shape ${s.id === sel.shape ? 'on' : ''}" data-shape="${s.id}" type="button" title="${s.label}">
+                        ${s.id === 'emoji'
+                            ? `<span class="mk-ic-emoji">${sel.emoji}</span>`
+                            : `<span class="mk-ic" style="${previewStyle(s.id, 'var(--text-dim)')}"></span>`}
+                        <span class="mk-shape-lbl">${s.label}</span>
+                    </button>`).join('')}
+            </div>
+
+            <!-- 이모지 선택(이모지 모드일 때만) -->
+            <div class="mk-emojis-wrap" id="mkEmojiWrap" style="${sel.shape === 'emoji' ? '' : 'display:none'}">
+                <div class="mk-sec-t">이모지</div>
+                <div class="mk-emojis" id="mkEmojis">
+                    ${CAL_MARKER_EMOJIS.map(e => `<button class="mk-emoji ${e === sel.emoji ? 'on' : ''}" data-emoji="${e}" type="button">${e}</button>`).join('')}
+                </div>
+            </div>
+
+            <!-- 색(도형 모드일 때만) -->
+            <div class="mk-colors-wrap" id="mkColorWrap" style="${sel.shape === 'emoji' ? 'display:none' : ''}">
+                <div class="mk-sec-t">색</div>
+                <div class="mk-colors" id="mkColors">
+                    ${CAL_MARKER_COLORS.map(c => `<button class="mk-color ${c === sel.color ? 'on' : ''}" data-color="${c}" type="button" style="--c:${c}" aria-label="${c}"></button>`).join('')}
+                </div>
+            </div>
+
+            <button class="btn grad block mk-apply" id="mkApply" type="button">적용</button>
+        </div>`;
+
+    Sheet1.open(render(), { title: '달력 표시 설정' });
+    wire();
+
+    function wire() {
+        const shapesWrap = document.getElementById('mkShapes');
+        if (shapesWrap) shapesWrap.querySelectorAll('.mk-shape').forEach(b => b.onclick = () => {
+            sel.shape = b.dataset.shape;
+            rerenderSheet();
+        });
+        const emojisWrap = document.getElementById('mkEmojis');
+        if (emojisWrap) emojisWrap.querySelectorAll('.mk-emoji').forEach(b => b.onclick = () => {
+            sel.emoji = b.dataset.emoji;
+            rerenderSheet();
+        });
+        const colorsWrap = document.getElementById('mkColors');
+        if (colorsWrap) colorsWrap.querySelectorAll('.mk-color').forEach(b => b.onclick = () => {
+            sel.color = b.dataset.color;
+            rerenderSheet();
+        });
+        const apply = document.getElementById('mkApply');
+        if (apply) apply.onclick = () => { setCalMarker(sel); closeSheet(); rerender(); };
+    }
+    // 시트 내용만 다시 그려 선택 상태를 반영(시트 자체는 유지)
+    function rerenderSheet() {
+        const body = document.querySelector('#sheet .sheet-body');
+        if (body) { body.innerHTML = render(); wire(); }
+    }
+}
+// [E] edit by smsong
 
 // [B] edit by smsong : 년/월 선택 시트.
 //   달력 제목을 눌러 원하는 년도·월을 골라 즉시 이동한다(좌우 화살표 반복 이동 불필요).
@@ -2012,6 +2127,9 @@ function bindCalendar(kind) {
     // [B][E] edit by smsong : 제목(년월) 탭 → 년/월 선택 시트. 좌우 화살표 없이도 원하는 달로 바로 이동.
     const pick = root.querySelector('[data-cal-pick]');
     if (pick) pick.onclick = () => openMonthPicker(calState, rerender);
+    // [B][E] edit by smsong : 표시 모양 설정(팔레트) → 마커 설정 시트
+    const mkBtn = root.querySelector('[data-cal-marker]');
+    if (mkBtn) mkBtn.onclick = () => openMarkerPicker(rerender);
     // [E] edit by smsong
     root.querySelectorAll('.cal-cell[data-date]').forEach(c => c.onclick = () => {
         if (kind === 'workout') ui.workoutSel = c.dataset.date; else ui.dietSel = c.dataset.date;
@@ -2522,6 +2640,8 @@ function openSessionEditor(sessionId, date, mode, editorOpts) {
                     <button class="ibtn sm danger" id="seDel" type="button" title="삭제" aria-label="삭제">${icon('trash')}</button>
                 </div>
                 <div class="se-tb-right">
+                    <!-- [B][E] edit by smsong : 이 날 운동 상세 AI 분석 버튼(운동 추가 옆) -->
+                    <button class="ibtn sm cmpx-ai" id="seAiBtn" type="button" title="AI 운동 분석" aria-label="AI 운동 분석">${icon('spark')}</button>
                     <button class="ibtn sm grad" id="seAddW" type="button" title="운동 추가" aria-label="운동 추가">${icon('plus')}</button>
                 </div>
             </div>
@@ -2533,6 +2653,9 @@ function openSessionEditor(sessionId, date, mode, editorOpts) {
             </div>
             ${parts.length ? `<div class="se-meta-parts">${parts.map(p => `<span class="chip xs active view-chip">${esc(p)}</span>`).join('')}</div>` : ''}
             ${s.memo ? `<div class="se-meta-memo">${esc(s.memo)}</div>` : ''}
+
+            <!-- [B][E] edit by smsong : 운동 상세 AI 분석 결과 영역(처음엔 비어 있음) -->
+            <div id="seAiResult"></div>
 
             <div class="se-head">
                 <h4>운동 <span class="cnt tabnum" id="seCount">0</span></h4>
@@ -2561,8 +2684,43 @@ function openSessionEditor(sessionId, date, mode, editorOpts) {
         };
         document.getElementById('seAddW').onclick = () => openWorkoutSheet(null, async item => {
             await addWorkoutToSession(sid, item);
+            if (ui.sessionAiCache) delete ui.sessionAiCache[String(sid)];   // 운동이 바뀌면 이전 분석 무효화
             paintList(); render(); toast('운동을 추가했어요');
         });
+
+        // [B] edit by smsong : 이 날 운동 상세 AI 분석 — 신체정보 + 그날 운동 전체를 분석.
+        //   결과는 세션 id 로 캐시(세션 편집/추가 후 무효화). 로딩엔 날짜(요일)를 넣는다.
+        const seAiBtn = document.getElementById('seAiBtn');
+        const seAiOut = document.getElementById('seAiResult');
+        ui.sessionAiCache = ui.sessionAiCache || {};
+        const sCur = sess();
+        const sKey = sCur ? String(sCur.id) : null;
+        if (seAiOut && sKey && ui.sessionAiCache[sKey]) {
+            seAiOut.innerHTML = aiResultHtml(ui.sessionAiCache[sKey], 'session');
+            wireAiToggle(seAiOut);
+            if (seAiBtn) { seAiBtn.disabled = true; seAiBtn.title = 'AI 분석 완료'; seAiBtn.classList.add('done'); }
+        }
+        if (seAiBtn && seAiOut) seAiBtn.onclick = async () => {
+            const sNow = sess();
+            if (!sNow) return;
+            seAiBtn.disabled = true;
+            // 로딩 메시지: "2026년 7월 17일 (금) 운동을 AI가 분석 중입니다…"
+            seAiOut.innerHTML = aiLoadingHtml(`${fmtKorean(sNow.date)} 운동을 AI가 분석 중입니다`);
+            try {
+                const payload = buildSessionAiPayload(sNow);
+                const res = await api.aiAnalyzeSession(payload);
+                ui.sessionAiCache[String(sNow.id)] = res;
+                seAiOut.innerHTML = aiResultHtml(res, 'session');
+                wireAiToggle(seAiOut);
+                seAiBtn.title = 'AI 분석 완료'; seAiBtn.classList.add('done');
+            } catch (err) {
+                seAiBtn.disabled = false;
+                if (err && err.auth) return;
+                seAiOut.innerHTML = `<div class="ai-card ai-err">${icon('spark')}<div>${esc(errMsg(err, 'AI 분석에 실패했어요'))}</div></div>`;
+            }
+        };
+        // [E] edit by smsong
+
         paintList();
     }
 
@@ -3089,7 +3247,10 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
 
     if (aiBtn && aiOut) aiBtn.onclick = async () => {
         aiBtn.disabled = true;
-        aiOut.innerHTML = aiLoadingHtml();
+        // [B][E] edit by smsong : 비교 로딩 메시지 — 두 날짜를 넣어 "비교하여 분석 중"
+        const dFrom = prevStat ? labelYmd(prevStat.date) : '첫 기록';
+        const dTo = lastStat ? labelYmd(lastStat.date) : '';
+        aiOut.innerHTML = aiLoadingHtml(`${dFrom} ↔ ${dTo} 기록을 AI가 비교하여 분석 중입니다`);
         try {
             const payload = buildAiPayload(exercise, prevStat, lastStat, inc, isBw, 'compare');
             const res = await api.aiAnalyze(payload);
@@ -3111,6 +3272,61 @@ function openCompareSheet(exercise, prevStat, lastStat, opts) {
 
 // [B] edit by smsong — AI 분석 페이로드 구성 / 로딩·결과 렌더
 //   페이로드는 "해당 종목 전체 이력"을 담는다(기간 필터 없음) → 모델이 장기 추세까지 본다.
+// [B] edit by smsong : 운동 상세(하루 세션) AI 분석 페이로드.
+//   신체정보(state.profile) + 그날 운동 전체 + 최근 부하 맥락을 백엔드로 보낸다.
+function buildSessionAiPayload(s) {
+    const p = state.profile || {};
+    const ws = (s.workouts || []);
+    // 총 볼륨(kg, 맨몸 제외) / 총 세트 / 종목 수
+    let totalVolume = 0, totalSets = 0;
+    ws.forEach(w => {
+        totalSets += (w.sets || 0);
+        if (!w.bodyweight && w.weight) totalVolume += (w.weight || 0) * (w.reps || 0) * (w.sets || 0);
+    });
+
+    // 최근 부하 맥락: 이 세션 이전의 최근 6개 세션(볼륨/세트/컨디션)
+    const ordered = orderedSessions();   // 과거→현재
+    const idx = ordered.findIndex(x => String(x.id) === String(s.id));
+    const before = idx >= 0 ? ordered.slice(0, idx) : ordered.slice();
+    const recent = before.slice(Math.max(0, before.length - 6)).map(x => {
+        let vol = 0, sets = 0;
+        (x.workouts || []).forEach(w => {
+            sets += (w.sets || 0);
+            if (!w.bodyweight && w.weight) vol += (w.weight || 0) * (w.reps || 0) * (w.sets || 0);
+        });
+        return { date: x.date, volume: Math.round(vol), totalSets: sets, condition: x.condition != null ? x.condition : null };
+    });
+
+    return {
+        date: s.date,
+        weekday: WEEKDAYS[parseDate(s.date).getDay()],
+        height: p.height != null ? p.height : null,
+        weight: p.weight != null ? p.weight : null,
+        targetWeight: p.targetWeight != null ? p.targetWeight : null,
+        bodyFat: p.bodyFat != null ? p.bodyFat : null,
+        gender: p.gender || null,
+        age: p.age || null,
+        bodyParts: sessionBodyParts(s),
+        condition: s.condition != null ? s.condition : null,
+        durationMin: sessionDuration(s),
+        totalWorkouts: ws.length,
+        totalSets: totalSets,
+        totalVolume: Math.round(totalVolume),
+        volumeUnit: 'kg',
+        workouts: ws.map(w => ({
+            exercise: w.exercise,
+            weight: w.bodyweight ? null : (w.weight != null ? w.weight : null),
+            origLbs: w.origLbs != null ? w.origLbs : null,
+            reps: w.reps != null ? w.reps : null,
+            sets: w.sets != null ? w.sets : null,
+            bodyweight: !!w.bodyweight,
+            assisted: !!w.assisted
+        })),
+        recentLoads: recent
+    };
+}
+// [E] edit by smsong
+
 // [B] edit by smsong : AI 분석 페이로드 구성.
 //   mode 로 분석 관점을 나눈다:
 //     · 'trend'   (변화 탭)   : 이 종목의 "전체 이력" 추세 분석. 특정 두 시점 비교는 하지 않는다.
@@ -3178,15 +3394,17 @@ function buildAiPayload(exercise, prevStat, lastStat, includeAssisted, isBw, mod
     };
 }
 
-function aiLoadingHtml() {
+// [B][E] edit by smsong : 로딩 메시지를 인자로 받는다(없으면 기본). 끝에 "…" 를 붙인다.
+function aiLoadingHtml(msg) {
+    const text = (msg && String(msg).trim()) ? `${msg}…` : 'AI가 전체 기록을 분석하고 있어요…';
     return `<div class="ai-card ai-loading">
         <div class="ai-spark">${icon('spark')}</div>
-        <div class="ai-loading-txt">AI가 전체 기록을 분석하고 있어요…</div>
+        <div class="ai-loading-txt">${esc(text)}</div>
         <div class="ai-bar"><i></i></div>
     </div>`;
 }
 
-function aiResultHtml(r) {
+function aiResultHtml(r, mode) {
     if (!r) return '';
     const trendMap = { up: ['상승 추세', 'up'], down: ['하락 추세', 'down'], flat: ['보합', 'flat'], mixed: ['혼조', 'mixed'] };
     const verdictMap = {
@@ -3201,15 +3419,34 @@ function aiResultHtml(r) {
         ? `<div class="ai-sec ${cls}">${arr.map(x => `<div class="ai-li">${ico ? icon(ico) : ''}<span>${esc(x)}</span></div>`).join('')}</div>`
         : '';
 
-    // [B] edit by smsong : 고정 id 대신 클래스 사용.
-    //   변화 탭(전체 추세)과 비교 상세(두 시점)의 AI 카드가 동시에 존재할 수 있어 id 중복을 피한다.
-    //   접기/펴기 배선은 wireAiToggle(container) 이 컨테이너 스코프에서 클래스로 찾아 처리한다.
+    // [B] edit by smsong : 운동 상세(session) 분석이면 전용 지표 패널을 추가한다.
+    //   운동량 상위% / 강도 / 피로도 / 다음날 컨디션 / 종합 등급 / 오버트레이닝.
+    let sessionPanel = '';
+    let sessionTags = '';
+    if (mode === 'session') {
+        const intMap = { low: ['가벼움', 'flat'], moderate: ['보통', 'flat'], high: ['고강도', 'up'], extreme: ['매우 고강도', 'up'] };
+        const it = intMap[r.intensityLevel] || ['', ''];
+        const grade = r.overallGrade || '';
+        const gradeCls = ({ S: 'g-s', A: 'g-a', B: 'g-b', C: 'g-c', D: 'g-d' })[grade] || 'g-b';
+        // 상위 % (volumePercentile: 작을수록 상위) → "상위 N%"
+        const pct = (r.volumePercentile == null) ? null : Math.max(1, Math.min(100, r.volumePercentile));
+        const cells = [];
+        if (grade) cells.push(`<div class="ai-m"><span class="ai-m-k">종합</span><span class="ai-m-grade ${gradeCls}">${esc(grade)}</span></div>`);
+        if (pct != null) cells.push(`<div class="ai-m"><span class="ai-m-k">운동량</span><span class="ai-m-v tabnum">상위 ${pct}%</span></div>`);
+        if (it[0]) cells.push(`<div class="ai-m"><span class="ai-m-k">강도</span><span class="ai-m-v">${esc(it[0])}</span></div>`);
+        if (r.fatigueScore != null) cells.push(`<div class="ai-m"><span class="ai-m-k">피로도</span><span class="ai-m-v tabnum">${r.fatigueScore}</span></div>`);
+        if (r.nextDayCondition != null) cells.push(`<div class="ai-m"><span class="ai-m-k">내일 예상</span><span class="ai-m-v tabnum">${r.nextDayCondition}</span></div>`);
+        if (cells.length) sessionPanel = `<div class="ai-metrics">${cells.join('')}</div>`;
+        if (r.overtraining === true) sessionTags = `<span class="ai-tag verdict-loss">⚠ 오버트레이닝 주의</span>`;
+    }
+    // [E] edit by smsong
+
+    // 고정 id 대신 클래스 사용(여러 AI 카드 동시 존재 가능).
     return `<div class="ai-card">
         <div class="ai-head">
-            <span class="ai-badge">${icon('spark')} AI 분석</span>
+            <span class="ai-badge">${icon('spark')} ${mode === 'session' ? '운동 분석' : 'AI 분석'}</span>
             <div class="ai-head-right">
                 ${conf != null ? `<span class="ai-conf">확신도 <b class="tabnum">${conf}</b></span>` : ''}
-                <!-- AI 결과 접기/펴기 (아이콘 전용) -->
                 <button class="ai-toggle" type="button" aria-expanded="true"
                         title="접기/펴기" aria-label="접기/펴기">${icon('chevD')}</button>
             </div>
@@ -3217,9 +3454,11 @@ function aiResultHtml(r) {
         <!-- 접히는 본문 -->
         <div class="ai-collapse">
             ${r.headline ? `<div class="ai-headline">${esc(r.headline)}</div>` : ''}
+            ${sessionPanel}
             <div class="ai-tags">
                 ${tr[0] ? `<span class="ai-tag trend-${tr[1]}">${esc(tr[0])}</span>` : ''}
                 ${vd[0] ? `<span class="ai-tag verdict-${vd[1]}">${esc(vd[0])}</span>` : ''}
+                ${sessionTags}
             </div>
             ${(r.analysis && r.analysis.length) ? `<div class="ai-sec ai-body">${r.analysis.map(p => `<p>${esc(p)}</p>`).join('')}</div>` : ''}
             ${(r.recommendations && r.recommendations.length) ? `<div class="ai-sub-h">${icon('chevR')} 이렇게 해보세요</div>${list(r.recommendations, 'ai-recos', 'check')}` : ''}
@@ -3320,6 +3559,8 @@ function openProfileSheet() {
             <div class="field"><label>현재 체중 (kg)</label><input class="input" id="pWeight" type="number" inputmode="decimal" value="${currentWeight() != null ? currentWeight() : ''}" placeholder="77.6"></div>
             <div class="field"><label>목표 체중 (kg)</label><input class="input" id="pTarget" type="number" inputmode="decimal" value="${p.targetWeight != null ? p.targetWeight : ''}" placeholder="74"></div>
         </div>
+        <!-- [B][E] edit by smsong : 체지방률(선택) — 운동 상세 AI 분석 정확도를 높인다 -->
+        <div class="field"><label>체지방률 (%) <span class="lbl-sub">선택 · AI 운동 분석에 활용</span></label><input class="input" id="pBodyFat" type="number" inputmode="decimal" value="${p.bodyFat != null ? p.bodyFat : ''}" placeholder="15.0"></div>
         <button class="btn grad block" id="pSave" style="margin-top:6px">저장</button>
     `, { title: '프로필 설정' });   // [B][E] edit by smsong : 설명(desc) 제거 → 제목만
     document.getElementById('pSave').onclick = async () => {
@@ -3327,6 +3568,7 @@ function openProfileSheet() {
         const height = parseFloat(document.getElementById('pHeight').value);
         const weight = parseFloat(document.getElementById('pWeight').value);
         const target = parseFloat(document.getElementById('pTarget').value);
+        const bodyFat = parseFloat(document.getElementById('pBodyFat').value);   // [B][E] edit by smsong
         state.profile.name = name;
         // 표시 이름은 로그인 사용자 정보에도 반영(새로고침 후에도 유지)
         try {
@@ -3335,12 +3577,14 @@ function openProfileSheet() {
         } catch (_) {}
         const btn = document.getElementById('pSave'); btn.disabled = true;
         try {
-            // [B] edit by smsong : 키/현재 체중/목표 체중을 DB 에 저장
+            // [B] edit by smsong : 키/현재 체중/목표 체중/체지방률을 DB 에 저장
             await saveBodyInfo({
                 height: isNaN(height) ? null : height,
                 weight: isNaN(weight) ? null : weight,
-                targetWeight: isNaN(target) ? null : target
+                targetWeight: isNaN(target) ? null : target,
+                bodyFat: isNaN(bodyFat) ? null : bodyFat
             });
+            if (!isNaN(bodyFat)) state.profile.bodyFat = bodyFat;
             closeSheet(); render(); toast('프로필을 저장했어요');
             // [E] edit by smsong
         } catch (err) {
@@ -3881,6 +4125,46 @@ function imGetUnit() {
 }
 function imSetUnit(u) { try { localStorage.setItem(IMPORT_UNIT_KEY, u); } catch (_) {} }
 
+// [B] edit by smsong : 달력에서 "운동한 날"을 표시하는 마커의 모양/색 사용자 설정.
+//   기기별 취향이라 유저별 localStorage 키로 보관(서버 저장 아님).
+//   shape: circle(기본)|rounded(둥근 네모)|square|triangle|pentagon|hexagon|diamond|star| 또는 'emoji'
+//   emoji 를 고르면 markerEmoji 값(예: 🔥)을 셀에 표시한다.
+const CAL_MARKER_KEY = 'UF_CAL_MARKER_' + UID;
+const CAL_MARKER_SHAPES = [
+    { id: 'circle',   label: '원' },
+    { id: 'rounded',  label: '둥근 네모' },
+    { id: 'square',   label: '정사각형' },
+    { id: 'triangle', label: '세모' },
+    { id: 'diamond',  label: '마름모' },
+    { id: 'pentagon', label: '오각형' },
+    { id: 'hexagon',  label: '육각형' },
+    { id: 'star',     label: '별' },
+    { id: 'emoji',    label: '이모지' }
+];
+const CAL_MARKER_COLORS = ['#10b981', '#0ea5e9', '#6366f1', '#a855f7', '#ec4899', '#f59e0b', '#ef4444', '#14b8a6'];
+const CAL_MARKER_EMOJIS = ['🔥', '💪', '✅', '⭐', '❤️', '⚡', '🏋️', '🎯'];
+function getCalMarker() {
+    try {
+        const o = JSON.parse(localStorage.getItem(CAL_MARKER_KEY) || '{}');
+        return {
+            shape: o.shape || 'circle',
+            color: o.color || CAL_MARKER_COLORS[0],
+            emoji: o.emoji || CAL_MARKER_EMOJIS[0]
+        };
+    } catch (_) { return { shape: 'circle', color: CAL_MARKER_COLORS[0], emoji: CAL_MARKER_EMOJIS[0] }; }
+}
+function setCalMarker(m) { try { localStorage.setItem(CAL_MARKER_KEY, JSON.stringify(m)); } catch (_) {} }
+// clip-path 로 도형을 만든다(원/둥근네모는 border-radius 로 처리하므로 여기선 각진 도형만).
+const CAL_SHAPE_CLIP = {
+    square:   'none',
+    triangle: 'polygon(50% 4%, 96% 96%, 4% 96%)',
+    diamond:  'polygon(50% 2%, 98% 50%, 50% 98%, 2% 50%)',
+    pentagon: 'polygon(50% 2%, 98% 39%, 79% 98%, 21% 98%, 2% 39%)',
+    hexagon:  'polygon(50% 2%, 95% 26%, 95% 74%, 50% 98%, 5% 74%, 5% 26%)',
+    star:     'polygon(50% 2%, 61% 35%, 96% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 4% 35%, 39% 35%)'
+};
+// [E] edit by smsong
+
 // 여러 소스에서 나온 같은 날짜를 하나로 합친다
 function imMergeDays(days) {
     const byDate = {};
@@ -4209,6 +4493,8 @@ function icon(name) {
         minus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h14"/></svg>`,
         // [B][E] edit by smsong : AI 분석(스파클)
         // [B][E] edit by smsong : 보조(파트너) — 두 사람
+        // [B][E] edit by smsong : 달력 표시 모양 설정(팔레트)
+        palette: `<svg viewBox="0 0 24 24" ${s}><path d="M12 3a9 9 0 1 0 0 18c.9 0 1.6-.7 1.6-1.6 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-3.9-4-7-9-7Z"/><circle cx="7.5" cy="10.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="7.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="16.5" cy="10.5" r="1.2" fill="currentColor" stroke="none"/></svg>`,
         people: `<svg viewBox="0 0 24 24" ${s}><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3.2 3.2 0 0 1 0 5.6"/><path d="M17.5 14.4A5.5 5.5 0 0 1 20.5 20"/></svg>`,
         spark: `<svg viewBox="0 0 24 24" ${s}><path d="M12 3l1.6 4.3a4 4 0 0 0 2.4 2.4L20.5 11l-4.5 1.3a4 4 0 0 0-2.4 2.4L12 19l-1.6-4.3a4 4 0 0 0-2.4-2.4L3.5 11 8 9.7a4 4 0 0 0 2.4-2.4Z"/><path d="M19 3v3M20.5 4.5h-3"/></svg>`,
         // [B][E] edit by smsong : 상세보기(눈) — 아이콘 전용 버튼에서 사용

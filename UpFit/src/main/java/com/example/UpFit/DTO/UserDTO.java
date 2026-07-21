@@ -22,10 +22,11 @@ public class UserDTO {
         private String profileURL;
         private String provider;
 
-        // [B] edit by smsong - UpFit 신체 정보(키/현재 체중/목표 체중)
+        // [B] edit by smsong - UpFit 신체 정보(키/현재 체중/목표 체중/체지방률)
         private Double height;
         private Double weight;
         private Double targetWeight;
+        private Double bodyFat;   // 체지방률 (%) — 선택 입력
         // [E] edit by smsong
 
         public static UserDTO entityToDto(UserEntity userEntity) {
@@ -42,16 +43,17 @@ public class UserDTO {
                         userEntity.getPhone(),
                         userEntity.getProfileURL(),
                         userEntity.getProvider(),
-                        // 신체 정보(키/현재 체중/목표 체중) 매핑
+                        // 신체 정보(키/현재 체중/목표 체중/체지방률) 매핑
                         userEntity.getHeight(),
                         userEntity.getWeight(),
-                        userEntity.getTargetWeight());
+                        userEntity.getTargetWeight(),
+                        userEntity.getBodyFat());
                         // [E] edit by smsong
         }
 
         public UserEntity dtoToEntity() {
-                // [B] edit by smsong - 신체 정보(키/현재 체중/목표 체중) 필드 포함
-                return new UserEntity(id, uid, password, name, age, gender, nickname, address, email, phone, profileURL, provider, height, weight, targetWeight);
+                // [B] edit by smsong - 신체 정보(키/현재 체중/목표 체중/체지방률) 필드 포함
+                return new UserEntity(id, uid, password, name, age, gender, nickname, address, email, phone, profileURL, provider, height, weight, targetWeight, bodyFat);
                 // [E] edit by smsong
         }
 }

@@ -490,8 +490,39 @@ button { font-family: var(--font); cursor: pointer; }
 }
 .cal-cell.today .dnum { border-color: var(--accent); color: var(--accent); }      /* 오늘 = 파란 원 테두리 */
 .cal-cell.selected .dnum { background: var(--grad-soft); }                        /* 선택 = 연한 그린 원 채움 */
-.cal-cell.has .dnum { border-color: var(--accent-2); color: var(--accent-2); }    /* 운동한 날 = 초록 원 테두리 */
+.cal-cell.has .dnum { border-color: var(--accent-2); color: var(--accent-2); }    /* 운동한 날 = 초록 원 테두리(기본) */
 .cal-cell.today.has .dnum { border-color: var(--accent-2); color: var(--accent-2); }
+
+/* [B] edit by smsong : 사용자 지정 마커(모양/색) — has + mk-shape 셀.
+   기본 원 테두리를 덮어써, 선택한 도형/색으로 "운동한 날"을 표시한다. */
+.cal-cell.has.mk-shape .dnum {
+    border-color: var(--mk-color); color: var(--mk-color);
+}
+/* 원 / 둥근 네모 : 테두리 방식(숫자 잘 보임) */
+.cal-cell.has.mk-shape[data-shape="circle"]  .dnum { border-radius: 50%; }
+.cal-cell.has.mk-shape[data-shape="rounded"] .dnum { border-radius: 8px; }
+.cal-cell.has.mk-shape[data-shape="square"]  .dnum { border-radius: 2px; }
+/* 각진 도형(세모/마름모/오각/육각/별) : 연한 채움 + clip-path. 테두리는 clip 되므로 배경으로 표현. */
+.cal-cell.has.mk-shape[data-shape="triangle"] .dnum,
+.cal-cell.has.mk-shape[data-shape="diamond"] .dnum,
+.cal-cell.has.mk-shape[data-shape="pentagon"] .dnum,
+.cal-cell.has.mk-shape[data-shape="hexagon"] .dnum,
+.cal-cell.has.mk-shape[data-shape="star"] .dnum {
+    border: 0;
+    background: color-mix(in srgb, var(--mk-color) 22%, transparent);
+    color: var(--mk-color);
+}
+.cal-cell.has.mk-shape[data-shape="triangle"] .dnum { clip-path: polygon(50% 4%, 96% 96%, 4% 96%); padding-top: 6px; }
+.cal-cell.has.mk-shape[data-shape="diamond"]  .dnum { clip-path: polygon(50% 2%, 98% 50%, 50% 98%, 2% 50%); }
+.cal-cell.has.mk-shape[data-shape="pentagon"] .dnum { clip-path: polygon(50% 2%, 98% 39%, 79% 98%, 21% 98%, 2% 39%); }
+.cal-cell.has.mk-shape[data-shape="hexagon"]  .dnum { clip-path: polygon(50% 2%, 95% 26%, 95% 74%, 50% 98%, 5% 74%, 5% 26%); }
+.cal-cell.has.mk-shape[data-shape="star"]     .dnum { clip-path: polygon(50% 2%, 61% 35%, 96% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 4% 35%, 39% 35%); font-size: 11px; }
+/* 이모지 마커 : dnum 은 숫자 그대로, 이모지를 우상단에 작게 겹친다 */
+.cal-cell.has.mk-emoji .dnum { border-color: transparent; color: var(--text-dim); }
+.cal-cell .cal-mk-emoji {
+    position: absolute; top: -2px; right: 50%; transform: translateX(52%);
+    font-size: 12px; line-height: 1; pointer-events: none;
+}
 /* [E] edit by smsong */
 .cal-cell .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--grad); }
 .cal-cell .kcal-tag { font-size: 9px; font-weight: 700; color: var(--accent-2); line-height: 1; }
@@ -1546,6 +1577,9 @@ textarea.input.im-text {
 /* [B][E] edit by smsong : 변화 탭 전체추세 AI 결과 영역 */
 #growthAiResult:empty { display: none; }
 #growthAiResult { margin: 10px 0 4px; }
+/* [B][E] edit by smsong : 운동 상세 AI 결과 영역 */
+#seAiResult:empty { display: none; }
+#seAiResult { margin: 12px 0 4px; }
 
 .ai-card {
     border: 1px solid var(--line); border-radius: var(--radius-lg);
@@ -1604,6 +1638,25 @@ textarea.input.im-text {
 /* [E] edit by smsong */
 
 .ai-headline { font-size: 14.5px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.4; margin-bottom: 8px; }
+/* [B] edit by smsong : 운동 상세 AI 전용 지표 패널 */
+.ai-metrics {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0;
+}
+.ai-m {
+    flex: 1 1 auto; min-width: 62px;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 9px 8px; border-radius: 12px;
+    background: var(--ink-850); border: 1px solid var(--line);
+}
+.ai-m-k { font-size: 10.5px; font-weight: 700; color: var(--text-mute); }
+.ai-m-v { font-size: 15px; font-weight: 800; color: var(--text); }
+.ai-m-grade { font-size: 20px; font-weight: 900; line-height: 1; }
+.ai-m-grade.g-s { color: #f59e0b; }
+.ai-m-grade.g-a { color: #10b981; }
+.ai-m-grade.g-b { color: #0ea5e9; }
+.ai-m-grade.g-c { color: #6366f1; }
+.ai-m-grade.g-d { color: var(--text-mute); }
+/* [E] edit by smsong */
 
 /* 판정 태그 */
 .ai-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
@@ -1661,6 +1714,43 @@ textarea.input.im-text {
 }
 .mp-month.on { background: var(--grad); color: #fff; border-color: transparent; box-shadow: 0 2px 10px var(--home-glow); }
 .mp-go { margin-top: 4px; }
+/* [E] edit by smsong */
+
+/* [B] edit by smsong — 달력 표시 설정 시트 */
+.mk-wrap { display: flex; flex-direction: column; gap: 14px; }
+.mk-preview {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 18px; border-radius: 14px; background: var(--ink-850); border: 1px solid var(--line);
+}
+.mk-prev-cell { position: relative; width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; }
+.mk-prev-shape { position: absolute; inset: 0; }
+.mk-prev-num { position: relative; font-size: 16px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.mk-prev-emoji { position: absolute; top: -6px; right: 50%; transform: translateX(52%); font-size: 16px; }
+.mk-prev-lbl { font-size: 12px; color: var(--text-mute); font-weight: 600; }
+.mk-sec-t { font-size: 12px; font-weight: 700; color: var(--text-dim); }
+.mk-shapes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mk-shape {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 12px 6px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--ink-850); cursor: pointer; color: var(--text-dim);
+}
+.mk-shape.on { border-color: var(--accent); background: var(--grad-soft); color: var(--text); }
+.mk-shape .mk-ic { width: 26px; height: 26px; display: block; }
+.mk-shape .mk-ic-emoji { font-size: 22px; line-height: 26px; height: 26px; }
+.mk-shape-lbl { font-size: 11px; font-weight: 700; }
+.mk-emojis, .mk-colors { display: flex; flex-wrap: wrap; gap: 8px; }
+.mk-emoji {
+    width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--ink-850); font-size: 22px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.mk-emoji.on { border-color: var(--accent); background: var(--grad-soft); }
+.mk-color {
+    width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+    background: var(--c); border: 3px solid transparent; padding: 0;
+}
+.mk-color.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--ink-900) inset; }
+.mk-apply { margin-top: 4px; }
 /* [E] edit by smsong */
 
 /* ---------- 토스트 ---------- */

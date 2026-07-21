@@ -146,10 +146,11 @@ public class UserService {
         if (userDTO.getPhone() != null) userEntity.setPhone(userDTO.getPhone());
         if (userDTO.getAddress() != null) userEntity.setAddress(userDTO.getAddress());
         if (userDTO.getGender() != null) userEntity.setGender(userDTO.getGender());
-        // [B] edit by smsong - UpFit 신체 정보(키/현재 체중/목표 체중) 부분 업데이트
+        // [B] edit by smsong - UpFit 신체 정보(키/현재 체중/목표 체중/체지방률) 부분 업데이트
         if (userDTO.getHeight() != null) userEntity.setHeight(userDTO.getHeight());
         if (userDTO.getWeight() != null) userEntity.setWeight(userDTO.getWeight());
         if (userDTO.getTargetWeight() != null) userEntity.setTargetWeight(userDTO.getTargetWeight());
+        if (userDTO.getBodyFat() != null) userEntity.setBodyFat(userDTO.getBodyFat());
         // [E] edit by smsong
         userEntity.setAge(userDTO.getAge());
 

@@ -35,6 +35,7 @@ public class UserEntity implements UserDetails {
     private Double height;        // 키 (cm)
     private Double weight;        // 현재 체중 (kg)
     private Double targetWeight;  // 목표 체중 (kg)
+    private Double bodyFat;       // 체지방률 (%) — AI 운동량 분석에 사용, 선택 입력
     // [E] edit by smsong
 
     @Override

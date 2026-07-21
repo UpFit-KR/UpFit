@@ -3,6 +3,7 @@ package com.example.UpFit.Service;
 import com.example.UpFit.Config.GeminiProperties;
 import com.example.UpFit.DTO.AiAnalysisRequestDTO;
 import com.example.UpFit.DTO.AiAnalysisResponseDTO;
+import com.example.UpFit.DTO.AiSessionRequestDTO;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -79,18 +80,70 @@ public class AiAnalysisService {
         "전체 응답은 간결하게 유지한다(불필요하게 길게 쓰지 말 것)."
     );
 
+    // [B] edit by smsong - 운동 상세(하루 세션) 분석 전용 도메인 지식.
+    //   "그날 한 운동"을 사용자 신체·최근 부하 맥락에서 평가/예측하는 데 특화.
+    private static final String SESSION_KNOWLEDGE = String.join("\n",
+        "당신은 웨이트 트레이닝 코치이자 스포츠 과학 분석가다.",
+        "사용자가 '특정 하루'에 수행한 운동 전체를, 그 사람의 신체 정보와 최근 운동량 맥락 위에서",
+        "평가하고, 그 결과 피로도·회복·다음날 컨디션을 '예측'하는 것이 임무다.",
+        "",
+        "[분석·예측 기준]",
+        "1) 운동량 적정성: 총 볼륨/세트/종목수를 사용자의 체격(키·체중·체지방·성별)과 recentLoads(최근 세션들)",
+        "   대비로 평가한다. '이 사람 기준'으로 많은지 적은지를 말한다. 절대량이 아니라 상대적 부하가 핵심.",
+        "2) volumePercentile: 이 사람의 최근 이력 대비 이날 운동량이 상위 몇 %인지(0~100).",
+        "   값이 작을수록(예: 5) 평소보다 훨씬 고강도. recentLoads 가 부족하면 신중히 추정하고 confidence 를 낮춘다.",
+        "3) intensityLevel: low|moderate|high|extreme 중 하나.",
+        "4) fatigueScore(0~100): 이 세션으로 쌓일 예상 피로도. 볼륨·세트·부위 수·컨디션·시간 종합.",
+        "5) nextDayCondition(0~100): 오늘 컨디션과 이 부하를 근거로 예측한 '다음날 예상 컨디션'.",
+        "   고강도일수록 낮게. 컨디션 정보가 있으면 반영한다.",
+        "6) overtraining: 최근 연속 고볼륨/누적 피로/컨디션 하락 신호가 겹치면 true. 근거를 analysis 에 적는다.",
+        "7) overallGrade: 이날 운동의 종합 평가. S(매우 우수)~D. 볼륨·균형·강도·적정성 종합.",
+        "8) 부위 균형·세트 분배·과부하 여부 등 구체적 코칭 포인트를 짚는다.",
+        "",
+        "[주의]",
+        "- 신체정보(체지방 등)가 없으면 그 부분은 추정/일반론으로 처리하고 cautions 에 '체지방 미입력' 등 한계를 밝힌다.",
+        "- 의학적 조언이 아니라 트레이닝 관점의 해석/예측임을 유지한다. 과장·단정 금지.",
+        "- 무게 단위는 제공된 단위를 그대로 쓴다(lbs 로 온 값은 lbs 로 서술).",
+        "- 한국어로, 구체적이고 실용적으로. 숫자는 근거와 함께 제시한다.",
+        "",
+        "[출력 형식] — 정해진 JSON 스키마로만 응답(서버가 구조 강제). 마크다운/코드펜스 금지.",
+        "  · headline : 이날 운동 한 줄 총평(예: '평소보다 고강도 · 가슴 집중 · 피로 누적 주의')",
+        "  · trend : 이날 강도 판정을 up(고강도)|flat(보통)|down(가벼움)|mixed 로.",
+        "  · verdict : growth|maintain|loss|unclear 중, 이 운동이 성장 자극으로 충분했는지 관점으로.",
+        "  · confidence : 0~100 (신체정보·최근이력이 적으면 낮게)",
+        "  · analysis : 핵심 분석 3~5개(각 2~3문장). 운동량 적정성/부위균형/강도/피로 근거를 구체적으로.",
+        "  · recommendations : 다음 훈련·회복 권장 2~4개",
+        "  · cautions : 주의/한계 0~3개(오버트레이닝 경고, 신체정보 부족 등)",
+        "  · volumePercentile, intensityLevel, fatigueScore, nextDayCondition, overtraining, overallGrade 를 반드시 채운다.",
+        "전체 응답은 간결하게(불필요하게 길게 쓰지 말 것)."
+    );
+    // [E] edit by smsong
+
     public AiAnalysisResponseDTO analyze(AiAnalysisRequestDTO req) {
+        String userPrompt = buildUserPrompt(req);
+        // 종목 분석(추세/비교)은 성장 스키마로 호출
+        return callGemini(SYSTEM_KNOWLEDGE, userPrompt, buildResponseSchema());
+    }
+
+    // [B] edit by smsong - 운동 상세(하루 세션) 분석. 신체정보+그날 운동 전체를 받아
+    //   운동량 상위%, 피로도, 다음날 컨디션, 오버트레이닝, 종합 등급을 예측·분석한다.
+    public AiAnalysisResponseDTO analyzeSession(AiSessionRequestDTO req) {
+        String userPrompt = buildSessionPrompt(req);
+        return callGemini(SESSION_KNOWLEDGE, userPrompt, buildSessionSchema());
+    }
+    // [E] edit by smsong
+
+    // [B] edit by smsong - Gemini 호출 코어(공통). systemText/userPrompt/스키마만 갈아끼워 재사용.
+    private AiAnalysisResponseDTO callGemini(String systemText, String userPrompt, ObjectNode schema) {
         if (props.getApiKey() == null || props.getApiKey().isBlank()) {
             throw new IllegalStateException("AI 기능이 설정되지 않았습니다(API 키 없음)");
         }
-        String userPrompt = buildUserPrompt(req);
-
         // Gemini generateContent 요청 본문
         ObjectNode body = om.createObjectNode();
 
         // system_instruction 에 도메인 지식을 싣는다
         ObjectNode sys = body.putObject("system_instruction");
-        sys.putArray("parts").addObject().put("text", SYSTEM_KNOWLEDGE);
+        sys.putArray("parts").addObject().put("text", systemText);
 
         ArrayNode contents = body.putArray("contents");
         ObjectNode userTurn = contents.addObject();
@@ -101,17 +154,11 @@ public class AiAnalysisService {
         ObjectNode genCfg = body.putObject("generationConfig");
         genCfg.put("responseMimeType", "application/json");
         genCfg.put("temperature", 0.4);
-        // [B] edit by smsong : 출력 예산 대폭 상향.
-        //   gemini-2.5-flash 는 thinking 모델이라 maxOutputTokens 안에서 "사고 + 출력"을 함께 쓴다.
-        //   1400 은 사고에 소진돼 정작 JSON 이 중간에 잘렸다(파싱 에러 원인). 8192 로 넉넉히 잡는다.
+        // thinking 모델은 maxOutputTokens 안에서 "사고 + 출력"을 함께 쓴다. 넉넉히 잡아 JSON 잘림 방지.
         genCfg.put("maxOutputTokens", 8192);
-        // thinking 예산을 제한해 출력이 잘리지 않도록 한다(-1=자동, 0=사고 최소).
-        //   분석 품질을 위해 약간의 사고는 허용(1024). 지원되지 않는 구버전이면 이 필드는 무시된다.
         ObjectNode thinking = genCfg.putObject("thinkingConfig");
         thinking.put("thinkingBudget", 1024);
-        // 응답 구조를 스키마로 고정 → 모델이 형식을 벗어나거나 장황해지지 않게 한다.
-        genCfg.set("responseSchema", buildResponseSchema());
-        // [E] edit by smsong
+        genCfg.set("responseSchema", schema);
 
         String url = "https://generativelanguage.googleapis.com/v1beta/models/"
                 + props.getModel() + ":generateContent";
@@ -133,8 +180,6 @@ public class AiAnalysisService {
         try {
             return parse(raw);
         } catch (Exception e) {
-            // [B][E] edit by smsong : 파싱 실패 시 원문 앞부분을 남겨 원인(잘림/차단/쿼터)을 바로 확인.
-            //   parse() 가 던진 구체적 메시지(잘림/차단 등)는 그대로 사용자에게 전달한다.
             String head = raw == null ? "null" : raw.substring(0, Math.min(raw.length(), 1500));
             log.error("Gemini 응답 처리 실패. 원문(일부): {}", head, e);
             String msg = (e.getMessage() != null && !e.getMessage().isBlank())
@@ -143,6 +188,103 @@ public class AiAnalysisService {
             throw new RuntimeException(msg);
         }
     }
+    // [E] edit by smsong
+
+    // [B] edit by smsong - 운동 상세(하루 세션) 분석 프롬프트
+    private String buildSessionPrompt(AiSessionRequestDTO r) {
+        String unit = (r.getVolumeUnit() == null || r.getVolumeUnit().isBlank()) ? "kg" : r.getVolumeUnit();
+        StringBuilder sb = new StringBuilder();
+        sb.append("[분석 대상] ").append(nz(r.getDate()));
+        if (r.getWeekday() != null && !r.getWeekday().isBlank()) sb.append(" (").append(r.getWeekday()).append(")");
+        sb.append(" 하루 운동\n\n");
+
+        sb.append("[사용자 신체 정보]\n");
+        sb.append("- 성별: ").append(r.getGender() == null || r.getGender().isBlank() ? "미입력" : r.getGender()).append("\n");
+        sb.append("- 나이: ").append(r.getAge() == null || r.getAge().isBlank() ? "미입력" : r.getAge()).append("\n");
+        sb.append("- 키: ").append(r.getHeight() != null ? fmt(r.getHeight()) + "cm" : "미입력").append("\n");
+        sb.append("- 체중: ").append(r.getWeight() != null ? fmt(r.getWeight()) + "kg" : "미입력").append("\n");
+        sb.append("- 목표 체중: ").append(r.getTargetWeight() != null ? fmt(r.getTargetWeight()) + "kg" : "미입력").append("\n");
+        sb.append("- 체지방률: ").append(r.getBodyFat() != null ? fmt(r.getBodyFat()) + "%" : "미입력(추정 처리)").append("\n\n");
+
+        sb.append("[이날 세션 요약]\n");
+        if (r.getBodyParts() != null && !r.getBodyParts().isEmpty())
+            sb.append("- 부위: ").append(String.join(", ", r.getBodyParts())).append("\n");
+        if (r.getCondition() != null) sb.append("- 컨디션(0~100): ").append(r.getCondition()).append("\n");
+        if (r.getDurationMin() != null) sb.append("- 운동 시간: ").append(r.getDurationMin()).append("분\n");
+        if (r.getTotalWorkouts() != null) sb.append("- 종목(운동) 수: ").append(r.getTotalWorkouts()).append("\n");
+        if (r.getTotalSets() != null) sb.append("- 총 세트: ").append(r.getTotalSets()).append("\n");
+        if (r.getTotalVolume() != null) sb.append("- 총 볼륨: ").append(fmt(r.getTotalVolume())).append(unit).append("\n");
+        sb.append("\n");
+
+        sb.append("[이날 수행한 운동 상세]\n");
+        List<AiSessionRequestDTO.WorkoutLine> ws = r.getWorkouts();
+        if (ws == null || ws.isEmpty()) sb.append("(없음)\n");
+        else {
+            int i = 1;
+            for (AiSessionRequestDTO.WorkoutLine w : ws) {
+                sb.append(i++).append(") ").append(nz(w.getExercise())).append(" — ");
+                if (Boolean.TRUE.equals(w.getBodyweight())) {
+                    sb.append("맨몸");
+                } else if (w.getOrigLbs() != null) {
+                    sb.append(fmt(w.getOrigLbs())).append("lbs");
+                } else if (w.getWeight() != null) {
+                    sb.append(fmt(w.getWeight())).append("kg");
+                }
+                if (w.getReps() != null) sb.append(" × ").append(w.getReps()).append("회");
+                if (w.getSets() != null) sb.append(" × ").append(w.getSets()).append("세트");
+                if (Boolean.TRUE.equals(w.getAssisted())) sb.append(" (보조)");
+                sb.append("\n");
+            }
+        }
+        sb.append("\n");
+
+        if (r.getRecentLoads() != null && !r.getRecentLoads().isEmpty()) {
+            sb.append("[최근 운동량 맥락 — 이 세션이 평소 대비 많은지/적은지 판단용]\n");
+            for (AiSessionRequestDTO.RecentLoad rl : r.getRecentLoads()) {
+                sb.append("- ").append(nz(rl.getDate())).append(": ");
+                if (rl.getVolume() != null) sb.append("볼륨 ").append(fmt(rl.getVolume())).append("kg");
+                if (rl.getTotalSets() != null) sb.append(", ").append(rl.getTotalSets()).append("세트");
+                if (rl.getCondition() != null) sb.append(", 컨디션 ").append(rl.getCondition());
+                sb.append("\n");
+            }
+            sb.append("\n");
+        } else {
+            sb.append("[최근 운동량 맥락] (데이터 부족 — 상대 평가 시 신중히, confidence 낮게)\n\n");
+        }
+
+        sb.append("위 데이터를 근거로, 이날 운동에 대해 운동량 적정성(상위 %)·강도·피로도·다음날 예상 컨디션·");
+        sb.append("오버트레이닝 여부·종합 등급을 예측/판단하고, 시스템 지침의 JSON 스키마로만 응답하세요.");
+        return sb.toString();
+    }
+
+    // 운동 상세 분석 응답 스키마(성장 스키마 + 세션 전용 필드)
+    private ObjectNode buildSessionSchema() {
+        ObjectNode schema = om.createObjectNode();
+        schema.put("type", "OBJECT");
+        ObjectNode p = schema.putObject("properties");
+        p.putObject("headline").put("type", "STRING");
+        p.putObject("trend").put("type", "STRING");
+        p.putObject("verdict").put("type", "STRING");
+        p.putObject("confidence").put("type", "INTEGER");
+        ObjectNode analysis = p.putObject("analysis");
+        analysis.put("type", "ARRAY"); analysis.putObject("items").put("type", "STRING");
+        ObjectNode recos = p.putObject("recommendations");
+        recos.put("type", "ARRAY"); recos.putObject("items").put("type", "STRING");
+        ObjectNode cautions = p.putObject("cautions");
+        cautions.put("type", "ARRAY"); cautions.putObject("items").put("type", "STRING");
+        // 세션 전용
+        p.putObject("volumePercentile").put("type", "INTEGER");
+        p.putObject("intensityLevel").put("type", "STRING");
+        p.putObject("fatigueScore").put("type", "INTEGER");
+        p.putObject("nextDayCondition").put("type", "INTEGER");
+        p.putObject("overtraining").put("type", "BOOLEAN");
+        p.putObject("overallGrade").put("type", "STRING");
+        ArrayNode req = schema.putArray("required");
+        req.add("headline"); req.add("analysis"); req.add("intensityLevel");
+        req.add("fatigueScore"); req.add("nextDayCondition"); req.add("overallGrade");
+        return schema;
+    }
+    // [E] edit by smsong
 
     // [B] edit by smsong : 응답 JSON 스키마 (Gemini structured output)
     private ObjectNode buildResponseSchema() {
@@ -216,6 +358,13 @@ public class AiAnalysisService {
                 .analysis(arr(a, "analysis"))
                 .recommendations(arr(a, "recommendations"))
                 .cautions(arr(a, "cautions"))
+                // [B][E] edit by smsong : 세션 분석 전용 필드(없으면 null). 종목 분석 응답엔 없다.
+                .volumePercentile(a.path("volumePercentile").isNumber() ? a.path("volumePercentile").asInt() : null)
+                .intensityLevel(txt(a, "intensityLevel"))
+                .fatigueScore(a.path("fatigueScore").isNumber() ? a.path("fatigueScore").asInt() : null)
+                .nextDayCondition(a.path("nextDayCondition").isNumber() ? a.path("nextDayCondition").asInt() : null)
+                .overtraining(a.path("overtraining").isBoolean() ? a.path("overtraining").asBoolean() : null)
+                .overallGrade(txt(a, "overallGrade"))
                 .build();
     }
 
