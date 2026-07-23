@@ -2376,7 +2376,7 @@ function lineChart(points, opts) {
     // [B][E] edit by smsong : 그래프를 크게 — 높이/점 간격/축 폭을 키워 읽기 편하게.
     const H = 250, padT = 40, padB = wantYearRow ? 50 : 36;
     // 점당 폭 고정 → 데이터가 많으면 SVG 가 넓어지고 .chart-scroll 이 가로 스크롤로 보여준다.
-    const SPACING = 56;
+    const SPACING = 82;             // [B][E] edit by smsong : 가로로 시원하게 (56 → 82)
     const AXIS_W = 46;              // 고정 세로축 폭
     const BASE_W = 320 - AXIS_W;    // 축을 뺀 나머지가 기본 그림 폭
     const padL = 10, padR = 20;
@@ -2594,7 +2594,18 @@ function morphChart(svg) {
 
     const x = i => geo.padL + (geo.innerW * i) / (n - 1);
     const y = v => geo.padT + geo.innerH - ((v - geo.min) / (geo.range || 1)) * geo.innerH;
-    const y0 = (geo.padT + geo.innerH).toFixed(1);
+    const y0 = Math.round((geo.padT + geo.innerH) * 10) / 10;
+
+    // [B] edit by smsong : 매 프레임 비용 줄이기 —
+    //   · x 좌표는 애니메이션 중 변하지 않으므로 문자열까지 미리 만들어 재사용
+    //   · toFixed 는 비싸므로 Math.round 로 대체
+    //   · 문자열 += 대신 배열 push + join
+    //   · 점이 아주 많으면(확대 레벨이 촘촘) tween 이득보다 비용이 커서 모션을 생략한다
+    const MAX_MORPH_POINTS = 140;
+    if (idxs.length > MAX_MORPH_POINTS) return false;
+    const xs = new Array(n);
+    for (let i = 0; i < n; i++) xs[i] = Math.round(x(i) * 10) / 10;
+    // [E] edit by smsong
 
     if (_chartMorphing[key]) cancelAnimationFrame(_chartMorphing[key]);
 
@@ -2605,21 +2616,26 @@ function morphChart(svg) {
     const frame = (now) => {
         const t = Math.min(1, (now - t0) / DUR);
         const e = ease(t);
-        const cur = new Array(n);
-        for (let k = 0; k < n; k++) {
-            cur[k] = (vals[k] == null) ? null : (from[k] + (vals[k] - from[k]) * e);
+        const lp = [], gp = [], ad = [];
+        // 선/점 좌표를 한 번의 순회로 계산
+        const ys = new Array(idxs.length);
+        for (let k = 0; k < idxs.length; k++) {
+            const i = idxs[k];
+            const v = from[i] + (vals[i] - from[i]) * e;
+            ys[k] = Math.round(y(v) * 10) / 10;
         }
-        let lp = '', gp = '', ad = '';
         for (let k = 0; k + 1 < idxs.length; k++) {
             const i = idxs[k], j = idxs[k + 1];
-            const seg = `M${x(i).toFixed(1)} ${y(cur[i]).toFixed(1)} L${x(j).toFixed(1)} ${y(cur[j]).toFixed(1)} `;
-            if (j === i + 1) lp += seg; else gp += seg;
+            const seg = `M${xs[i]} ${ys[k]} L${xs[j]} ${ys[k + 1]} `;
+            if (j === i + 1) lp.push(seg); else gp.push(seg);
         }
-        idxs.forEach((i, k) => { ad += `${k === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(cur[i]).toFixed(1)} `; });
-        lineEl.setAttribute('d', lp);
-        if (gapEl) gapEl.setAttribute('d', gp);
-        if (areaEl) areaEl.setAttribute('d', `${ad}L${x(idxs[idxs.length - 1]).toFixed(1)} ${y0} L${x(idxs[0]).toFixed(1)} ${y0} Z`);
-        idxs.forEach((i, k) => { dotEls[k].setAttribute('cy', y(cur[i]).toFixed(1)); });
+        for (let k = 0; k < idxs.length; k++) {
+            ad.push(`${k === 0 ? 'M' : 'L'}${xs[idxs[k]]} ${ys[k]} `);
+        }
+        lineEl.setAttribute('d', lp.join(''));
+        if (gapEl) gapEl.setAttribute('d', gp.join(''));
+        if (areaEl) areaEl.setAttribute('d', `${ad.join('')}L${xs[idxs[idxs.length - 1]]} ${y0} L${xs[idxs[0]]} ${y0} Z`);
+        for (let k = 0; k < idxs.length; k++) dotEls[k].setAttribute('cy', ys[k]);
 
         if (t < 1) _chartMorphing[key] = requestAnimationFrame(frame);
         else _chartMorphing[key] = null;   // morphing 클래스는 유지(제거하면 진입 애니메이션이 재생돼 깜빡임)
@@ -2632,14 +2648,14 @@ function morphChart(svg) {
 // [B] edit by smsong : 그래프 점 탭 → 해당 날짜 수치 툴팁 표시
 function wireCharts(root) {
     // [B] edit by smsong : 가로로 넓어진 그래프는 최신 데이터(오른쪽 끝)가 먼저 보이게 스크롤.
-    //   렌더 직후엔 scrollWidth 가 아직 확정되지 않을 수 있어 rAF 로 레이아웃 후 두 번 맞춘다.
+    //   scrollWidth 읽기는 강제 레이아웃이라 비싸다 → 렌더 직후 1회 + 레이아웃 확정 후 1회만.
     const scrollToEnd = () => {
         (root || document).querySelectorAll('.chart-scroll').forEach(el => {
             el.scrollLeft = el.scrollWidth;
         });
     };
     scrollToEnd();
-    requestAnimationFrame(() => { scrollToEnd(); requestAnimationFrame(scrollToEnd); });
+    requestAnimationFrame(scrollToEnd);
     // [E] edit by smsong
     // [B][E] edit by smsong : 값이 바뀐 그래프는 "틀 유지 + 점 이동" 모션으로 전환
     //   (wireCharts 가 한 렌더에서 여러 번 불려도 같은 SVG 에 두 번 적용되지 않게 가드)

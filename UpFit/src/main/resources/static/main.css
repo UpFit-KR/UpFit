@@ -1490,7 +1490,10 @@ textarea.input.im-text {
    [B] edit by smsong — 그래프: 고정 세로축(y축) + 부드러운 전환 애니메이션
    세로축은 가로 스크롤 밖(.chart-axis)에 따로 그려서, 옆으로 넘겨도 눈금이 항상 보인다.
    ============================================================ */
-.chart-box { display: flex; align-items: flex-start; width: 100%; }
+/* [B][E] edit by smsong : 카드 좌우 여백(16px)을 파고들어 보이는 가로 폭을 넓힌다.
+   축(고정)은 왼쪽에 붙으므로 왼쪽은 살짝만, 스크롤되는 그림 쪽(오른쪽)은 여백 전부를 회수. */
+.chart-box { display: flex; align-items: flex-start; width: auto; margin: 0 -16px 0 -6px; }
+.chart-box .chart-axis { padding-left: 6px; }
 .chart-axis { flex: 0 0 auto; display: block; overflow: visible; }
 .chart-box .chart-scroll { flex: 1 1 auto; min-width: 0; }
 .chart-svg .cl-grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
