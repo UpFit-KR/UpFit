@@ -1497,8 +1497,9 @@ textarea.input.im-text {
 .chart-axis .cl-ytxt { fill: var(--text-mute); font-size: 10.5px; }
 
 /* 등장/전환 — 기간 탭을 바꾸면 선이 왼→오로 그려지고, 면과 점이 따라 올라온다 */
-.chart-box { animation: clFade .34s ease both; }
-@keyframes clFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* [B][E] edit by smsong : 탭 전환마다 차트 전체가 페이드인되면 "틀이 깜빡이며 새로고침"되는 느낌이라 제거.
+   틀(축/격자)은 그대로 있고 값만 움직이는 것이 목표이므로 박스 단위 진입 애니메이션은 쓰지 않는다. */
+.chart-box { animation: none; }
 .chart-svg .cl-line {
     stroke-dasharray: 1; stroke-dashoffset: 1;
     animation: clDraw .72s cubic-bezier(.22,1,.36,1) forwards;

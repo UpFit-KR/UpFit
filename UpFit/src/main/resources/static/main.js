@@ -2560,6 +2560,12 @@ function morphChart(svg) {
 
     const prev = _chartPrevVals[key];
     _chartPrevVals[key] = vals;                       // 다음 전환을 위해 항상 갱신
+    // [B] edit by smsong : 재렌더(= 이전 값이 있음)라면, 실제 tween 을 돌릴 수 있든 없든
+    //   진입 애니메이션(선 그리기/면·점 떠오르기)을 꺼 둔다. 켜져 있으면 전환 때 깜빡인다.
+    //   ※ 이 클래스는 끝나도 제거하지 않는다. 제거하는 순간 억제돼 있던 애니메이션이
+    //     처음부터 재생되면서 "모션 끝난 뒤 깜빡임"이 생긴다.
+    if (prev) svg.classList.add('morphing');
+    // [E] edit by smsong
     if (!prev || prev.length < 2 || vals.length < 2) return false;
 
     const n = vals.length;
@@ -2590,7 +2596,6 @@ function morphChart(svg) {
     const y = v => geo.padT + geo.innerH - ((v - geo.min) / (geo.range || 1)) * geo.innerH;
     const y0 = (geo.padT + geo.innerH).toFixed(1);
 
-    svg.classList.add('morphing');                    // 진입 애니메이션(그려지기/떠오르기) 중지
     if (_chartMorphing[key]) cancelAnimationFrame(_chartMorphing[key]);
 
     const DUR = 520;
@@ -2617,7 +2622,7 @@ function morphChart(svg) {
         idxs.forEach((i, k) => { dotEls[k].setAttribute('cy', y(cur[i]).toFixed(1)); });
 
         if (t < 1) _chartMorphing[key] = requestAnimationFrame(frame);
-        else { _chartMorphing[key] = null; svg.classList.remove('morphing'); }
+        else _chartMorphing[key] = null;   // morphing 클래스는 유지(제거하면 진입 애니메이션이 재생돼 깜빡임)
     };
     _chartMorphing[key] = requestAnimationFrame(frame);
     return true;
