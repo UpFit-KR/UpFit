@@ -1494,7 +1494,7 @@ textarea.input.im-text {
 .chart-axis { flex: 0 0 auto; display: block; overflow: visible; }
 .chart-box .chart-scroll { flex: 1 1 auto; min-width: 0; }
 .chart-svg .cl-grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
-.chart-axis .cl-ytxt { fill: var(--text-mute); font-size: 9.5px; }
+.chart-axis .cl-ytxt { fill: var(--text-mute); font-size: 10.5px; }
 
 /* 등장/전환 — 기간 탭을 바꾸면 선이 왼→오로 그려지고, 면과 점이 따라 올라온다 */
 .chart-box { animation: clFade .34s ease both; }
@@ -1510,6 +1510,13 @@ textarea.input.im-text {
    cl-line 은 dasharray 로 "그려지는" 애니메이션을 쓰므로, 점선은 페이드인으로 처리한다. */
 .chart-svg .cl-gap { opacity: 0; animation: clGap .5s ease .3s forwards; }
 @keyframes clGap { to { opacity: .45; } }
+/* [B][E] edit by smsong : 값 전환 모션(morph) 중에는 "그려지기/떠오르기" 진입 애니메이션을 끄고,
+   선·면·점이 이전 값에서 새 값으로 이동하는 것만 보이게 한다. */
+.chart-svg.morphing .cl-line { animation: none !important; stroke-dasharray: none !important; stroke-dashoffset: 0 !important; }
+.chart-svg.morphing .cl-area { animation: none !important; opacity: 1 !important; }
+.chart-svg.morphing .cl-dot  { animation: none !important; opacity: 1 !important; transform: none !important; }
+.chart-svg.morphing .cl-gap  { animation: none !important; opacity: .45 !important; }
+.chart-svg.morphing .cl-last { animation: none !important; opacity: 1 !important; }
 .chart-svg .cl-dot { opacity: 0; transform-box: fill-box; transform-origin: center; animation: clDot .34s cubic-bezier(.22,1.5,.36,1) forwards; }
 @keyframes clDot { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
 .chart-svg .cl-last { opacity: 0; animation: clArea .3s ease .62s forwards; }

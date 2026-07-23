@@ -1497,9 +1497,9 @@ function renderChange() {
             </div>`;
             // [B][E] edit by smsong : 기간 단위(일/주/월)로 묶어서 그린다. 횟수·세트는 구간 합계.
             html += `<div class="chart-sub-title" style="margin-top:18px">총 횟수 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
-            html += lineChart(aggSeries(stats, s => s.date, s => s.totalReps, ui.changePeriod, 'sum', exRawLabel), { color: C_WEIGHT, unit: '회' });
+            html += lineChart(aggSeries(stats, s => s.date, s => s.totalReps, ui.changePeriod, 'sum', exRawLabel), { color: C_WEIGHT, unit: '회', key: 'ex-reps' });
             html += `<div class="chart-sub-title" style="margin-top:18px">총 세트 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
-            html += lineChart(aggSeries(stats, s => s.date, s => s.totalSets, ui.changePeriod, 'sum', exRawLabel), { color: C_VOL, unit: '세트' });
+            html += lineChart(aggSeries(stats, s => s.date, s => s.totalSets, ui.changePeriod, 'sum', exRawLabel), { color: C_VOL, unit: '세트', key: 'ex-sets' });
             html += chartLegend([[C_WEIGHT, '총 횟수 (회)'], [C_VOL, '총 세트']]);
         } else {
             html += `<div class="cmp-list">
@@ -1510,9 +1510,9 @@ function renderChange() {
             </div>`;
             // [B][E] edit by smsong : 기간 단위로 묶기 — 최고 무게는 구간 최댓값, 볼륨은 구간 합계
             html += `<div class="chart-sub-title" style="margin-top:18px">최고 무게 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
-            html += lineChart(aggSeries(stats, s => s.date, s => s.topWeight, ui.changePeriod, 'max', exRawLabel), { color: C_WEIGHT, unit: 'kg' });
+            html += lineChart(aggSeries(stats, s => s.date, s => s.topWeight, ui.changePeriod, 'max', exRawLabel), { color: C_WEIGHT, unit: 'kg', key: 'ex-top' });
             html += `<div class="chart-sub-title" style="margin-top:18px">볼륨 추이 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
-            html += lineChart(aggSeries(stats, s => s.date, s => s.volume, ui.changePeriod, 'sum', exRawLabel), { color: C_VOL, unit: 'kg' });
+            html += lineChart(aggSeries(stats, s => s.date, s => s.volume, ui.changePeriod, 'sum', exRawLabel), { color: C_VOL, unit: 'kg', key: 'ex-vol' });
             html += chartLegend([[C_WEIGHT, '최고 무게 (kg)'], [C_VOL, '볼륨 (kg)']]);
         }
         // [E] edit by smsong
@@ -1533,11 +1533,11 @@ function renderChange() {
     const sessRawLabel = s => s.startTime || labelMd(s.date);
     if (condSeries.length) {
         html += `<div class="chart-sub-title">컨디션 (0~100) <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
-        html += lineChart(aggSeries(condSeries, s => s.date, s => s.condition, ui.changePeriod, 'avg', sessRawLabel), { color: C_COND, unit: '', fixedMin: 0, fixedMax: 100 });
+        html += lineChart(aggSeries(condSeries, s => s.date, s => s.condition, ui.changePeriod, 'avg', sessRawLabel), { color: C_COND, unit: '', fixedMin: 0, fixedMax: 100, key: 'cond' });
     }
     if (durSeries.length) {
         html += `<div class="chart-sub-title" style="margin-top:18px">운동 시간 (분) <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
-        html += lineChart(aggSeries(durSeries, s => s.date, s => sessionDuration(s), ui.changePeriod, 'sum', sessRawLabel), { color: C_VOL, unit: '분' });
+        html += lineChart(aggSeries(durSeries, s => s.date, s => sessionDuration(s), ui.changePeriod, 'sum', sessRawLabel), { color: C_VOL, unit: '분', key: 'dur' });
     }
     if (condSeries.length || durSeries.length) {
         html += chartLegend([[C_COND, '컨디션'], [C_VOL, '운동 시간 (분)']]);
@@ -1557,7 +1557,7 @@ function renderChange() {
         // [B][E] edit by smsong : 체중은 구간 평균(같은 주/달에 여러 번 쟀어도 하나의 점으로)
         html += `<div class="chart-sub-title">체중 (kg) <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
         html += lineChart(aggSeries(bl, b => b.date, b => b.weight, ui.changePeriod, 'avg', b => labelMd(b.date)),
-            { color: C_WEIGHT, unit: 'kg', target: state.profile.targetWeight, targetColor: C_TARGET });
+            { color: C_WEIGHT, unit: 'kg', target: state.profile.targetWeight, targetColor: C_TARGET, key: 'bodyweight' });
         html += chartLegend([[C_WEIGHT, '체중 (kg)']].concat(state.profile.targetWeight ? [[C_TARGET, '목표']] : []));
         html += `<button class="btn sm block" id="addBodyBtn" style="margin-top:14px">오늘 체중 기록</button>`;
     } else {
@@ -1576,7 +1576,7 @@ function renderChange() {
     const kcalPoints = aggSeries(kcalRaw, r => r.date, r => r.kcal, ui.changePeriod, 'sum');
     if (kcalPoints.some(p => p.value > 0)) {
         html += `<div class="chart-sub-title">섭취 칼로리 <span class="lbl-sub">${periodUnitLabel(ui.changePeriod)}</span></div>`;
-        html += lineChart(kcalPoints, { color: C_KCAL, unit: 'kcal' });
+        html += lineChart(kcalPoints, { color: C_KCAL, unit: 'kcal', key: 'kcal' });
         html += chartLegend([[C_KCAL, '섭취 칼로리 (kcal)']]);
     } else {
         html += emptyBlock('chart', '식단 데이터가 없어요', '식단을 기록하면 칼로리 추이가 그려져요');
@@ -2373,10 +2373,11 @@ function lineChart(points, opts) {
     //   연도 행을 그리면 x축 아래 공간(padB)을 넉넉히 확보한다.
     const isYearUnit = points.length && /^\d{4}$/.test(String(points[0].key || ''));
     const wantYearRow = opts.showYear !== false && points.length > 1 && points[0].year && !isYearUnit;
-    const H = 196, padT = 34, padB = wantYearRow ? 44 : 30;
+    // [B][E] edit by smsong : 그래프를 크게 — 높이/점 간격/축 폭을 키워 읽기 편하게.
+    const H = 250, padT = 40, padB = wantYearRow ? 50 : 36;
     // 점당 폭 고정 → 데이터가 많으면 SVG 가 넓어지고 .chart-scroll 이 가로 스크롤로 보여준다.
-    const SPACING = 46;
-    const AXIS_W = 42;              // 고정 세로축 폭
+    const SPACING = 56;
+    const AXIS_W = 46;              // 고정 세로축 폭
     const BASE_W = 320 - AXIS_W;    // 축을 뺀 나머지가 기본 그림 폭
     const padL = 10, padR = 20;
     const innerNeed = SPACING * (points.length - 1);
@@ -2470,14 +2471,14 @@ function lineChart(points, opts) {
         // 점마다 조금씩 늦게 나타나 왼쪽부터 차오르는 느낌 (최대 0.5초)
         const delay = Math.min(0.5, 0.26 + di * 0.018).toFixed(3);
         di++;
-        dots += `<circle class="cl-dot" cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3.2" fill="${color}" style="animation-delay:${delay}s"/>`;
+        dots += `<circle class="cl-dot" cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3.8" fill="${color}" style="animation-delay:${delay}s"/>`;
     });
     // 마지막(가장 최근) 실제 값 라벨
     let lastIdx = -1;
     for (let i = points.length - 1; i >= 0; i--) { if (points[i].value != null) { lastIdx = i; break; } }
     if (lastIdx >= 0) {
         const lv = points[lastIdx].value;
-        dots += `<text class="cl-last" x="${x(lastIdx).toFixed(1)}" y="${(y(lv) - 8).toFixed(1)}" text-anchor="end" fill="${color}" font-size="11" font-weight="700">${fmtAxis(lv)}${opts.unit || ''}</text>`;
+        dots += `<text class="cl-last" x="${x(lastIdx).toFixed(1)}" y="${(y(lv) - 8).toFixed(1)}" text-anchor="end" fill="${color}" font-size="12" font-weight="700">${fmtAxis(lv)}${opts.unit || ''}</text>`;
     }
     // 탭 시 채워지는 툴팁 레이어
     dots += `<g class="chart-tip" style="display:none"></g>`;
@@ -2497,7 +2498,7 @@ function lineChart(points, opts) {
         if (i % every === 0 || i === points.length - 1) {
             const anchor = i === 0 ? 'start' : (i === points.length - 1 ? 'end' : 'middle');
             const lx = i === 0 ? Math.max(x(i) - 6, 2) : (i === points.length - 1 ? Math.min(x(i) + 8, W - 2) : x(i));
-            labels += `<text x="${lx.toFixed(1)}" y="${mdLabelY.toFixed(1)}" text-anchor="${anchor}" style="fill:var(--text-mute)" font-size="9.5">${esc(String(p.label))}</text>`;
+            labels += `<text x="${lx.toFixed(1)}" y="${mdLabelY.toFixed(1)}" text-anchor="${anchor}" style="fill:var(--text-mute)" font-size="10.5">${esc(String(p.label))}</text>`;
         }
         // 연도 경계(연도가 바뀔 때마다)
         if (wantYearRow && p.year && p.year !== prevYear) {
@@ -2506,7 +2507,7 @@ function lineChart(points, opts) {
                 yearMarks += `<line x1="${bx}" y1="${padT - 6}" x2="${bx}" y2="${(padT + innerH).toFixed(1)}" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 3" opacity="0.85"/>`;
             }
             const yx = Math.max(x(i), 4);
-            yearMarks += `<text x="${yx.toFixed(1)}" y="${yLabelY.toFixed(1)}" text-anchor="middle" style="fill:var(--text-dim)" font-size="10.5" font-weight="800">${esc(p.year)}</text>`;
+            yearMarks += `<text x="${yx.toFixed(1)}" y="${yLabelY.toFixed(1)}" text-anchor="middle" style="fill:var(--text-dim)" font-size="11.5" font-weight="800">${esc(p.year)}</text>`;
             prevYear = p.year;
         }
     });
@@ -2524,7 +2525,7 @@ function lineChart(points, opts) {
     // 축(고정) + 그림(가로 스크롤)
     return `<div class="chart-box">
         <svg class="chart-axis" width="${AXIS_W}" height="${H}" viewBox="0 0 ${AXIS_W} ${H}">${axis}</svg>
-        <div class="chart-scroll"><div class="chart-wrap" style="width:${W}px"><svg class="chart-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-unit="${opts.unit || ''}" data-color="${color}" data-h="${H}" data-w="${W}">
+        <div class="chart-scroll"><div class="chart-wrap" style="width:${W}px"><svg class="chart-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-unit="${opts.unit || ''}" data-color="${color}" data-h="${H}" data-w="${W}" data-key="${esc(opts.key || '')}" data-vals="${esc(JSON.stringify(points.map(p => p.value)))}" data-geo="${esc(JSON.stringify({ padL: padL, padT: padT, innerW: innerW, innerH: innerH, min: min, range: range }))}">
             <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stop-color="${color}" stop-opacity="0.28"/>
                 <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
@@ -2540,6 +2541,89 @@ function lineChart(points, opts) {
     // [E] edit by smsong
 }
 
+// [B] edit by smsong : 그래프 값 전환 모션(morph).
+//   기간 탭/종목을 바꾸면 그래프를 처음부터 다시 그리는 대신, 축·격자(틀)는 그대로 두고
+//   선·면·점이 이전 값에서 새 값으로 "위아래로 미끄러지듯" 이동한다.
+//   · 점 개수가 달라지는 확대 레벨 전환에서도 자연스럽도록, 이전 값 배열을 새 길이에 맞춰
+//     비율(인덱스 보간)로 리샘플한 뒤 그 위치에서 출발시킨다.
+const _chartPrevVals = {};      // key -> 직전 렌더의 값 배열
+const _chartMorphing = {};      // key -> 진행 중인 rAF id
+
+function morphChart(svg) {
+    const key = svg.dataset.key || '';
+    if (!key) return false;
+    let vals, geo;
+    try {
+        vals = JSON.parse(svg.dataset.vals || '[]');
+        geo = JSON.parse(svg.dataset.geo || '{}');
+    } catch (_) { return false; }
+
+    const prev = _chartPrevVals[key];
+    _chartPrevVals[key] = vals;                       // 다음 전환을 위해 항상 갱신
+    if (!prev || prev.length < 2 || vals.length < 2) return false;
+
+    const n = vals.length;
+    // 이전 값을 새 길이에 맞춰 리샘플 (선형 보간). null 은 새 값에서 출발(움직임 없음).
+    const from = new Array(n);
+    for (let k = 0; k < n; k++) {
+        if (vals[k] == null) { from[k] = null; continue; }
+        const pos = (prev.length - 1) * (n === 1 ? 0 : k / (n - 1));
+        const i0 = Math.floor(pos), i1 = Math.min(i0 + 1, prev.length - 1), f = pos - i0;
+        const a = prev[i0], b = prev[i1];
+        if (a == null && b == null) from[k] = vals[k];
+        else if (a == null) from[k] = b;
+        else if (b == null) from[k] = a;
+        else from[k] = a + (b - a) * f;
+    }
+
+    const idxs = [];
+    vals.forEach((v, i) => { if (v != null) idxs.push(i); });
+    if (idxs.length < 2) return false;
+
+    const lineEl = svg.querySelector('.cl-line');
+    const gapEl = svg.querySelector('.cl-gap');
+    const areaEl = svg.querySelector('.cl-area');
+    const dotEls = svg.querySelectorAll('.cl-dot');
+    if (!lineEl || dotEls.length !== idxs.length) return false;
+
+    const x = i => geo.padL + (geo.innerW * i) / (n - 1);
+    const y = v => geo.padT + geo.innerH - ((v - geo.min) / (geo.range || 1)) * geo.innerH;
+    const y0 = (geo.padT + geo.innerH).toFixed(1);
+
+    svg.classList.add('morphing');                    // 진입 애니메이션(그려지기/떠오르기) 중지
+    if (_chartMorphing[key]) cancelAnimationFrame(_chartMorphing[key]);
+
+    const DUR = 520;
+    const t0 = performance.now();
+    const ease = t => 1 - Math.pow(1 - t, 3);         // easeOutCubic
+
+    const frame = (now) => {
+        const t = Math.min(1, (now - t0) / DUR);
+        const e = ease(t);
+        const cur = new Array(n);
+        for (let k = 0; k < n; k++) {
+            cur[k] = (vals[k] == null) ? null : (from[k] + (vals[k] - from[k]) * e);
+        }
+        let lp = '', gp = '', ad = '';
+        for (let k = 0; k + 1 < idxs.length; k++) {
+            const i = idxs[k], j = idxs[k + 1];
+            const seg = `M${x(i).toFixed(1)} ${y(cur[i]).toFixed(1)} L${x(j).toFixed(1)} ${y(cur[j]).toFixed(1)} `;
+            if (j === i + 1) lp += seg; else gp += seg;
+        }
+        idxs.forEach((i, k) => { ad += `${k === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(cur[i]).toFixed(1)} `; });
+        lineEl.setAttribute('d', lp);
+        if (gapEl) gapEl.setAttribute('d', gp);
+        if (areaEl) areaEl.setAttribute('d', `${ad}L${x(idxs[idxs.length - 1]).toFixed(1)} ${y0} L${x(idxs[0]).toFixed(1)} ${y0} Z`);
+        idxs.forEach((i, k) => { dotEls[k].setAttribute('cy', y(cur[i]).toFixed(1)); });
+
+        if (t < 1) _chartMorphing[key] = requestAnimationFrame(frame);
+        else { _chartMorphing[key] = null; svg.classList.remove('morphing'); }
+    };
+    _chartMorphing[key] = requestAnimationFrame(frame);
+    return true;
+}
+// [E] edit by smsong
+
 // [B] edit by smsong : 그래프 점 탭 → 해당 날짜 수치 툴팁 표시
 function wireCharts(root) {
     // [B] edit by smsong : 가로로 넓어진 그래프는 최신 데이터(오른쪽 끝)가 먼저 보이게 스크롤.
@@ -2552,6 +2636,13 @@ function wireCharts(root) {
     scrollToEnd();
     requestAnimationFrame(() => { scrollToEnd(); requestAnimationFrame(scrollToEnd); });
     // [E] edit by smsong
+    // [B][E] edit by smsong : 값이 바뀐 그래프는 "틀 유지 + 점 이동" 모션으로 전환
+    //   (wireCharts 가 한 렌더에서 여러 번 불려도 같은 SVG 에 두 번 적용되지 않게 가드)
+    (root || document).querySelectorAll('.chart-svg[data-key]').forEach(svg => {
+        if (svg.dataset.morphed) return;
+        svg.dataset.morphed = '1';
+        morphChart(svg);
+    });
     (root || document).querySelectorAll('.chart-svg').forEach(svg => {
         if (svg.dataset.wired) return;
         svg.dataset.wired = '1';
