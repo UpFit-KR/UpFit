@@ -2376,8 +2376,10 @@ function lineChart(points, opts) {
     // [B][E] edit by smsong : 그래프를 크게 — 높이/점 간격/축 폭을 키워 읽기 편하게.
     const H = 250, padT = 40, padB = wantYearRow ? 50 : 36;
     // 점당 폭 고정 → 데이터가 많으면 SVG 가 넓어지고 .chart-scroll 이 가로 스크롤로 보여준다.
-    const SPACING = 82;             // [B][E] edit by smsong : 가로로 시원하게 (56 → 82)
-    const AXIS_W = 46;              // 고정 세로축 폭
+    const SPACING = 100;            // [B][E] edit by smsong : 가로로 더 시원하게 (82 → 100)
+    // [B][E] edit by smsong : 축 폭 축소(46 → 36). 숫자보다 축 영역이 넓어 왼쪽에 빈 공간이
+    //   많이 남아 있었다 → 줄이면 숫자가 카드 왼쪽에 붙고, 남는 만큼 그림 폭이 넓어진다.
+    const AXIS_W = 36;              // 고정 세로축 폭
     const BASE_W = 320 - AXIS_W;    // 축을 뺀 나머지가 기본 그림 폭
     const padL = 10, padR = 20;
     const innerNeed = SPACING * (points.length - 1);
@@ -2517,10 +2519,10 @@ function lineChart(points, opts) {
     // ---------- 왼쪽 고정 세로축 ----------
     let axis = '';
     ticks.forEach(v => {
-        axis += `<text class="cl-ytxt" x="${AXIS_W - 6}" y="${(y(v) + 3.2).toFixed(1)}" text-anchor="end">${fmtAxis(v, max)}</text>`;
+        axis += `<text class="cl-ytxt" x="${AXIS_W - 5}" y="${(y(v) + 3.2).toFixed(1)}" text-anchor="end">${fmtAxis(v, max)}</text>`;
     });
     axis += `<line x1="${AXIS_W - 0.5}" y1="${padT - 6}" x2="${AXIS_W - 0.5}" y2="${padT + innerH}" stroke="var(--line)" stroke-width="1"/>`;
-    if (opts.unit) axis += `<text class="cl-ytxt" x="${AXIS_W - 6}" y="${padT - 14}" text-anchor="end" style="font-weight:700">${esc(opts.unit)}</text>`;
+    if (opts.unit) axis += `<text class="cl-ytxt" x="${AXIS_W - 5}" y="${padT - 14}" text-anchor="end" style="font-weight:700">${esc(opts.unit)}</text>`;
 
     // 축(고정) + 그림(가로 스크롤)
     return `<div class="chart-box">
