@@ -1506,6 +1506,10 @@ textarea.input.im-text {
 @keyframes clDraw { to { stroke-dashoffset: 0; } }
 .chart-svg .cl-area { opacity: 0; animation: clArea .5s ease .28s forwards; }
 @keyframes clArea { to { opacity: 1; } }
+/* [B][E] edit by smsong : 기록이 없는 구간을 건너뛰는 연결선(점선). 실선보다 흐리게 = 추정 연결 표시.
+   cl-line 은 dasharray 로 "그려지는" 애니메이션을 쓰므로, 점선은 페이드인으로 처리한다. */
+.chart-svg .cl-gap { opacity: 0; animation: clGap .5s ease .3s forwards; }
+@keyframes clGap { to { opacity: .45; } }
 .chart-svg .cl-dot { opacity: 0; transform-box: fill-box; transform-origin: center; animation: clDot .34s cubic-bezier(.22,1.5,.36,1) forwards; }
 @keyframes clDot { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
 .chart-svg .cl-last { opacity: 0; animation: clArea .3s ease .62s forwards; }
@@ -1899,6 +1903,8 @@ textarea.input.im-text {
     .chart-box, .chart-svg .cl-line, .chart-svg .cl-area, .chart-svg .cl-dot, .chart-svg .cl-last {
         animation: none !important; opacity: 1 !important; stroke-dashoffset: 0 !important; transform: none !important;
     }
+    /* [B][E] edit by smsong : 점선 연결선은 "흐리게" 가 의미이므로 opacity 를 1 로 올리지 않는다 */
+    .chart-svg .cl-gap { animation: none !important; opacity: .45 !important; }
     .lo-dumbbell, .lo-shadow, .lo-bar i { animation: none !important; }
     .lo-card { transition: none !important; transform: none !important; }
     .cond-field { transition: none !important; }

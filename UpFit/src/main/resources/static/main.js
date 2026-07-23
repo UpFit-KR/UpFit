@@ -2419,28 +2419,29 @@ function lineChart(points, opts) {
     const ticks = [];
     for (let i = 0; i <= TICKS; i++) ticks.push(Math.round((min + step * i) * 1000) / 1000);
 
-    // ---------- 선/면 (null 구간에서 끊는다) ----------
-    // 연속된 non-null 구간을 세그먼트로 나눠, 각각 선과 면을 그린다.
-    const segs = [];
-    let cur = [];
-    points.forEach((p, i) => {
-        if (p.value == null) { if (cur.length) segs.push(cur); cur = []; return; }
-        cur.push(i);
-    });
-    if (cur.length) segs.push(cur);
+    // ---------- 선/면 (빈 구간은 점선으로 이어 준다) ----------
+    // [B] edit by smsong : 기록이 없는 구간에서 선을 끊으면 흐름이 안 보여 답답하다.
+    //   데이터 시각화 표준(Highcharts connectNulls 등)대로 "잇되 구분"한다.
+    //     · 실제 기록끼리 맞닿은 구간  = 실선
+    //     · 기록이 없는 구간을 건너뜀 = 점선(= 추정 연결이라는 표시)
+    //   면(area)은 전체를 한 덩어리로 채워 흐름이 끊겨 보이지 않게 한다.
+    const idxs = [];
+    points.forEach((p, i) => { if (p.value != null) idxs.push(i); });
 
-    let linePath = '', areaPaths = '', dots = '';
-    segs.forEach(seg => {
-        if (seg.length === 1) {
-            // 앞뒤가 비어 점 하나만 남은 구간 → 선 대신 점만 (아래 dots 에서 그려짐)
-            return;
-        }
+    let linePath = '', gapPath = '', areaPaths = '', dots = '';
+    for (let k = 0; k + 1 < idxs.length; k++) {
+        const i = idxs[k], j = idxs[k + 1];
+        const seg = `M${x(i).toFixed(1)} ${y(points[i].value).toFixed(1)} L${x(j).toFixed(1)} ${y(points[j].value).toFixed(1)} `;
+        if (j === i + 1) linePath += seg;   // 연속 구간 → 실선
+        else gapPath += seg;                // 빈 구간을 건너뜀 → 점선
+    }
+    if (idxs.length > 1) {
         let d = '';
-        seg.forEach((i, k) => { d += `${k === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(points[i].value).toFixed(1)} `; });
-        linePath += d;
+        idxs.forEach((i, k) => { d += `${k === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(points[i].value).toFixed(1)} `; });
         const y0 = (padT + innerH).toFixed(1);
-        areaPaths += `<path class="cl-area" d="${d}L${x(seg[seg.length - 1]).toFixed(1)} ${y0} L${x(seg[0]).toFixed(1)} ${y0} Z" fill="url(#${gid})"/>`;
-    });
+        areaPaths = `<path class="cl-area" d="${d}L${x(idxs[idxs.length - 1]).toFixed(1)} ${y0} L${x(idxs[0]).toFixed(1)} ${y0} Z" fill="url(#${gid})"/>`;
+    }
+    // [E] edit by smsong
 
     // 목표선
     let targetLine = '';
@@ -2531,6 +2532,7 @@ function lineChart(points, opts) {
             ${grid}
             ${targetLine}
             ${areaPaths}
+            <path class="cl-gap" d="${gapPath}" fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
             <path class="cl-line" pathLength="1" d="${linePath}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
             ${dots}${labels}${hits}
         </svg></div></div>
